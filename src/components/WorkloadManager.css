@@ -380,5 +380,12 @@
   .move-date-btn {
     font-size: 0.75rem;
     padding: 0.3rem 0.5rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .move-date-section {
+    flex-wrap: nowrap;
+    gap: 0.3rem;
   }
 }
