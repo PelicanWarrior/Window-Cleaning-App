@@ -366,9 +366,17 @@
     font-size: 1rem;
   }
 
+  .customer-info {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+
   .customer-actions {
     width: 100%;
-    justify-content: space-between;
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
   }
 
   .done-paid-btn,
