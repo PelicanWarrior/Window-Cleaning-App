@@ -366,10 +366,16 @@
     font-size: 1rem;
   }
 
+  .customer-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
   .done-paid-btn,
   .done-not-paid-btn {
     font-size: 0.85rem;
     padding: 0.5rem 0.8rem;
+    flex: 1;
   }
 
   .move-date-label {
