@@ -368,8 +368,8 @@
 
   .done-paid-btn,
   .done-not-paid-btn {
-    font-size: 0.75rem;
-    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
+    padding: 0.5rem 0.8rem;
   }
 
   .move-date-label {
@@ -378,8 +378,8 @@
   }
 
   .move-date-btn {
-    font-size: 0.75rem;
-    padding: 0.3rem 0.5rem;
+    font-size: 0.85rem;
+    padding: 0.5rem 0.6rem;
     flex: 1;
     min-width: 0;
   }
