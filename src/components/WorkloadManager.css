@@ -1,0 +1,258 @@
+.workload-manager {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding: 0 1rem;
+}
+
+.calendar-header h2 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1.8rem;
+}
+
+.month-nav-btn {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 1.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.month-nav-btn:hover {
+  background-color: #2980b9;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+  margin-bottom: 2rem;
+}
+
+.calendar-day-header {
+  text-align: center;
+  font-weight: bold;
+  color: #34495e;
+  padding: 0.5rem;
+  background-color: #ecf0f1;
+  border-radius: 4px;
+}
+
+.calendar-day {
+  aspect-ratio: 1;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  background-color: white;
+}
+
+.calendar-day:hover:not(.empty) {
+  border-color: #3498db;
+  transform: scale(1.05);
+}
+
+.calendar-day.empty {
+  border: none;
+  cursor: default;
+}
+
+.calendar-day.selected {
+  background-color: #3498db;
+  border-color: #2980b9;
+}
+
+.calendar-day.selected .day-number {
+  color: white;
+}
+
+.calendar-day.has-work {
+  border-color: #3498db;
+  background-color: #ebf5fb;
+}
+
+.day-number {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #2c3e50;
+}
+
+.work-indicator {
+  width: 8px;
+  height: 8px;
+  background-color: #3498db;
+  border-radius: 50%;
+  margin-top: 4px;
+}
+
+.calendar-day.selected .work-indicator {
+  background-color: white;
+}
+
+.selected-day-customers {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 2px solid #ecf0f1;
+}
+
+.selected-day-customers h3 {
+  color: #2c3e50;
+  margin-bottom: 0.5rem;
+}
+
+.income-total {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #27ae60;
+  margin-bottom: 1.5rem;
+}
+
+.customer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.customer-item {
+  padding: 1rem 1.5rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  background-color: white;
+  transition: all 0.2s;
+}
+
+.customer-item:hover {
+  background-color: #f8f9fa;
+  border-color: #3498db;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.customer-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.customer-name {
+  font-weight: bold;
+  color: #2c3e50;
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+
+.customer-details {
+  color: #555;
+  font-size: 0.95rem;
+}
+
+.customer-details span {
+  display: inline;
+}
+
+.customer-details .outstanding {
+  color: #e74c3c;
+  font-weight: bold;
+}
+
+.customer-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.done-paid-btn,
+.done-not-paid-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: opacity 0.2s;
+  white-space: nowrap;
+}
+
+.done-paid-btn {
+  background-color: #27ae60;
+  color: white;
+}
+
+.done-paid-btn:hover {
+  opacity: 0.9;
+}
+
+.done-not-paid-btn {
+  background-color: #e67e22;
+  color: white;
+}
+
+.done-not-paid-btn:hover {
+  opacity: 0.9;
+}
+
+.move-date-section {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.move-date-label {
+  font-size: 0.9rem;
+  color: #555;
+  font-weight: 500;
+}
+
+.move-date-btn {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid #3498db;
+  background-color: white;
+  color: #3498db;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.move-date-btn:hover {
+  background-color: #3498db;
+  color: white;
+}
+
+.empty-state {
+  text-align: center;
+  color: #7f8c8d;
+  padding: 2rem;
+  font-style: italic;
+}
+
+.loading {
+  text-align: center;
+  padding: 3rem;
+  color: #7f8c8d;
+  font-size: 1.1rem;
+}
