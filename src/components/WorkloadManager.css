@@ -256,3 +256,129 @@
   color: #7f8c8d;
   font-size: 1.1rem;
 }
+
+/* Tablet styles */
+@media (max-width: 768px) {
+  .workload-manager {
+    padding: 1rem;
+  }
+
+  .calendar-header {
+    padding: 0;
+  }
+
+  .calendar-header h2 {
+    font-size: 1.4rem;
+  }
+
+  .month-nav-btn {
+    width: 35px;
+    height: 35px;
+    font-size: 1.2rem;
+  }
+
+  .calendar-grid {
+    gap: 6px;
+  }
+
+  .day-number {
+    font-size: 1rem;
+  }
+
+  .work-indicator {
+    width: 6px;
+    height: 6px;
+  }
+
+  .customer-info {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .customer-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .done-paid-btn,
+  .done-not-paid-btn {
+    flex: 1;
+  }
+
+  .move-date-section {
+    flex-wrap: wrap;
+  }
+
+  .move-date-btn {
+    flex: 1;
+    min-width: 70px;
+  }
+}
+
+/* Mobile styles */
+@media (max-width: 480px) {
+  .workload-manager {
+    padding: 0.5rem;
+  }
+
+  .calendar-header h2 {
+    font-size: 1.2rem;
+  }
+
+  .month-nav-btn {
+    width: 30px;
+    height: 30px;
+    font-size: 1rem;
+  }
+
+  .calendar-grid {
+    gap: 4px;
+  }
+
+  .calendar-day-header {
+    font-size: 0.7rem;
+    padding: 0.3rem;
+  }
+
+  .day-number {
+    font-size: 0.85rem;
+  }
+
+  .work-indicator {
+    width: 5px;
+    height: 5px;
+    margin-top: 2px;
+  }
+
+  .customer-item {
+    padding: 0.75rem;
+  }
+
+  .customer-name {
+    font-size: 1rem;
+  }
+
+  .customer-details {
+    font-size: 0.85rem;
+  }
+
+  .income-total {
+    font-size: 1rem;
+  }
+
+  .done-paid-btn,
+  .done-not-paid-btn {
+    font-size: 0.75rem;
+    padding: 0.4rem 0.6rem;
+  }
+
+  .move-date-label {
+    width: 100%;
+    font-size: 0.8rem;
+  }
+
+  .move-date-btn {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.5rem;
+  }
+}

@@ -113,3 +113,50 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Tablet styles */
+@media (max-width: 768px) {
+  .auth-card {
+    padding: 2rem;
+    max-width: 90%;
+  }
+
+  .auth-card h1 {
+    font-size: 1.5rem;
+  }
+
+  .auth-card h2 {
+    font-size: 1.1rem;
+  }
+}
+
+/* Mobile styles */
+@media (max-width: 480px) {
+  .auth-container {
+    padding: 1rem;
+  }
+
+  .auth-card {
+    padding: 1.5rem;
+    max-width: 100%;
+  }
+
+  .auth-card h1 {
+    font-size: 1.25rem;
+  }
+
+  .auth-card h2 {
+    font-size: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .auth-card input {
+    font-size: 0.9rem;
+    padding: 0.75rem;
+  }
+
+  .auth-card button[type="submit"] {
+    font-size: 0.9rem;
+    padding: 0.875rem;
+  }
+}

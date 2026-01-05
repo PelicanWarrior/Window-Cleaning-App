@@ -290,3 +290,87 @@
   color: #7f8c8d;
   padding: 2rem;
 }
+
+/* Tablet styles */
+@media (max-width: 768px) {
+  .customer-list {
+    padding: 1rem;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+  }
+
+  .add-customer-btn,
+  .find-customer-btn {
+    width: 100%;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-table table {
+    font-size: 0.8rem;
+  }
+
+  .customer-table th,
+  .customer-table td {
+    padding: 0.5rem 0.25rem;
+  }
+
+  .notes-cell {
+    max-width: 100px;
+  }
+}
+
+/* Mobile styles */
+@media (max-width: 480px) {
+  .customer-list {
+    padding: 0.5rem;
+  }
+
+  .customer-list h2 {
+    font-size: 1.5rem;
+  }
+
+  .sort-buttons {
+    gap: 0.25rem;
+  }
+
+  .sort-buttons button {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.75rem;
+  }
+
+  .customer-table {
+    overflow-x: auto;
+  }
+
+  .customer-table table {
+    font-size: 0.7rem;
+    min-width: 800px;
+  }
+
+  .customer-table th,
+  .customer-table td {
+    padding: 0.4rem 0.2rem;
+  }
+
+  .edit-btn,
+  .delete-btn,
+  .save-btn,
+  .cancel-edit-btn {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .customer-form {
+    padding: 1rem;
+  }
+
+  .customer-form input,
+  .customer-form textarea {
+    font-size: 0.9rem;
+  }
+}
