@@ -10,11 +10,16 @@ function WorkloadManager({ user }) {
   const [messages, setMessages] = useState([])
   const [messageFooter, setMessageFooter] = useState('')
   const [selectedLetters, setSelectedLetters] = useState({})
+  const [selectedLetterAll, setSelectedLetterAll] = useState('')
 
   useEffect(() => {
     fetchCustomers()
     fetchMessagesAndFooter()
   }, [user])
+
+  useEffect(() => {
+    setSelectedLetterAll('')
+  }, [selectedDate])
 
   async function fetchCustomers() {
     try {
@@ -214,6 +219,19 @@ function WorkloadManager({ user }) {
     setSelectedLetters((prev) => ({ ...prev, [customerId]: messageId }))
   }
 
+  const handleSelectLetterAll = (messageId, customersForDay) => {
+    setSelectedLetterAll(messageId)
+    if (!messageId) return
+
+    setSelectedLetters((prev) => {
+      const updated = { ...prev }
+      customersForDay.forEach((customer) => {
+        updated[customer.id] = messageId
+      })
+      return updated
+    })
+  }
+
   const formatPhoneForWhatsApp = (raw) => {
     const digits = (raw || '').replace(/\D/g, '')
     if (!digits) return ''
@@ -223,6 +241,20 @@ function WorkloadManager({ user }) {
     }
     // If already starts with country code, use as-is
     return digits
+  }
+
+  const getFormalCustomerName = (rawName) => {
+    const name = (rawName || '').trim()
+    if (!name) return 'Customer'
+
+    const connectorMatch = name.match(/^(\S+)\s*(&|and)\s+(\S+)/i)
+    if (connectorMatch) {
+      const [, first, connector, second] = connectorMatch
+      return `${first} ${connector.trim()} ${second}`
+    }
+
+    const firstToken = name.split(/\s+/)[0]
+    return firstToken || 'Customer'
   }
 
   const handleSendWhatsApp = (customer) => {
@@ -241,7 +273,8 @@ function WorkloadManager({ user }) {
     let letter = messages.find((m) => String(m.id) === String(selectedId))
     if (!letter && messages.length) letter = messages[0]
 
-    const bodyParts = [`Dear ${customer.CustomerName}.`]
+    const formalName = getFormalCustomerName(customer.CustomerName)
+    const bodyParts = [`Dear ${formalName}`]
     if (letter?.Message) bodyParts.push(letter.Message)
     if (messageFooter) bodyParts.push(messageFooter)
 
@@ -327,6 +360,23 @@ function WorkloadManager({ user }) {
             Jobs for {monthNames[currentDate.getMonth()]} {selectedDate}, {currentDate.getFullYear()}
           </h3>
           <p className="income-total">Income: £{totalIncome.toFixed(2)}</p>
+          {selectedDayCustomers.length > 0 && (
+            <div className="message-all-section">
+              <label className="message-all-label" htmlFor="messageAll">Message to All:</label>
+              <select
+                id="messageAll"
+                value={selectedLetterAll || ''}
+                onChange={(e) => handleSelectLetterAll(e.target.value, selectedDayCustomers)}
+                disabled={!messages.length}
+              >
+                {!messages.length && <option value="">No letters available</option>}
+                {messages.length > 0 && <option value="">Select letter</option>}
+                {messages.map((msg) => (
+                  <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {selectedDayCustomers.length > 0 && (
             <div className="bulk-move-section">
               <span className="bulk-move-label">Move all jobs:</span>

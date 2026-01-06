@@ -239,6 +239,27 @@
   display: inline;
 }
 
+.message-all-section {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.message-all-label {
+  font-weight: 600;
+  color: #34495e;
+  white-space: nowrap;
+}
+
+.message-all-section select {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
 .customer-details .outstanding {
   color: #e74c3c;
   font-weight: bold;
