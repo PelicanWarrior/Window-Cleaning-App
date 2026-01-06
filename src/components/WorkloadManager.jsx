@@ -222,6 +222,17 @@ function WorkloadManager({ user }) {
   const selectedDayCustomers = selectedDate ? getCustomersForDate(selectedDate) : []
   const totalIncome = selectedDayCustomers.reduce((sum, customer) => sum + (parseFloat(customer.Price) || 0), 0)
 
+  // Route color helper
+  const routeColors = [
+    '#3498db', '#27ae60', '#9b59b6', '#e67e22', '#e74c3c', '#16a085', '#8e44ad', '#f1c40f'
+  ]
+
+  const getRouteStyle = (route) => {
+    if (!route) return { backgroundColor: '#bdc3c7', color: '#2c3e50' }
+    const index = Math.abs(route.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)) % routeColors.length
+    return { backgroundColor: routeColors[index], color: 'white' }
+  }
+
   return (
     <div className="workload-manager">
       <div className="calendar-header">
@@ -269,7 +280,7 @@ function WorkloadManager({ user }) {
                         <span>{customer.CustomerName}</span>
                         {customer.PhoneNumber && <span> • {customer.PhoneNumber}</span>}
                         <span> • £{customer.Price}</span>
-                        {customer.Route && <span> • Route: {customer.Route}</span>}
+                        <span> • Route: <span className="route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span></span>
                         {customer.Outstanding > 0 && <span className="outstanding"> • Outstanding: £{customer.Outstanding}</span>}
                         {customer.Notes && <span> • {customer.Notes}</span>}
                       </div>
