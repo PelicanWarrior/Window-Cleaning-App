@@ -482,11 +482,11 @@ function WorkloadManager({ user }) {
         // Create new route order
         const { error } = await supabase
           .from('RouteOrder')
-          .insert([{
-            UserId: user.id,
+          .insert({
+            UserId: parseInt(user.id),
             RouteDate: dateStr,
             Route: routeString
-          }])
+          })
         if (error) throw error
       }
 
