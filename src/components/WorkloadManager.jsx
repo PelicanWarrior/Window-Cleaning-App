@@ -38,7 +38,7 @@ function WorkloadManager({ user }) {
       const { data, error } = await supabase
         .from('RouteOrder')
         .select('*')
-        .eq('UserId', user.id)
+        .eq('UserID', user.id)
         .eq('RouteDate', dateStr)
         .single()
       
@@ -483,7 +483,7 @@ function WorkloadManager({ user }) {
         const { error } = await supabase
           .from('RouteOrder')
           .insert({
-            UserId: parseInt(user.id),
+            UserID: parseInt(user.id),
             RouteDate: dateStr,
             Route: routeString
           })
