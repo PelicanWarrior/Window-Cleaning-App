@@ -11,10 +11,13 @@ function WorkloadManager({ user }) {
   const [messageFooter, setMessageFooter] = useState('')
   const [selectedLetters, setSelectedLetters] = useState({})
   const [selectedLetterAll, setSelectedLetterAll] = useState('')
+  const [activeView, setActiveView] = useState('Calendar')
+  const [expandedDays, setExpandedDays] = useState({})
 
   useEffect(() => {
     fetchCustomers()
     fetchMessagesAndFooter()
+    fetchCalendarView()
   }, [user])
 
   useEffect(() => {
@@ -60,6 +63,36 @@ function WorkloadManager({ user }) {
       setMessageFooter(userData?.MessageFooter || '')
     } catch (error) {
       console.error('Error fetching messages/footer:', error.message)
+    }
+  }
+
+  async function fetchCalendarView() {
+    try {
+      const { data, error } = await supabase
+        .from('Users')
+        .select('CalenderView')
+        .eq('id', user.id)
+        .single()
+
+      if (error) throw error
+      setActiveView(data?.CalenderView || 'Calendar')
+    } catch (error) {
+      console.error('Error fetching calendar view:', error.message)
+      setActiveView('Calendar')
+    }
+  }
+
+  async function updateCalendarView(view) {
+    setActiveView(view)
+    try {
+      const { error } = await supabase
+        .from('Users')
+        .update({ CalenderView: view })
+        .eq('id', user.id)
+
+      if (error) throw error
+    } catch (error) {
+      console.error('Error updating calendar view:', error.message)
     }
   }
 
@@ -335,26 +368,91 @@ function WorkloadManager({ user }) {
     return { backgroundColor: routeColors[index], color: 'white' }
   }
 
+  // Generate overview calendar with inline customer lists
+  const generateOverviewCalendar = () => {
+    const daysInMonth = getDaysInMonth(currentDate)
+    const firstDayOfWeek = getFirstDayOfWeek(currentDate)
+    const days = []
+
+    // Add empty cells for days before month starts
+    for (let i = 0; i < firstDayOfWeek; i++) {
+      days.push(<div key={`empty-${i}`} className="overview-day empty"></div>)
+    }
+
+    // Add days of the month with customer lists
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dayCustomers = getCustomersForDate(day)
+      const isExpanded = expandedDays[day]
+      const displayCustomers = isExpanded ? dayCustomers : dayCustomers.slice(0, 10)
+      const hasMore = dayCustomers.length > 10
+
+      days.push(
+        <div key={day} className="overview-day">
+          <div className="overview-day-number">{day}</div>
+          {dayCustomers.length > 0 && (
+            <div className="overview-customer-list">
+              {displayCustomers.map((customer) => (
+                <div key={customer.id} className="overview-customer-item">
+                  <div className="overview-customer-address">{customer.Address}</div>
+                  <div className="overview-customer-meta">
+                    £{customer.Price} • <span className="overview-route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
+                  </div>
+                </div>
+              ))}
+              {hasMore && !isExpanded && (
+                <button
+                  className="show-all-btn"
+                  onClick={() => setExpandedDays(prev => ({ ...prev, [day]: true }))}
+                >
+                  Show all ({dayCustomers.length})
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    return days
+  }
+
   return (
     <div className="workload-manager">
+      <div className="view-tabs">
+        <button
+          className={`view-tab ${activeView === 'Calendar' ? 'active' : ''}`}
+          onClick={() => updateCalendarView('Calendar')}
+        >
+          Calendar
+        </button>
+        <button
+          className={`view-tab ${activeView === 'Overview' ? 'active' : ''}`}
+          onClick={() => updateCalendarView('Overview')}
+        >
+          Overview
+        </button>
+      </div>
+
       <div className="calendar-header">
         <button onClick={previousMonth} className="month-nav-btn">←</button>
         <h2>{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</h2>
         <button onClick={nextMonth} className="month-nav-btn">→</button>
       </div>
 
-      <div className="calendar-grid">
-        <div className="calendar-day-header">Sun</div>
-        <div className="calendar-day-header">Mon</div>
-        <div className="calendar-day-header">Tue</div>
-        <div className="calendar-day-header">Wed</div>
-        <div className="calendar-day-header">Thu</div>
-        <div className="calendar-day-header">Fri</div>
-        <div className="calendar-day-header">Sat</div>
-        {generateCalendar()}
-      </div>
+      {activeView === 'Calendar' ? (
+        <>
+          <div className="calendar-grid">
+            <div className="calendar-day-header">Sun</div>
+            <div className="calendar-day-header">Mon</div>
+            <div className="calendar-day-header">Tue</div>
+            <div className="calendar-day-header">Wed</div>
+            <div className="calendar-day-header">Thu</div>
+            <div className="calendar-day-header">Fri</div>
+            <div className="calendar-day-header">Sat</div>
+            {generateCalendar()}
+          </div>
 
-      {selectedDate && (
+          {selectedDate && (
         <div className="selected-day-customers">
           <h3>
             Jobs for {monthNames[currentDate.getMonth()]} {selectedDate}, {currentDate.getFullYear()}
@@ -454,6 +552,19 @@ function WorkloadManager({ user }) {
               ))}
             </div>
           )}
+        </div>
+      )}
+        </>
+      ) : (
+        <div className="overview-grid">
+          <div className="calendar-day-header">Sun</div>
+          <div className="calendar-day-header">Mon</div>
+          <div className="calendar-day-header">Tue</div>
+          <div className="calendar-day-header">Wed</div>
+          <div className="calendar-day-header">Thu</div>
+          <div className="calendar-day-header">Fri</div>
+          <div className="calendar-day-header">Sat</div>
+          {generateOverviewCalendar()}
         </div>
       )}
     </div>
