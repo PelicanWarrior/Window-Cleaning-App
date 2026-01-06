@@ -783,7 +783,7 @@ function CustomerList({ user }) {
                               ref={(el) => {if (el) dropdownRefs.current[customer.id] = el}}
                               onClick={(e) => toggleActionDropdown(customer.id, e.currentTarget)}
                             >
-                              ⋮ Actions
+                              ⋮
                             </button>
                           </div>
                         ) : cell.isEdit ? (

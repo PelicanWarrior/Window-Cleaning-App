@@ -193,11 +193,14 @@
 }
 
 .customer-item {
-  padding: 1rem 1.5rem;
+  padding: 0;
   border: 2px solid #e0e0e0;
   border-radius: 12px;
   background-color: white;
   transition: all 0.2s;
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
 }
 
 .customer-item:hover {
@@ -211,6 +214,8 @@
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
+  padding: 1rem 1.5rem;
+  flex: 1;
 }
 
 .customer-name {
@@ -331,9 +336,9 @@
 }
 
 .move-date-section {
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
+  padding: 0.75rem 1.5rem 0.75rem 0;
   border-top: 1px solid #e0e0e0;
+  width: 100%;
 }
 
 .move-date-toggle-btn {
@@ -646,4 +651,50 @@
     width: 100%;
     text-align: center;
   }
+}
+
+/* Drag and Drop Styles */
+.customer-item {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 1rem;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+  transition: all 0.2s ease;
+  cursor: grab;
+}
+
+.customer-item.dragging {
+  opacity: 0.5;
+  background-color: #f5f5f5;
+  cursor: grabbing;
+}
+
+.customer-item.drag-over {
+  border: 2px solid #3498db;
+  background-color: #e3f2fd;
+}
+
+.drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  cursor: grab;
+  color: #7f8c8d;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.customer-item.dragging .drag-handle {
+  color: #3498db;
 }

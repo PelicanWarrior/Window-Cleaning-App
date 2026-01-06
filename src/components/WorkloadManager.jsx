@@ -15,6 +15,10 @@ function WorkloadManager({ user }) {
   const [expandedDays, setExpandedDays] = useState({})
   const [expandedMoveDate, setExpandedMoveDate] = useState({})
   const [customerPayLetter, setCustomerPayLetter] = useState(null)
+  const [routeOrder, setRouteOrder] = useState(null)
+  const [orderedCustomers, setOrderedCustomers] = useState([])
+  const [draggedCustomerId, setDraggedCustomerId] = useState(null)
+  const [dragOverIndex, setDragOverIndex] = useState(null)
 
   useEffect(() => {
     fetchCustomers()
@@ -25,7 +29,37 @@ function WorkloadManager({ user }) {
 
   useEffect(() => {
     setSelectedLetterAll('')
-  }, [selectedDate])
+    fetchRouteOrder()
+  }, [selectedDate, currentDate])
+
+  async function fetchRouteOrder() {
+    try {
+      const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate).padStart(2, '0')}`
+      const { data, error } = await supabase
+        .from('RouteOrder')
+        .select('*')
+        .eq('UserId', user.id)
+        .eq('RouteDate', dateStr)
+        .single()
+      
+      if (error && error.code !== 'PGRST116') throw error // PGRST116 is "no rows found"
+      
+      if (data) {
+        setRouteOrder(data)
+        // Parse the Route field (comma-separated customer IDs) and get those customers
+        const customerIds = data.Route.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
+        const orderedCusts = customerIds
+          .map(id => customers.find(c => c.id === id))
+          .filter(c => c !== undefined)
+        setOrderedCustomers(orderedCusts)
+      } else {
+        setRouteOrder(null)
+        setOrderedCustomers([])
+      }
+    } catch (error) {
+      console.error('Error fetching route order:', error.message)
+    }
+  }
 
   async function fetchCustomers() {
     try {
@@ -187,7 +221,22 @@ function WorkloadManager({ user }) {
         .eq('id', customer.id)
       
       if (error) throw error
+      
+      // Remove from route order
+      await removeCustomerFromRouteOrder(customer.id)
+      
       fetchCustomers()
+
+      // Check if CustomerPayLetter is set and ask to send message
+      if (customerPayLetter) {
+        const paymentMessage = messages.find((m) => String(m.id) === String(customerPayLetter))
+        if (paymentMessage) {
+          const shouldSend = window.confirm(`Send message "${paymentMessage.MessageTitle}" to ${customer.CustomerName}?`)
+          if (shouldSend) {
+            sendPaymentMessage(customer, paymentMessage)
+          }
+        }
+      }
     } catch (error) {
       console.error('Error updating customer:', error.message)
     }
@@ -212,15 +261,21 @@ function WorkloadManager({ user }) {
         .eq('id', customer.id)
       
       if (error) throw error
+      
+      // Remove from route order
+      await removeCustomerFromRouteOrder(customer.id)
+      
       fetchCustomers()
 
       // Check if CustomerPayLetter is set and ask to send message
       if (customerPayLetter) {
         const paymentMessage = messages.find((m) => String(m.id) === String(customerPayLetter))
         if (paymentMessage) {
+          // Update customer object with new outstanding amount for message
+          const updatedCustomer = { ...customer, Outstanding: newOutstanding }
           const shouldSend = window.confirm(`Send message "${paymentMessage.MessageTitle}" to ${customer.CustomerName}?`)
           if (shouldSend) {
-            sendPaymentMessage(customer, paymentMessage)
+            sendPaymentMessage(updatedCustomer, paymentMessage)
           }
         }
       }
@@ -271,6 +326,10 @@ function WorkloadManager({ user }) {
         .eq('id', customer.id)
       
       if (error) throw error
+      
+      // Remove from route order
+      await removeCustomerFromRouteOrder(customer.id)
+      
       fetchCustomers()
     } catch (error) {
       console.error('Error moving date:', error.message)
@@ -295,6 +354,9 @@ function WorkloadManager({ user }) {
               .eq('id', customer.id)
 
             if (error) throw error
+            
+            // Remove from route order
+            await removeCustomerFromRouteOrder(customer.id)
           })
       )
 
@@ -326,6 +388,113 @@ function WorkloadManager({ user }) {
       ...prev,
       [customerId]: !prev[customerId]
     }))
+  }
+
+  const removeCustomerFromRouteOrder = async (customerId) => {
+    if (!routeOrder) return
+    
+    try {
+      const routeIds = routeOrder.Route.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
+      const updatedIds = routeIds.filter(id => id !== customerId)
+      
+      if (updatedIds.length === 0) {
+        // Delete the route order if empty
+        const { error } = await supabase
+          .from('RouteOrder')
+          .delete()
+          .eq('id', routeOrder.id)
+        if (error) throw error
+      } else {
+        // Update the route order with remaining IDs
+        const { error } = await supabase
+          .from('RouteOrder')
+          .update({ Route: updatedIds.join(',') })
+          .eq('id', routeOrder.id)
+        if (error) throw error
+      }
+      
+      // Refresh route order
+      fetchRouteOrder()
+    } catch (error) {
+      console.error('Error updating route order:', error.message)
+    }
+  }
+
+  const handleDragStart = (e, customerId) => {
+    setDraggedCustomerId(customerId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverIndex(index)
+  }
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null)
+  }
+
+  const handleDrop = async (e, dropIndex) => {
+    e.preventDefault()
+    setDragOverIndex(null)
+
+    if (draggedCustomerId === null) return
+
+    const displayList = orderedCustomers.length > 0 ? orderedCustomers : selectedDayCustomers
+    const draggedIndex = displayList.findIndex(c => c.id === draggedCustomerId)
+
+    if (draggedIndex === -1 || draggedIndex === dropIndex) {
+      setDraggedCustomerId(null)
+      return
+    }
+
+    // Reorder the list
+    const newList = [...displayList]
+    const [draggedCustomer] = newList.splice(draggedIndex, 1)
+    newList.splice(dropIndex, 0, draggedCustomer)
+
+    // Update orderedCustomers or save to RouteOrder if we have one
+    if (orderedCustomers.length > 0) {
+      setOrderedCustomers(newList)
+      await saveRouteOrder(newList)
+    } else {
+      // Create new route order with the reordered customers
+      await saveRouteOrder(newList)
+    }
+
+    setDraggedCustomerId(null)
+  }
+
+  const saveRouteOrder = async (customerList) => {
+    try {
+      const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate).padStart(2, '0')}`
+      const routeString = customerList.map(c => c.id).join(',')
+
+      if (routeOrder) {
+        // Update existing route order
+        const { error } = await supabase
+          .from('RouteOrder')
+          .update({ Route: routeString })
+          .eq('id', routeOrder.id)
+        if (error) throw error
+      } else {
+        // Create new route order
+        const { error } = await supabase
+          .from('RouteOrder')
+          .insert([{
+            UserId: user.id,
+            RouteDate: dateStr,
+            Route: routeString
+          }])
+        if (error) throw error
+      }
+
+      fetchRouteOrder()
+    } catch (error) {
+      console.error('Error saving route order:', error.message)
+      alert('Error saving route order: ' + error.message)
+    }
   }
 
   const formatPhoneForWhatsApp = (raw) => {
@@ -560,8 +729,18 @@ function WorkloadManager({ user }) {
             <p className="empty-state">No customers scheduled for this day.</p>
           ) : (
             <div className="customer-list">
-              {selectedDayCustomers.map((customer) => (
-                <div key={customer.id} className="customer-item">
+              {/* Customer List with Drag and Drop */}
+              {(orderedCustomers.length > 0 ? orderedCustomers : selectedDayCustomers).map((customer, index) => (
+                <div 
+                  key={customer.id} 
+                  className={`customer-item ${draggedCustomerId === customer.id ? 'dragging' : ''} ${dragOverIndex === index ? 'drag-over' : ''}`}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, customer.id)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, index)}
+                >
+                  <div className="drag-handle">⋮⋮</div>
                   <div className="customer-info">
                     <div>
                       <div className="customer-name">{customer.Address}</div>
