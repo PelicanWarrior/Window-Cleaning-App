@@ -729,10 +729,9 @@ function WorkloadManager({ user }) {
             <p className="empty-state">No customers scheduled for this day.</p>
           ) : (
             <div className="customer-list">
-              {/* Customer List with Drag and Drop */}
               {(orderedCustomers.length > 0 ? orderedCustomers : selectedDayCustomers).map((customer, index) => (
-                <div 
-                  key={customer.id} 
+                <div
+                  key={customer.id}
                   className={`customer-item ${draggedCustomerId === customer.id ? 'dragging' : ''} ${dragOverIndex === index ? 'drag-over' : ''}`}
                   draggable
                   onDragStart={(e) => handleDragStart(e, customer.id)}
@@ -741,31 +740,33 @@ function WorkloadManager({ user }) {
                   onDrop={(e) => handleDrop(e, index)}
                 >
                   <div className="drag-handle">⋮⋮</div>
-                  <div className="customer-info">
-                            <div className="customer-content">
-                              <div className="customer-header">
-                                <div className="customer-name">{customer.Address}</div>
-                                <span className="route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
-                              </div>
-                              <div className="customer-details">
-                        <span>{customer.CustomerName}</span>
-                        {customer.PhoneNumber && <span> • {customer.PhoneNumber}</span>}
-                        <span> • £{customer.Price}</span>
-                        {customer.Outstanding > 0 && <span className="outstanding"> • Outstanding: £{customer.Outstanding}</span>}
-                        {customer.Notes && <span> • {customer.Notes}</span>}
-                      </div>
+                  <div className="customer-content">
+                    <div className="customer-header">
+                      <div className="customer-name">{customer.Address}</div>
+                      <span className="route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
+                    </div>
+                    <div className="customer-details">
+                      <span>{customer.CustomerName}</span>
+                      {customer.PhoneNumber && <span> • {customer.PhoneNumber}</span>}
+                      <span> • £{customer.Price}</span>
+                      {customer.Outstanding > 0 && <span className="outstanding"> • Outstanding: £{customer.Outstanding}</span>}
+                      {customer.Notes && <span> • {customer.Notes}</span>}
+                    </div>
                     <div className="customer-actions">
                       <button onClick={() => handleDoneAndPaid(customer)} className="done-paid-btn">
                         Done and Paid
                       </button>
                       <button onClick={() => handleDoneAndNotPaid(customer)} className="done-not-paid-btn">
-                    <div className="customer-footer">
+                        Done and Not Paid
+                      </button>
                     </div>
+                    <div className="customer-footer">
+                      <button
                         className="move-date-toggle-btn"
-                  <div className="move-date-section">
-                    <button 
-                      className="move-date-toggle-btn" 
-                      onClick={() => toggleMoveDate(customer.id)}
+                        onClick={() => toggleMoveDate(customer.id)}
+                      >
+                        {expandedMoveDate[customer.id] ? '− Hide' : '+ Move Date'}
+                      </button>
                       <div className="text-message-section">
                         <select
                           value={selectedLetters[customer.id] || messages[0]?.id || ''}
@@ -788,11 +789,7 @@ function WorkloadManager({ user }) {
                           Text
                         </button>
                       </div>
-                    >
-                    {expandedMoveDate[customer.id] && (
-                      <div className="move-date-buttons">
-                      {expandedMoveDate[customer.id] ? '− Hide' : '+ Move Date'}
-                    </button>
+                    </div>
                     {expandedMoveDate[customer.id] && (
                       <div className="move-date-buttons">
                         <button onClick={() => handleMoveDate(customer, -1)} className="move-date-btn">
@@ -809,29 +806,6 @@ function WorkloadManager({ user }) {
                         </button>
                       </div>
                     )}
-                    </div>
-                  </div>
-                  <div className="text-message-section">
-                    <select
-                      value={selectedLetters[customer.id] || messages[0]?.id || ''}
-                      onChange={(e) => handleSelectLetter(customer.id, e.target.value)}
-                      disabled={!messages.length}
-                    >
-                      {!messages.length && <option value="">No letters available</option>}
-                      {messages.length > 0 && !selectedLetters[customer.id] && (
-                        <option value="">Select letter</option>
-                      )}
-                      {messages.map((msg) => (
-                        <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
-                      ))}
-                    </select>
-                    <button
-                      className="text-btn"
-                      onClick={() => handleSendWhatsApp(customer)}
-                      disabled={!customer.PhoneNumber || !messages.length}
-                    >
-                      Text
-                    </button>
                   </div>
                 </div>
               ))}
