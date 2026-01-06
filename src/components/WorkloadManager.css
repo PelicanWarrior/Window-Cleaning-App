@@ -369,37 +369,42 @@
   .customer-info {
     flex-direction: column;
     align-items: stretch;
-    gap: 0;
+    gap: 0.5rem;
   }
 
+  /* Use grid so both primary buttons share the full width */
   .customer-actions {
     width: 100%;
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
     gap: 0.5rem;
-    margin-top: 0.75rem;
+    margin-top: 0.25rem;
   }
 
   .done-paid-btn,
   .done-not-paid-btn {
-    font-size: 0.85rem;
-    padding: 0.5rem 0.8rem;
-    flex: 1;
+    font-size: 0.9rem;
+    padding: 0.65rem 0.8rem;
+    width: 100%;
+  }
+
+  /* Move date controls in a 4-column grid filling the row */
+  .move-date-section {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.35rem;
+    margin-top: 0.5rem;
   }
 
   .move-date-label {
-    width: 100%;
-    font-size: 0.8rem;
+    grid-column: 1 / -1;
+    font-size: 0.85rem;
   }
 
   .move-date-btn {
     font-size: 0.85rem;
-    padding: 0.5rem 0.6rem;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .move-date-section {
-    flex-wrap: nowrap;
-    gap: 0.3rem;
+    padding: 0.55rem 0.6rem;
+    width: 100%;
   }
 }
