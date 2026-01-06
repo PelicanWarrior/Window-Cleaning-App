@@ -742,31 +742,55 @@ function WorkloadManager({ user }) {
                 >
                   <div className="drag-handle">⋮⋮</div>
                   <div className="customer-info">
-                    <div>
-                      <div className="customer-name">{customer.Address}</div>
-                      <div className="customer-details">
+                            <div className="customer-content">
+                              <div className="customer-header">
+                                <div className="customer-name">{customer.Address}</div>
+                                <span className="route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
+                              </div>
+                              <div className="customer-details">
                         <span>{customer.CustomerName}</span>
                         {customer.PhoneNumber && <span> • {customer.PhoneNumber}</span>}
                         <span> • £{customer.Price}</span>
-                        <span> • Route: <span className="route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span></span>
                         {customer.Outstanding > 0 && <span className="outstanding"> • Outstanding: £{customer.Outstanding}</span>}
                         {customer.Notes && <span> • {customer.Notes}</span>}
                       </div>
-                    </div>
                     <div className="customer-actions">
                       <button onClick={() => handleDoneAndPaid(customer)} className="done-paid-btn">
                         Done and Paid
                       </button>
                       <button onClick={() => handleDoneAndNotPaid(customer)} className="done-not-paid-btn">
-                        Done and Not Paid
-                      </button>
+                    <div className="customer-footer">
                     </div>
-                  </div>
+                        className="move-date-toggle-btn"
                   <div className="move-date-section">
                     <button 
                       className="move-date-toggle-btn" 
                       onClick={() => toggleMoveDate(customer.id)}
+                      <div className="text-message-section">
+                        <select
+                          value={selectedLetters[customer.id] || messages[0]?.id || ''}
+                          onChange={(e) => handleSelectLetter(customer.id, e.target.value)}
+                          disabled={!messages.length}
+                        >
+                          {!messages.length && <option value="">No letters available</option>}
+                          {messages.length > 0 && !selectedLetters[customer.id] && (
+                            <option value="">Select letter</option>
+                          )}
+                          {messages.map((msg) => (
+                            <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
+                          ))}
+                        </select>
+                        <button
+                          className="text-btn"
+                          onClick={() => handleSendWhatsApp(customer)}
+                          disabled={!customer.PhoneNumber || !messages.length}
+                        >
+                          Text
+                        </button>
+                      </div>
                     >
+                    {expandedMoveDate[customer.id] && (
+                      <div className="move-date-buttons">
                       {expandedMoveDate[customer.id] ? '− Hide' : '+ Move Date'}
                     </button>
                     {expandedMoveDate[customer.id] && (
@@ -785,6 +809,7 @@ function WorkloadManager({ user }) {
                         </button>
                       </div>
                     )}
+                    </div>
                   </div>
                   <div className="text-message-section">
                     <select

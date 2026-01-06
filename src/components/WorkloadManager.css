@@ -217,12 +217,26 @@
   padding: 1rem 1.5rem;
   flex: 1;
 }
+  .customer-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    flex: 1;
+  }
+
+  .customer-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
 
 .customer-name {
   font-weight: bold;
   color: #2c3e50;
   font-size: 1.1rem;
   margin-bottom: 0.5rem;
+    margin-bottom: 0;
 }
 
 .customer-details {
@@ -304,6 +318,11 @@
   gap: 0.5rem;
   flex-shrink: 0;
 }
+  .customer-footer {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
 
 .done-paid-btn,
 .done-not-paid-btn {
@@ -340,6 +359,14 @@
   border-top: 1px solid #e0e0e0;
   width: 100%;
 }
+  .move-date-buttons {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
 
 .move-date-toggle-btn {
   padding: 0.5rem 1rem;
@@ -351,7 +378,7 @@
   font-size: 0.9rem;
   font-weight: 500;
   transition: all 0.2s;
-  width: 100%;
+    width: auto; /* Changed from 100% to auto */
 }
 
 .move-date-toggle-btn:hover {
@@ -363,7 +390,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-top: 0.5rem;
+    margin-top: 0.75rem;
   flex-wrap: wrap;
 }
 
@@ -660,6 +687,13 @@
   align-items: flex-start;
   padding: 1rem;
   background: white;
+  .text-message-section select {
+    flex: 0 1 auto;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 0.95rem;
+  }
   border: 1px solid #e0e0e0;
   border-radius: 4px;
   margin-bottom: 0.75rem;
