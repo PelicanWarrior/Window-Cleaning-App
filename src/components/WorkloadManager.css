@@ -204,6 +204,37 @@
   font-size: 0.8rem;
 }
 
+.text-message-section {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.text-message-section select {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.text-btn {
+  padding: 0.55rem 1rem;
+  border: none;
+  border-radius: 6px;
+  background-color: #25d366;
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+  transition: opacity 0.2s;
+  white-space: nowrap;
+}
+
+.text-btn:hover {
+  opacity: 0.9;
+}
+
 .customer-details span {
   display: inline;
 }
@@ -454,5 +485,15 @@
     font-size: 0.85rem;
     padding: 0.55rem 0.6rem;
     width: 100%;
+  }
+
+  .text-message-section {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .text-btn {
+    width: 100%;
+    text-align: center;
   }
 }

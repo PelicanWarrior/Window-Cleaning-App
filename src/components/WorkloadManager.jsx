@@ -7,9 +7,13 @@ function WorkloadManager({ user }) {
   const [customers, setCustomers] = useState([])
   const [selectedDate, setSelectedDate] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [messages, setMessages] = useState([])
+  const [messageFooter, setMessageFooter] = useState('')
+  const [selectedLetters, setSelectedLetters] = useState({})
 
   useEffect(() => {
     fetchCustomers()
+    fetchMessagesAndFooter()
   }, [user])
 
   async function fetchCustomers() {
@@ -26,6 +30,31 @@ function WorkloadManager({ user }) {
       console.error('Error fetching customers:', error.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function fetchMessagesAndFooter() {
+    try {
+      const [{ data: messagesData, error: messagesError }, { data: userData, error: userError }] = await Promise.all([
+        supabase
+          .from('Messages')
+          .select('*')
+          .eq('UserId', user.id)
+          .order('MessageTitle', { ascending: true }),
+        supabase
+          .from('Users')
+          .select('MessageFooter')
+          .eq('id', user.id)
+          .single()
+      ])
+
+      if (messagesError) throw messagesError
+      if (userError) throw userError
+
+      setMessages(messagesData || [])
+      setMessageFooter(userData?.MessageFooter || '')
+    } catch (error) {
+      console.error('Error fetching messages/footer:', error.message)
     }
   }
 
@@ -181,6 +210,29 @@ function WorkloadManager({ user }) {
     }
   }
 
+  const handleSelectLetter = (customerId, messageId) => {
+    setSelectedLetters((prev) => ({ ...prev, [customerId]: messageId }))
+  }
+
+  const handleSendWhatsApp = (customer) => {
+    const phone = (customer.PhoneNumber || '').replace(/\D/g, '')
+    if (!phone) {
+      alert('This customer does not have a phone number.')
+      return
+    }
+
+    const selectedId = selectedLetters[customer.id] || messages[0]?.id
+    const letter = messages.find((m) => m.id === selectedId)
+
+    const bodyParts = [`Dear ${customer.CustomerName}.`]
+    if (letter?.Message) bodyParts.push(letter.Message)
+    if (messageFooter) bodyParts.push(messageFooter)
+
+    const text = bodyParts.join('\n')
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+    window.open(url, '_blank')
+  }
+
   // Generate calendar days
   const generateCalendar = () => {
     const daysInMonth = getDaysInMonth(currentDate)
@@ -307,6 +359,25 @@ function WorkloadManager({ user }) {
                     </button>
                     <button onClick={() => handleMoveDate(customer, 7)} className="move-date-btn">
                       +1 Week
+                    </button>
+                  </div>
+                  <div className="text-message-section">
+                    <select
+                      value={selectedLetters[customer.id] || ''}
+                      onChange={(e) => handleSelectLetter(customer.id, e.target.value)}
+                      disabled={!messages.length}
+                    >
+                      <option value="">{messages.length ? 'Select letter' : 'No letters available'}</option>
+                      {messages.map((msg) => (
+                        <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
+                      ))}
+                    </select>
+                    <button
+                      className="text-btn"
+                      onClick={() => handleSendWhatsApp(customer)}
+                      disabled={!customer.PhoneNumber}
+                    >
+                      Text
                     </button>
                   </div>
                 </div>
