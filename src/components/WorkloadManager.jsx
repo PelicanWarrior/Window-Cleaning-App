@@ -13,11 +13,14 @@ function WorkloadManager({ user }) {
   const [selectedLetterAll, setSelectedLetterAll] = useState('')
   const [activeView, setActiveView] = useState('Calendar')
   const [expandedDays, setExpandedDays] = useState({})
+  const [expandedMoveDate, setExpandedMoveDate] = useState({})
+  const [customerPayLetter, setCustomerPayLetter] = useState(null)
 
   useEffect(() => {
     fetchCustomers()
     fetchMessagesAndFooter()
     fetchCalendarView()
+    fetchCustomerPayLetter()
   }, [user])
 
   useEffect(() => {
@@ -79,6 +82,21 @@ function WorkloadManager({ user }) {
     } catch (error) {
       console.error('Error fetching calendar view:', error.message)
       setActiveView('Calendar')
+    }
+  }
+
+  async function fetchCustomerPayLetter() {
+    try {
+      const { data, error } = await supabase
+        .from('Users')
+        .select('CustomerPayLetter')
+        .eq('id', user.id)
+        .single()
+
+      if (error) throw error
+      setCustomerPayLetter(data?.CustomerPayLetter || null)
+    } catch (error) {
+      console.error('Error fetching customer pay letter:', error.message)
     }
   }
 
@@ -195,9 +213,47 @@ function WorkloadManager({ user }) {
       
       if (error) throw error
       fetchCustomers()
+
+      // Check if CustomerPayLetter is set and ask to send message
+      if (customerPayLetter) {
+        const paymentMessage = messages.find((m) => String(m.id) === String(customerPayLetter))
+        if (paymentMessage) {
+          const shouldSend = window.confirm(`Send message "${paymentMessage.MessageTitle}" to ${customer.CustomerName}?`)
+          if (shouldSend) {
+            sendPaymentMessage(customer, paymentMessage)
+          }
+        }
+      }
     } catch (error) {
       console.error('Error updating customer:', error.message)
     }
+  }
+
+  // Send payment message via WhatsApp
+  const sendPaymentMessage = (customer, message) => {
+    const phone = formatPhoneForWhatsApp(customer.PhoneNumber)
+    if (!phone) {
+      alert('This customer does not have a valid phone number.')
+      return
+    }
+
+    const formalName = getFormalCustomerName(customer.CustomerName)
+    const bodyParts = [`Dear ${formalName}`]
+    
+    if (message?.Message) {
+      let messageContent = message.Message
+      // If IncludePrice is checked and message contains £, replace it with £[outstanding amount]
+      if (message.IncludePrice && messageContent.includes('£')) {
+        messageContent = messageContent.replace('£', `£${customer.Outstanding}`)
+      }
+      bodyParts.push(messageContent)
+    }
+    
+    if (messageFooter) bodyParts.push(messageFooter)
+
+    const text = bodyParts.join('\n')
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+    window.open(url, '_blank')
   }
 
   // Handle Move Date
@@ -265,6 +321,13 @@ function WorkloadManager({ user }) {
     })
   }
 
+  const toggleMoveDate = (customerId) => {
+    setExpandedMoveDate((prev) => ({
+      ...prev,
+      [customerId]: !prev[customerId]
+    }))
+  }
+
   const formatPhoneForWhatsApp = (raw) => {
     const digits = (raw || '').replace(/\D/g, '')
     if (!digits) return ''
@@ -308,7 +371,16 @@ function WorkloadManager({ user }) {
 
     const formalName = getFormalCustomerName(customer.CustomerName)
     const bodyParts = [`Dear ${formalName}`]
-    if (letter?.Message) bodyParts.push(letter.Message)
+    
+    if (letter?.Message) {
+      let messageContent = letter.Message
+      // If IncludePrice is checked and message contains £, replace it with £[outstanding amount]
+      if (letter.IncludePrice && messageContent.includes('£')) {
+        messageContent = messageContent.replace('£', `£${customer.Outstanding}`)
+      }
+      bodyParts.push(messageContent)
+    }
+    
     if (messageFooter) bodyParts.push(messageFooter)
 
     const text = bodyParts.join('\n')
@@ -512,19 +584,28 @@ function WorkloadManager({ user }) {
                     </div>
                   </div>
                   <div className="move-date-section">
-                    <span className="move-date-label">Move date:</span>
-                    <button onClick={() => handleMoveDate(customer, -1)} className="move-date-btn">
-                      -1 Day
+                    <button 
+                      className="move-date-toggle-btn" 
+                      onClick={() => toggleMoveDate(customer.id)}
+                    >
+                      {expandedMoveDate[customer.id] ? '− Hide' : '+ Move Date'}
                     </button>
-                    <button onClick={() => handleMoveDate(customer, 1)} className="move-date-btn">
-                      +1 Day
-                    </button>
-                    <button onClick={() => handleMoveDate(customer, -7)} className="move-date-btn">
-                      -1 Week
-                    </button>
-                    <button onClick={() => handleMoveDate(customer, 7)} className="move-date-btn">
-                      +1 Week
-                    </button>
+                    {expandedMoveDate[customer.id] && (
+                      <div className="move-date-buttons">
+                        <button onClick={() => handleMoveDate(customer, -1)} className="move-date-btn">
+                          -1 Day
+                        </button>
+                        <button onClick={() => handleMoveDate(customer, 1)} className="move-date-btn">
+                          +1 Day
+                        </button>
+                        <button onClick={() => handleMoveDate(customer, -7)} className="move-date-btn">
+                          -1 Week
+                        </button>
+                        <button onClick={() => handleMoveDate(customer, 7)} className="move-date-btn">
+                          +1 Week
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className="text-message-section">
                     <select

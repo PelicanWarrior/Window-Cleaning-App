@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import './CustomerList.css'
 
@@ -6,10 +6,17 @@ function CustomerList({ user }) {
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
   const [sortBy, setSortBy] = useState(user.CustomerSort || 'Route')
+  const [sortedColumn, setSortedColumn] = useState(user.CustomerSort || 'Route')
   const [showAddForm, setShowAddForm] = useState(false)
+  const [expandedActionRows, setExpandedActionRows] = useState({})
+  const [dropdownPositions, setDropdownPositions] = useState({})
+  const dropdownRefs = useRef({})
   const [showFindForm, setShowFindForm] = useState(false)
   const [editingCustomerId, setEditingCustomerId] = useState(null)
   const [editFormData, setEditFormData] = useState({})
+  const [messages, setMessages] = useState([])
+  const [reminderLetter, setReminderLetter] = useState(null)
+  const [messageFooter, setMessageFooter] = useState('')
   const [filters, setFilters] = useState({
     CustomerName: '',
     Address: '',
@@ -30,6 +37,60 @@ function CustomerList({ user }) {
   useEffect(() => {
     fetchCustomers()
   }, [sortBy, filters])
+
+  useEffect(() => {
+    fetchReminderLetterAndMessages()
+  }, [])
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      // Check if any dropdown is open
+      const openDropdowns = Object.keys(expandedActionRows).filter(id => expandedActionRows[id])
+      if (openDropdowns.length === 0) return
+
+      // Check if click is outside all dropdowns
+      const clickedOutside = !event.target.closest('.actions-dropdown') && 
+                             !event.target.closest('.actions-dropdown-menu')
+      
+      if (clickedOutside) {
+        setExpandedActionRows({})
+        setDropdownPositions({})
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [expandedActionRows])
+
+  async function fetchReminderLetterAndMessages() {
+    try {
+      const [{ data: userData, error: userError }, { data: messagesData, error: messagesError }] = await Promise.all([
+        supabase
+          .from('Users')
+          .select('CustomerReminderLetter, MessageFooter')
+          .eq('id', user.id)
+          .single(),
+        supabase
+          .from('Messages')
+          .select('*')
+          .eq('UserId', user.id)
+      ])
+
+      if (userError) throw userError
+      if (messagesError) throw messagesError
+
+      if (userData?.CustomerReminderLetter) {
+        const reminder = messagesData?.find((m) => String(m.id) === String(userData.CustomerReminderLetter))
+        setReminderLetter(reminder || null)
+      }
+      setMessages(messagesData || [])
+      setMessageFooter(userData?.MessageFooter || '')
+    } catch (error) {
+      console.error('Error fetching reminder letter:', error.message)
+    }
+  }
 
   async function fetchCustomers() {
     try {
@@ -103,6 +164,7 @@ function CustomerList({ user }) {
 
   async function handleSortChange(newSortBy) {
     setSortBy(newSortBy)
+    setSortedColumn(newSortBy)
     
     // Update the user's sort preference in the database
     try {
@@ -114,6 +176,110 @@ function CustomerList({ user }) {
       if (error) throw error
     } catch (error) {
       console.error('Error updating sort preference:', error.message)
+    }
+  }
+
+  // Get column order with Actions first, then sorted column
+  const getColumnOrder = () => {
+    const allColumns = ['Name', 'Address', 'Contact Details', 'Price', 'Weeks', 'Next Clean', 'Outstanding', 'Route', 'Notes']
+    const columnFieldMap = {
+      'Next Clean': 'Next Clean',
+      'Route': 'Route',
+      'Outstanding': 'Outstanding',
+      'Customer Name': 'Name',
+      'Address': 'Address'
+    }
+    
+    if (sortedColumn) {
+      const sortedColumnDisplay = columnFieldMap[sortedColumn] || sortedColumn
+      const filtered = allColumns.filter(col => col !== sortedColumnDisplay)
+      return ['Actions', sortedColumnDisplay, ...filtered]
+    }
+    return ['Actions', ...allColumns]
+  }
+
+  const columnOrder = getColumnOrder()
+
+  const formatPhoneForWhatsApp = (raw) => {
+    const digits = (raw || '').replace(/\D/g, '')
+    if (!digits) return ''
+    // If UK local (starts with 0 and length 11), convert to +44
+    if (digits.length === 11 && digits.startsWith('0')) {
+      return `44${digits.slice(1)}`
+    }
+    // If already starts with country code, use as-is
+    return digits
+  }
+
+  const getFormalCustomerName = (rawName) => {
+    const name = (rawName || '').trim()
+    if (!name) return 'Customer'
+
+    const connectorMatch = name.match(/^(\S+)\s*(&|and)\s+(\S+)/i)
+    if (connectorMatch) {
+      const [, first, connector, second] = connectorMatch
+      return `${first} ${connector.trim()} ${second}`
+    }
+
+    const firstToken = name.split(/\s+/)[0]
+    return firstToken || 'Customer'
+  }
+
+  const sendReminderMessage = (customer) => {
+    if (!reminderLetter) {
+      alert('No reminder message is configured.')
+      return
+    }
+
+    const phone = formatPhoneForWhatsApp(customer.PhoneNumber)
+    if (!phone) {
+      alert('This customer does not have a valid phone number.')
+      return
+    }
+
+    const formalName = getFormalCustomerName(customer.CustomerName)
+    const bodyParts = [`Dear ${formalName}`]
+    
+    if (reminderLetter?.Message) {
+      let messageContent = reminderLetter.Message
+      // If IncludePrice is checked and message contains £, replace it with £[outstanding amount]
+      if (reminderLetter.IncludePrice && messageContent.includes('£')) {
+        messageContent = messageContent.replace('£', `£${customer.Outstanding}`)
+      }
+      bodyParts.push(messageContent)
+    }
+    
+    if (messageFooter) bodyParts.push(messageFooter)
+
+    const text = bodyParts.join('\n')
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+    window.open(url, '_blank')
+    
+    // Close the dropdown after sending
+    setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
+  }
+
+  const toggleActionDropdown = (customerId, buttonRef) => {
+    if (expandedActionRows[customerId]) {
+      // Closing the current dropdown
+      setExpandedActionRows(prev => ({
+        ...prev,
+        [customerId]: false
+      }))
+    } else {
+      // Opening a new dropdown - close all others first
+      if (buttonRef) {
+        const rect = buttonRef.getBoundingClientRect()
+        setDropdownPositions({
+          [customerId]: {
+            top: rect.bottom + window.scrollY + 4,
+            left: rect.left
+          }
+        })
+      }
+      setExpandedActionRows({
+        [customerId]: true
+      })
     }
   }
 
@@ -213,6 +379,114 @@ function CustomerList({ user }) {
     }
   }
 
+  async function handleCSVImport(event) {
+    const file = event.target.files[0]
+    if (!file) return
+
+    try {
+      const text = await file.text()
+      const lines = text.split('\n')
+      
+      // Parse CSV properly handling quoted fields with commas
+      function parseCSVLine(line) {
+        const result = []
+        let current = ''
+        let inQuotes = false
+        
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i]
+          
+          if (char === '"') {
+            inQuotes = !inQuotes
+          } else if (char === ',' && !inQuotes) {
+            result.push(current.trim())
+            current = ''
+          } else {
+            current += char
+          }
+        }
+        result.push(current.trim())
+        return result
+      }
+      
+      const headers = parseCSVLine(lines[0])
+      const customersToImport = []
+      
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim()
+        if (!line) continue
+        
+        const values = parseCSVLine(line)
+        
+        const weeks = parseInt(values[headers.indexOf('Weeks')]) || 4
+        const nextCleanValue = values[headers.indexOf('NextClean')]
+        const outstandingValue = values[headers.indexOf('Outstanding')]
+        
+        // Parse UK date format (dd/mm/yyyy) to ISO format (yyyy-mm-dd)
+        let nextCleanDate
+        if (nextCleanValue && nextCleanValue.includes('/')) {
+          const parts = nextCleanValue.split('/')
+          if (parts.length === 3) {
+            const day = parts[0].padStart(2, '0')
+            const month = parts[1].padStart(2, '0')
+            const year = parts[2]
+            nextCleanDate = `${year}-${month}-${day}`
+            
+            // Validate the date
+            const testDate = new Date(nextCleanDate)
+            if (isNaN(testDate.getTime())) {
+              nextCleanDate = null // Invalid date, will use default
+            }
+          }
+        }
+        
+        // Default NextClean if not provided or invalid
+        if (!nextCleanDate) {
+          nextCleanDate = new Date(Date.now() + weeks * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        }
+        
+        const customer = {
+          UserId: user.id,
+          CustomerName: values[headers.indexOf('CustomerName')] || '',
+          Address: values[headers.indexOf('Address')] || '',
+          PhoneNumber: values[headers.indexOf('PhoneNumber')] || '',
+          EmailAddress: values[headers.indexOf('EmailAddress')] || '',
+          Price: parseInt(values[headers.indexOf('Price')]) || 0,
+          Weeks: weeks,
+          Route: values[headers.indexOf('Route')] || '',
+          Notes: values[headers.indexOf('Notes')] || '',
+          Outstanding: outstandingValue ? parseFloat(outstandingValue) : 0,
+          NextClean: nextCleanDate
+        }
+        
+        if (customer.Address) {
+          customersToImport.push(customer)
+        }
+      }
+
+      if (customersToImport.length === 0) {
+        alert('No valid customers found in CSV file')
+        return
+      }
+
+      const { error } = await supabase
+        .from('Customers')
+        .insert(customersToImport)
+      
+      if (error) throw error
+      
+      alert(`Successfully imported ${customersToImport.length} customers`)
+      setShowAddForm(false)
+      fetchCustomers()
+    } catch (error) {
+      console.error('Error importing CSV:', error.message)
+      alert('Error importing CSV: ' + error.message)
+    }
+    
+    // Reset the file input
+    event.target.value = ''
+  }
+
   if (loading) return <div className="loading">Loading customers...</div>
 
   return (
@@ -234,7 +508,18 @@ function CustomerList({ user }) {
 
       {showAddForm && (
         <form onSubmit={addCustomer} className="customer-form">
-          <h3>Add New Customer</h3>
+          <div className="form-header">
+            <h3>Add New Customer</h3>
+            <label className="csv-import-btn">
+              📄 Import via CSV
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleCSVImport}
+                style={{ display: 'none' }}
+              />
+            </label>
+          </div>
           <div className="form-grid">
             <input
               type="text"
@@ -377,137 +662,187 @@ function CustomerList({ user }) {
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Address</th>
-                <th>Contact Details</th>
-                <th>Price</th>
-                <th>Weeks</th>
-                <th>Next Clean</th>
-                <th>Outstanding</th>
-                <th>Route</th>
-                <th>Notes</th>
-                <th>Actions</th>
+                {columnOrder.map((col) => (
+                  <th key={col}>{col}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {customers.map((customer) => (
-                <tr key={customer.id}>
-                  {editingCustomerId === customer.id ? (
-                    <>
-                      <td>
-                        <input
-                          type="text"
-                          value={editFormData.CustomerName}
-                          onChange={(e) => setEditFormData({...editFormData, CustomerName: e.target.value})}
-                          className="edit-input"
-                        />
+              {customers.map((customer) => {
+                const rowCells = []
+                
+                columnOrder.forEach((col) => {
+                  if (col === 'Name') {
+                    rowCells.push({
+                      key: 'Name',
+                      isEdit: editingCustomerId === customer.id,
+                      value: editingCustomerId === customer.id ? editFormData.CustomerName : customer.CustomerName,
+                      onChange: (e) => setEditFormData({...editFormData, CustomerName: e.target.value})
+                    })
+                  } else if (col === 'Address') {
+                    rowCells.push({
+                      key: 'Address',
+                      isEdit: editingCustomerId === customer.id,
+                      value: editingCustomerId === customer.id ? editFormData.Address : customer.Address,
+                      onChange: (e) => setEditFormData({...editFormData, Address: e.target.value})
+                    })
+                  } else if (col === 'Contact Details') {
+                    rowCells.push({
+                      key: 'Contact Details',
+                      isEdit: editingCustomerId === customer.id,
+                      value: editingCustomerId === customer.id ? editFormData.PhoneNumber : customer.PhoneNumber,
+                      onChange: (e) => setEditFormData({...editFormData, PhoneNumber: e.target.value}),
+                      type: 'tel'
+                    })
+                  } else if (col === 'Price') {
+                    rowCells.push({
+                      key: 'Price',
+                      isEdit: editingCustomerId === customer.id,
+                      value: editingCustomerId === customer.id ? editFormData.Price : customer.Price,
+                      onChange: (e) => setEditFormData({...editFormData, Price: e.target.value}),
+                      type: 'number'
+                    })
+                  } else if (col === 'Weeks') {
+                    rowCells.push({
+                      key: 'Weeks',
+                      isEdit: editingCustomerId === customer.id,
+                      value: editingCustomerId === customer.id ? editFormData.Weeks : customer.Weeks,
+                      onChange: (e) => setEditFormData({...editFormData, Weeks: e.target.value}),
+                      type: 'number'
+                    })
+                  } else if (col === 'Next Clean') {
+                    rowCells.push({
+                      key: 'Next Clean',
+                      isEdit: false,
+                      value: new Date(customer.NextClean).toLocaleDateString('en-GB')
+                    })
+                  } else if (col === 'Outstanding') {
+                    rowCells.push({
+                      key: 'Outstanding',
+                      isEdit: false,
+                      value: `£${customer.Outstanding?.toFixed(2) || '0.00'}`
+                    })
+                  } else if (col === 'Route') {
+                    rowCells.push({
+                      key: 'Route',
+                      isEdit: editingCustomerId === customer.id,
+                      value: editingCustomerId === customer.id ? editFormData.Route : customer.Route,
+                      onChange: (e) => setEditFormData({...editFormData, Route: e.target.value})
+                    })
+                  } else if (col === 'Notes') {
+                    rowCells.push({
+                      key: 'Notes',
+                      isEdit: editingCustomerId === customer.id,
+                      value: editingCustomerId === customer.id ? editFormData.Notes : customer.Notes,
+                      onChange: (e) => setEditFormData({...editFormData, Notes: e.target.value})
+                    })
+                  } else if (col === 'Actions') {
+                    rowCells.push({
+                      key: 'Actions',
+                      isActions: true,
+                      customerId: customer.id
+                    })
+                  }
+                })
+                
+                return (
+                  <tr key={customer.id}>
+                    {rowCells.map((cell) => (
+                      <td key={cell.key}>
+                        {cell.isActions ? (
+                          <div className="actions-dropdown">
+                            <button
+                              className="actions-dropdown-btn"
+                              ref={(el) => {if (el) dropdownRefs.current[customer.id] = el}}
+                              onClick={(e) => toggleActionDropdown(customer.id, e.currentTarget)}
+                            >
+                              ⋮ Actions
+                            </button>
+                          </div>
+                        ) : cell.isEdit ? (
+                          <input
+                            type={cell.type || 'text'}
+                            value={cell.value}
+                            onChange={cell.onChange}
+                            className="edit-input"
+                            placeholder={cell.type === 'tel' ? 'Phone' : undefined}
+                          />
+                        ) : (
+                          cell.value
+                        )}
                       </td>
-                      <td>
-                        <input
-                          type="text"
-                          value={editFormData.Address}
-                          onChange={(e) => setEditFormData({...editFormData, Address: e.target.value})}
-                          className="edit-input"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="tel"
-                          value={editFormData.PhoneNumber}
-                          onChange={(e) => setEditFormData({...editFormData, PhoneNumber: e.target.value})}
-                          className="edit-input"
-                          placeholder="Phone"
-                        />
-                        <input
-                          type="email"
-                          value={editFormData.EmailAddress}
-                          onChange={(e) => setEditFormData({...editFormData, EmailAddress: e.target.value})}
-                          className="edit-input"
-                          placeholder="Email"
-                          style={{marginTop: '0.5rem'}}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          value={editFormData.Price}
-                          onChange={(e) => setEditFormData({...editFormData, Price: e.target.value})}
-                          className="edit-input"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          value={editFormData.Weeks}
-                          onChange={(e) => setEditFormData({...editFormData, Weeks: e.target.value})}
-                          className="edit-input"
-                        />
-                      </td>
-                      <td>{customer.NextClean ? new Date(customer.NextClean).toLocaleDateString('en-GB') : '-'}</td>
-                      <td>{customer.Outstanding > 0 ? `£${customer.Outstanding}` : '-'}</td>
-                      <td>
-                        <input
-                          type="text"
-                          value={editFormData.Route}
-                          onChange={(e) => setEditFormData({...editFormData, Route: e.target.value})}
-                          className="edit-input"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="text"
-                          value={editFormData.Notes}
-                          onChange={(e) => setEditFormData({...editFormData, Notes: e.target.value})}
-                          className="edit-input"
-                        />
-                      </td>
-                      <td>
-                        <button onClick={() => handleSaveEdit(customer.id)} className="save-btn">
-                          Save
-                        </button>
-                        <button onClick={handleCancelEdit} className="cancel-edit-btn">
-                          Cancel
-                        </button>
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td>{customer.CustomerName}</td>
-                      <td>{customer.Address}</td>
-                      <td>
-                        <div>{customer.PhoneNumber || '-'}</div>
-                        <div style={{fontSize: '0.9em', color: '#666'}}>{customer.EmailAddress || '-'}</div>
-                      </td>
-                      <td>£{customer.Price}</td>
-                      <td>{customer.Weeks}</td>
-                      <td>{customer.NextClean ? new Date(customer.NextClean).toLocaleDateString('en-GB') : '-'}</td>
-                      <td className={customer.Outstanding > 0 ? 'outstanding' : ''}>
-                        {customer.Outstanding > 0 ? `£${customer.Outstanding}` : '-'}
-                      </td>
-                      <td>{customer.Route || '-'}</td>
-                      <td className="notes-cell">{customer.Notes || '-'}</td>
-                      <td>
-                        <button 
-                          onClick={() => handleEditCustomer(customer)}
-                          className="edit-btn"
-                        >
-                          Edit
-                        </button>
-                        <button 
-                          onClick={() => deleteCustomer(customer.id)}
-                          className="delete-btn"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </>
-                  )}
-                </tr>
-              ))}
+                    ))}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}
       </div>
+
+      {/* Render all dropdown menus at root level to avoid z-index issues */}
+      {customers.map((customer) => (
+        expandedActionRows[customer.id] && dropdownPositions[customer.id] && (
+          <div 
+            key={customer.id}
+            className="actions-dropdown-menu"
+            style={{
+              position: 'fixed',
+              top: `${dropdownPositions[customer.id].top}px`,
+              left: `${dropdownPositions[customer.id].left}px`,
+              zIndex: 100001
+            }}
+          >
+            {editingCustomerId === customer.id ? (
+              <>
+                <button
+                  className="save-btn"
+                  onClick={() => {
+                    handleSaveEdit(customer.id)
+                    setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
+                  }}
+                >
+                  Save
+                </button>
+                <button
+                  className="cancel-btn"
+                  onClick={() => {
+                    setEditingCustomerId(null)
+                    setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
+                  }}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                {reminderLetter && (
+                  <button
+                    className="reminder-btn"
+                    onClick={() => sendReminderMessage(customer)}
+                  >
+                    Pay Reminder
+                  </button>
+                )}
+                <button
+                  className="edit-btn"
+                  onClick={() => {
+                    handleEditCustomer(customer)
+                  }}
+                >
+                  Edit
+                </button>
+                <button
+                  className="delete-btn"
+                  onClick={() => deleteCustomer(customer.id)}
+                >
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
+        )
+      ))}
     </div>
   )
 }
