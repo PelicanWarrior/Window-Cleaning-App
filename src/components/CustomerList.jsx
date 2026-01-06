@@ -344,7 +344,9 @@ function CustomerList({ user }) {
       Price: customer.Price,
       Weeks: customer.Weeks,
       Route: customer.Route || '',
-      Notes: customer.Notes || ''
+      Notes: customer.Notes || '',
+      Outstanding: customer.Outstanding || 0,
+      NextClean: customer.NextClean || ''
     })
   }
 
@@ -365,7 +367,9 @@ function CustomerList({ user }) {
           Price: parseInt(editFormData.Price) || 0,
           Weeks: parseInt(editFormData.Weeks) || 4,
           Route: editFormData.Route,
-          Notes: editFormData.Notes
+          Notes: editFormData.Notes,
+          Outstanding: parseFloat(editFormData.Outstanding) || 0,
+          NextClean: editFormData.NextClean
         })
         .eq('id', id)
       
@@ -376,6 +380,23 @@ function CustomerList({ user }) {
       fetchCustomers()
     } catch (error) {
       console.error('Error updating customer:', error.message)
+    }
+  }
+
+  async function handleMarkAsPaid(customerId) {
+    try {
+      const { error } = await supabase
+        .from('Customers')
+        .update({ Outstanding: 0 })
+        .eq('id', customerId)
+      
+      if (error) throw error
+      
+      setExpandedActionRows(prev => ({...prev, [customerId]: false}))
+      fetchCustomers()
+    } catch (error) {
+      console.error('Error marking as paid:', error.message)
+      alert('Error marking as paid: ' + error.message)
     }
   }
 
@@ -713,14 +734,20 @@ function CustomerList({ user }) {
                   } else if (col === 'Next Clean') {
                     rowCells.push({
                       key: 'Next Clean',
-                      isEdit: false,
-                      value: new Date(customer.NextClean).toLocaleDateString('en-GB')
+                      isEdit: editingCustomerId === customer.id,
+                      value: editingCustomerId === customer.id ? editFormData.NextClean : customer.NextClean,
+                      onChange: (e) => setEditFormData({...editFormData, NextClean: e.target.value}),
+                      type: 'date',
+                      isDateField: !editingCustomerId === customer.id
                     })
                   } else if (col === 'Outstanding') {
                     rowCells.push({
                       key: 'Outstanding',
-                      isEdit: false,
-                      value: `£${customer.Outstanding?.toFixed(2) || '0.00'}`
+                      isEdit: editingCustomerId === customer.id,
+                      value: editingCustomerId === customer.id ? editFormData.Outstanding : customer.Outstanding,
+                      onChange: (e) => setEditFormData({...editFormData, Outstanding: e.target.value}),
+                      type: 'number',
+                      isOutstanding: true
                     })
                   } else if (col === 'Route') {
                     rowCells.push({
@@ -768,6 +795,8 @@ function CustomerList({ user }) {
                             placeholder={cell.type === 'tel' ? 'Phone' : undefined}
                           />
                         ) : (
+                          cell.isOutstanding ? `£${parseFloat(cell.value || 0).toFixed(2)}` : 
+                          cell.isDateField ? new Date(cell.value).toLocaleDateString('en-GB') : 
                           cell.value
                         )}
                       </td>
@@ -824,6 +853,12 @@ function CustomerList({ user }) {
                     Pay Reminder
                   </button>
                 )}
+                <button
+                  className="paid-btn"
+                  onClick={() => handleMarkAsPaid(customer.id)}
+                >
+                  Mark as Paid
+                </button>
                 <button
                   className="edit-btn"
                   onClick={() => {

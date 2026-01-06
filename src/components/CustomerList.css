@@ -219,6 +219,14 @@
   background-color: #fef5e7;
 }
 
+.actions-dropdown-menu .paid-btn {
+  color: #27ae60;
+}
+
+.actions-dropdown-menu .paid-btn:hover {
+  background-color: #d5f4e6;
+}
+
 .actions-dropdown-menu .save-btn {
   color: #27ae60;
 }

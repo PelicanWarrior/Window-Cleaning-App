@@ -5,7 +5,7 @@ import './WorkloadManager.css'
 function WorkloadManager({ user }) {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [customers, setCustomers] = useState([])
-  const [selectedDate, setSelectedDate] = useState(null)
+  const [selectedDate, setSelectedDate] = useState(new Date().getDate())
   const [loading, setLoading] = useState(true)
   const [messages, setMessages] = useState([])
   const [messageFooter, setMessageFooter] = useState('')
