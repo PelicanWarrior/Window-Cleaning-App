@@ -154,6 +154,33 @@ function WorkloadManager({ user }) {
     }
   }
 
+  // Bulk move dates for all customers on the selected day
+  const handleMoveDateBulk = async (days) => {
+    if (!selectedDayCustomers.length) return
+    try {
+      await Promise.all(
+        selectedDayCustomers
+          .filter((customer) => customer.NextClean)
+          .map(async (customer) => {
+            const currentNextClean = new Date(customer.NextClean)
+            const newNextClean = new Date(currentNextClean)
+            newNextClean.setDate(newNextClean.getDate() + days)
+
+            const { error } = await supabase
+              .from('Customers')
+              .update({ NextClean: newNextClean.toISOString().split('T')[0] })
+              .eq('id', customer.id)
+
+            if (error) throw error
+          })
+      )
+
+      fetchCustomers()
+    } catch (error) {
+      console.error('Error bulk moving dates:', error.message)
+    }
+  }
+
   // Generate calendar days
   const generateCalendar = () => {
     const daysInMonth = getDaysInMonth(currentDate)
@@ -220,6 +247,15 @@ function WorkloadManager({ user }) {
             Jobs for {monthNames[currentDate.getMonth()]} {selectedDate}, {currentDate.getFullYear()}
           </h3>
           <p className="income-total">Income: £{totalIncome.toFixed(2)}</p>
+          {selectedDayCustomers.length > 0 && (
+            <div className="bulk-move-section">
+              <span className="bulk-move-label">Move all jobs:</span>
+              <button onClick={() => handleMoveDateBulk(-1)} className="bulk-move-btn">-1 Day</button>
+              <button onClick={() => handleMoveDateBulk(1)} className="bulk-move-btn">+1 Day</button>
+              <button onClick={() => handleMoveDateBulk(-7)} className="bulk-move-btn">-1 Week</button>
+              <button onClick={() => handleMoveDateBulk(7)} className="bulk-move-btn">+1 Week</button>
+            </div>
+          )}
           {selectedDayCustomers.length === 0 ? (
             <p className="empty-state">No customers scheduled for this day.</p>
           ) : (

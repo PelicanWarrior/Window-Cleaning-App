@@ -128,6 +128,35 @@
   margin-bottom: 1.5rem;
 }
 
+.bulk-move-section {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.bulk-move-label {
+  font-weight: 600;
+  color: #34495e;
+}
+
+.bulk-move-btn {
+  padding: 0.5rem 0.9rem;
+  border: 1px solid #3498db;
+  background-color: white;
+  color: #3498db;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.bulk-move-btn:hover {
+  background-color: #3498db;
+  color: white;
+}
+
 .customer-list {
   display: flex;
   flex-direction: column;
@@ -364,6 +393,17 @@
 
   .income-total {
     font-size: 1rem;
+  }
+
+  .bulk-move-section {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.4rem;
+  }
+
+  .bulk-move-btn {
+    width: 100%;
+    text-align: center;
   }
 
   .customer-info {
