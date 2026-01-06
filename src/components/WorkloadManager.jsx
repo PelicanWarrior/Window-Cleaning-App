@@ -214,10 +214,21 @@ function WorkloadManager({ user }) {
     setSelectedLetters((prev) => ({ ...prev, [customerId]: messageId }))
   }
 
+  const formatPhoneForWhatsApp = (raw) => {
+    const digits = (raw || '').replace(/\D/g, '')
+    if (!digits) return ''
+    // If UK local (starts with 0 and length 11), convert to +44
+    if (digits.length === 11 && digits.startsWith('0')) {
+      return `44${digits.slice(1)}`
+    }
+    // If already starts with country code, use as-is
+    return digits
+  }
+
   const handleSendWhatsApp = (customer) => {
-    const phone = (customer.PhoneNumber || '').replace(/\D/g, '')
+    const phone = formatPhoneForWhatsApp(customer.PhoneNumber)
     if (!phone) {
-      alert('This customer does not have a phone number.')
+      alert('This customer does not have a valid phone number.')
       return
     }
 
