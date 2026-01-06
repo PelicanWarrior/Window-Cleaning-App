@@ -221,8 +221,14 @@ function WorkloadManager({ user }) {
       return
     }
 
+    if (!messages.length) {
+      alert('No letters available. Please create a letter first.')
+      return
+    }
+
     const selectedId = selectedLetters[customer.id] ?? messages[0]?.id
-    const letter = messages.find((m) => String(m.id) === String(selectedId))
+    let letter = messages.find((m) => String(m.id) === String(selectedId))
+    if (!letter && messages.length) letter = messages[0]
 
     const bodyParts = [`Dear ${customer.CustomerName}.`]
     if (letter?.Message) bodyParts.push(letter.Message)
@@ -378,7 +384,7 @@ function WorkloadManager({ user }) {
                     <button
                       className="text-btn"
                       onClick={() => handleSendWhatsApp(customer)}
-                      disabled={!customer.PhoneNumber}
+                      disabled={!customer.PhoneNumber || !messages.length}
                     >
                       Text
                     </button>
