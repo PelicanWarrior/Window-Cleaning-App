@@ -221,8 +221,8 @@ function WorkloadManager({ user }) {
       return
     }
 
-    const selectedId = selectedLetters[customer.id] || messages[0]?.id
-    const letter = messages.find((m) => m.id === selectedId)
+    const selectedId = selectedLetters[customer.id] ?? messages[0]?.id
+    const letter = messages.find((m) => String(m.id) === String(selectedId))
 
     const bodyParts = [`Dear ${customer.CustomerName}.`]
     if (letter?.Message) bodyParts.push(letter.Message)
@@ -363,11 +363,14 @@ function WorkloadManager({ user }) {
                   </div>
                   <div className="text-message-section">
                     <select
-                      value={selectedLetters[customer.id] || ''}
+                      value={selectedLetters[customer.id] || messages[0]?.id || ''}
                       onChange={(e) => handleSelectLetter(customer.id, e.target.value)}
                       disabled={!messages.length}
                     >
-                      <option value="">{messages.length ? 'Select letter' : 'No letters available'}</option>
+                      {!messages.length && <option value="">No letters available</option>}
+                      {messages.length > 0 && !selectedLetters[customer.id] && (
+                        <option value="">Select letter</option>
+                      )}
                       {messages.map((msg) => (
                         <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
                       ))}
