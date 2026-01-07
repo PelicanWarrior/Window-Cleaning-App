@@ -32,6 +32,39 @@ function WorkloadManager({ user }) {
     fetchRouteOrder()
   }, [selectedDate, currentDate])
 
+  // Derive ordered customers for the selected date based on RouteOrder
+  const deriveOrderedCustomers = () => {
+    if (!selectedDate || !routeOrder) {
+      setOrderedCustomers([])
+      return
+    }
+    const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate).padStart(2, '0')}`
+    if (routeOrder.RouteDate !== dateStr || !routeOrder.Route) {
+      setOrderedCustomers([])
+      return
+    }
+    const dayCustomers = getCustomersForDate(selectedDate)
+    const idToCustomer = new Map(dayCustomers.map(c => [c.id, c]))
+    const routeIds = routeOrder.Route.split(',')
+      .map(id => parseInt(id.trim()))
+      .filter(id => !isNaN(id))
+
+    // In-order customers from route
+    const orderedFromRoute = routeIds
+      .map(id => idToCustomer.get(id))
+      .filter(Boolean)
+
+    // Append any remaining customers not included in route
+    const remaining = dayCustomers.filter(c => !routeIds.includes(c.id))
+    setOrderedCustomers([...orderedFromRoute, ...remaining])
+  }
+
+  // Recompute orderedCustomers whenever customers or routeOrder change
+  useEffect(() => {
+    deriveOrderedCustomers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customers, routeOrder, selectedDate, currentDate])
+
   async function fetchRouteOrder() {
     try {
       const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate).padStart(2, '0')}`
@@ -46,12 +79,6 @@ function WorkloadManager({ user }) {
       
       if (data) {
         setRouteOrder(data)
-        // Parse the Route field (comma-separated customer IDs) and get those customers
-        const customerIds = data.Route.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
-        const orderedCusts = customerIds
-          .map(id => customers.find(c => c.id === id))
-          .filter(c => c !== undefined)
-        setOrderedCustomers(orderedCusts)
       } else {
         setRouteOrder(null)
         setOrderedCustomers([])
@@ -441,7 +468,8 @@ function WorkloadManager({ user }) {
 
     if (draggedCustomerId === null) return
 
-    const displayList = orderedCustomers.length > 0 ? orderedCustomers : selectedDayCustomers
+    const displayListBase = orderedCustomers.length > 0 ? orderedCustomers : selectedDayCustomers
+    const displayList = [...displayListBase]
     const draggedIndex = displayList.findIndex(c => c.id === draggedCustomerId)
 
     if (draggedIndex === -1 || draggedIndex === dropIndex) {
