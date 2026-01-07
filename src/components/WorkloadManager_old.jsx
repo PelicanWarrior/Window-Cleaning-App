@@ -15,7 +15,7 @@ function WorkloadManager({ user }) {
   const [expandedDays, setExpandedDays] = useState({})
   const [expandedMoveDate, setExpandedMoveDate] = useState({})
   const [customerPayLetter, setCustomerPayLetter] = useState(null)
-  const [userRouteOrder, setUserRouteOrder] = useState('')
+  const [routeOrder, setRouteOrder] = useState(null)
   const [orderedCustomers, setOrderedCustomers] = useState([])
   const [draggedCustomerId, setDraggedCustomerId] = useState(null)
   const [dragOverIndex, setDragOverIndex] = useState(null)
@@ -25,74 +25,27 @@ function WorkloadManager({ user }) {
     fetchMessagesAndFooter()
     fetchCalendarView()
     fetchCustomerPayLetter()
-    fetchAndInitializeUserRouteOrder()
   }, [user])
 
   useEffect(() => {
     setSelectedLetterAll('')
+    fetchRouteOrder()
   }, [selectedDate, currentDate])
 
-  // Fetch and initialize user route order from Users table
-  async function fetchAndInitializeUserRouteOrder() {
-    try {
-      const { data, error } = await supabase
-        .from('Users')
-        .select('RouteOrder')
-        .eq('id', user.id)
-        .single()
-
-      if (error) throw error
-
-      let routeOrderStr = data?.RouteOrder || ''
-
-      // Ensure all current customers are in RouteOrder
-      const { data: customersData } = await supabase
-        .from('Customers')
-        .select('id')
-        .eq('UserId', user.id)
-
-      if (customersData) {
-        const existingIds = new Set(
-          routeOrderStr.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
-        )
-        const allCustomerIds = customersData.map(c => c.id)
-        const missingIds = allCustomerIds.filter(id => !existingIds.has(id))
-
-        if (missingIds.length > 0) {
-          routeOrderStr = routeOrderStr
-            ? `${routeOrderStr},${missingIds.join(',')}`
-            : missingIds.join(',')
-
-          // Update Users table with new RouteOrder
-          const { error: updateError } = await supabase
-            .from('Users')
-            .update({ RouteOrder: routeOrderStr })
-            .eq('id', user.id)
-          if (updateError) throw updateError
-        }
-      }
-
-      setUserRouteOrder(routeOrderStr)
-    } catch (error) {
-      console.error('Error fetching/initializing route order:', error.message)
-    }
-  }
-
-  // Derive ordered customers for selected date based on user's RouteOrder
+  // Derive ordered customers for the selected date based on RouteOrder
   const deriveOrderedCustomers = () => {
-    if (!selectedDate) {
+    if (!selectedDate || !routeOrder) {
       setOrderedCustomers([])
       return
     }
-
-    const dayCustomers = getCustomersForDate(selectedDate)
-    if (!userRouteOrder) {
-      setOrderedCustomers(dayCustomers)
+    const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate).padStart(2, '0')}`
+    if (routeOrder.RouteDate !== dateStr || !routeOrder.Route) {
+      setOrderedCustomers([])
       return
     }
-
+    const dayCustomers = getCustomersForDate(selectedDate)
     const idToCustomer = new Map(dayCustomers.map(c => [c.id, c]))
-    const routeIds = userRouteOrder.split(',')
+    const routeIds = routeOrder.Route.split(',')
       .map(id => parseInt(id.trim()))
       .filter(id => !isNaN(id))
 
@@ -106,11 +59,34 @@ function WorkloadManager({ user }) {
     setOrderedCustomers([...orderedFromRoute, ...remaining])
   }
 
-  // Recompute orderedCustomers whenever customers, userRouteOrder, or selectedDate change
+  // Recompute orderedCustomers whenever customers or routeOrder change
   useEffect(() => {
     deriveOrderedCustomers()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customers, userRouteOrder, selectedDate])
+  }, [customers, routeOrder, selectedDate, currentDate])
+
+  async function fetchRouteOrder() {
+    try {
+      const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate).padStart(2, '0')}`
+      const { data, error } = await supabase
+        .from('RouteOrder')
+        .select('*')
+        .eq('UserID', user.id)
+        .eq('RouteDate', dateStr)
+        .single()
+      
+      if (error && error.code !== 'PGRST116') throw error // PGRST116 is "no rows found"
+      
+      if (data) {
+        setRouteOrder(data)
+      } else {
+        setRouteOrder(null)
+        setOrderedCustomers([])
+      }
+    } catch (error) {
+      console.error('Error fetching route order:', error.message)
+    }
+  }
 
   async function fetchCustomers() {
     try {
@@ -273,6 +249,9 @@ function WorkloadManager({ user }) {
       
       if (error) throw error
       
+      // Remove from route order
+      await removeCustomerFromRouteOrder(customer.id)
+      
       fetchCustomers()
 
       // Check if CustomerPayLetter is set and ask to send message
@@ -309,6 +288,9 @@ function WorkloadManager({ user }) {
         .eq('id', customer.id)
       
       if (error) throw error
+      
+      // Remove from route order
+      await removeCustomerFromRouteOrder(customer.id)
       
       fetchCustomers()
 
@@ -372,6 +354,9 @@ function WorkloadManager({ user }) {
       
       if (error) throw error
       
+      // Remove from route order
+      await removeCustomerFromRouteOrder(customer.id)
+      
       fetchCustomers()
     } catch (error) {
       console.error('Error moving date:', error.message)
@@ -396,6 +381,9 @@ function WorkloadManager({ user }) {
               .eq('id', customer.id)
 
             if (error) throw error
+            
+            // Remove from route order
+            await removeCustomerFromRouteOrder(customer.id)
           })
       )
 
@@ -427,6 +415,36 @@ function WorkloadManager({ user }) {
       ...prev,
       [customerId]: !prev[customerId]
     }))
+  }
+
+  const removeCustomerFromRouteOrder = async (customerId) => {
+    if (!routeOrder) return
+    
+    try {
+      const routeIds = routeOrder.Route.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
+      const updatedIds = routeIds.filter(id => id !== customerId)
+      
+      if (updatedIds.length === 0) {
+        // Delete the route order if empty
+        const { error } = await supabase
+          .from('RouteOrder')
+          .delete()
+          .eq('id', routeOrder.id)
+        if (error) throw error
+      } else {
+        // Update the route order with remaining IDs
+        const { error } = await supabase
+          .from('RouteOrder')
+          .update({ Route: updatedIds.join(',') })
+          .eq('id', routeOrder.id)
+        if (error) throw error
+      }
+      
+      // Refresh route order
+      fetchRouteOrder()
+    } catch (error) {
+      console.error('Error updating route order:', error.message)
+    }
   }
 
   const handleDragStart = (e, customerId) => {
@@ -464,29 +482,43 @@ function WorkloadManager({ user }) {
     const [draggedCustomer] = newList.splice(draggedIndex, 1)
     newList.splice(dropIndex, 0, draggedCustomer)
 
-    // Update orderedCustomers
-    setOrderedCustomers(newList)
-    
-    // Save new order to Users.RouteOrder
-    await saveUserRouteOrder(newList)
+    // Update orderedCustomers or save to RouteOrder if we have one
+    if (orderedCustomers.length > 0) {
+      setOrderedCustomers(newList)
+      await saveRouteOrder(newList)
+    } else {
+      // Create new route order with the reordered customers
+      await saveRouteOrder(newList)
+    }
 
     setDraggedCustomerId(null)
   }
 
-  const saveUserRouteOrder = async (customerList) => {
+  const saveRouteOrder = async (customerList) => {
     try {
-      // Build new route order from all customers in their new sequence
-      const newRouteOrderStr = customerList.map(c => c.id).join(',')
+      const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate).padStart(2, '0')}`
+      const routeString = customerList.map(c => c.id).join(',')
 
-      // Update Users table RouteOrder field
-      const { error } = await supabase
-        .from('Users')
-        .update({ RouteOrder: newRouteOrderStr })
-        .eq('id', user.id)
-      
-      if (error) throw error
-      
-      setUserRouteOrder(newRouteOrderStr)
+      if (routeOrder) {
+        // Update existing route order
+        const { error } = await supabase
+          .from('RouteOrder')
+          .update({ Route: routeString })
+          .eq('id', routeOrder.id)
+        if (error) throw error
+      } else {
+        // Create new route order
+        const { error } = await supabase
+          .from('RouteOrder')
+          .insert({
+            UserID: parseInt(user.id),
+            RouteDate: dateStr,
+            Route: routeString
+          })
+        if (error) throw error
+      }
+
+      fetchRouteOrder()
     } catch (error) {
       console.error('Error saving route order:', error.message)
       alert('Error saving route order: ' + error.message)

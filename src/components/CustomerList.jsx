@@ -295,11 +295,35 @@ function CustomerList({ user }) {
         NextClean: new Date(Date.now() + (parseInt(newCustomer.Weeks) || 4) * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       }
 
-      const { error } = await supabase
+      const { data: insertData, error } = await supabase
         .from('Customers')
         .insert([customerData])
+        .select()
       
       if (error) throw error
+      
+      // Append new customer ID to Users.RouteOrder
+      if (insertData && insertData.length > 0) {
+        const newCustomerId = insertData[0].id
+        const { data: userData, error: userError } = await supabase
+          .from('Users')
+          .select('RouteOrder')
+          .eq('id', user.id)
+          .single()
+        
+        if (userError) throw userError
+        
+        const currentOrder = userData?.RouteOrder ? userData.RouteOrder.split(',').map(id => parseInt(id)) : []
+        const updatedOrder = [...currentOrder, newCustomerId]
+        const updatedOrderString = updatedOrder.join(',')
+        
+        const { error: updateError } = await supabase
+          .from('Users')
+          .update({ RouteOrder: updatedOrderString })
+          .eq('id', user.id)
+        
+        if (updateError) throw updateError
+      }
       
       setNewCustomer({ 
         CustomerName: '', 
@@ -490,11 +514,35 @@ function CustomerList({ user }) {
         return
       }
 
-      const { error } = await supabase
+      const { data: insertedCustomers, error } = await supabase
         .from('Customers')
         .insert(customersToImport)
+        .select()
       
       if (error) throw error
+      
+      // Append new customer IDs to Users.RouteOrder
+      if (insertedCustomers && insertedCustomers.length > 0) {
+        const { data: userData, error: userError } = await supabase
+          .from('Users')
+          .select('RouteOrder')
+          .eq('id', user.id)
+          .single()
+        
+        if (userError) throw userError
+        
+        const currentOrder = userData?.RouteOrder ? userData.RouteOrder.split(',').map(id => parseInt(id)) : []
+        const newCustomerIds = insertedCustomers.map(c => c.id)
+        const updatedOrder = [...currentOrder, ...newCustomerIds]
+        const updatedOrderString = updatedOrder.join(',')
+        
+        const { error: updateError } = await supabase
+          .from('Users')
+          .update({ RouteOrder: updatedOrderString })
+          .eq('id', user.id)
+        
+        if (updateError) throw updateError
+      }
       
       alert(`Successfully imported ${customersToImport.length} customers`)
       setShowAddForm(false)
