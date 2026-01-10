@@ -17,6 +17,12 @@
   margin-bottom: 1rem;
 }
 
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
 .app-header h1 {
   margin: 0;
   font-size: 2rem;
@@ -75,7 +81,7 @@
 }
 
 .version-image {
-  max-width: 60px;
+  max-width: 80px;
   height: auto;
 }
 

@@ -36,14 +36,16 @@ function App() {
     <div className="app">
       <header className="app-header">
         <div className="header-content">
-          <h1>Window Cleaning Manager</h1>
+          <div className="header-title">
+            <h1>Window Cleaning Manager</h1>
+            <img src={versionImage} alt="Version" className="version-image" />
+          </div>
           <div className="user-info">
             <span>Welcome, {user.UserName}</span>
             <button className="settings-btn" onClick={() => setShowSettings(true)}>Settings</button>
             {user.admin && <span className="admin-badge">Admin</span>}
             <div className="logout-section">
               <button className="logout-btn" onClick={handleLogout}>Logout</button>
-              <img src={versionImage} alt="Version" className="version-image" />
             </div>
           </div>
         </div>
