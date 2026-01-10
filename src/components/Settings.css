@@ -1,0 +1,71 @@
+.settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100000;
+}
+
+.settings-modal {
+  background: #fff;
+  padding: 16px 20px;
+  border-radius: 8px;
+  width: 420px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.settings-field label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.settings-field input,
+.settings-field select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.settings-actions .save-btn {
+  background: #2d7cf1;
+  color: #fff;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.settings-actions .cancel-btn {
+  background: #eee;
+  color: #333;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.error-message {
+  background: #ffe6e6;
+  color: #c0392b;
+  padding: 8px;
+  border-radius: 6px;
+  margin: 8px 0;
+}

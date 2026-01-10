@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import './Letters.css'
+import { getCurrencyConfig } from '../lib/format'
 
 function Letters({ user }) {
   const [messages, setMessages] = useState([])
@@ -312,7 +313,7 @@ function Letters({ user }) {
                   Include Price
                 </label>
                 {formData.IncludePrice && (
-                  <p className="price-helper-text">Add £ in your message to include the customers price</p>
+                  <p className="price-helper-text">Add {getCurrencyConfig(user.SettingsCountry || 'United Kingdom').symbol} in your message to include the customers price</p>
                 )}
               </div>
               <div className="message-greeting">

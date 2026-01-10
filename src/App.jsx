@@ -4,10 +4,13 @@ import Auth from './components/Auth'
 import CustomerList from './components/CustomerList'
 import WorkloadManager from './components/WorkloadManager'
 import Letters from './components/Letters'
+import Settings from './components/Settings'
+import versionImage from '../pictures/Version.png'
 
 function App() {
   const [user, setUser] = useState(null)
   const [activeTab, setActiveTab] = useState('customers')
+  const [showSettings, setShowSettings] = useState(false)
 
   const handleLogin = (userData) => {
     setUser(userData)
@@ -16,6 +19,12 @@ function App() {
   const handleLogout = () => {
     setUser(null)
     setActiveTab('customers')
+  }
+
+  const handleSettingsSaved = (updatedUserFields) => {
+    // Merge updated fields into user and close settings
+    setUser((prev) => ({ ...prev, ...updatedUserFields }))
+    setShowSettings(false)
   }
 
   // Show login if not authenticated
@@ -30,8 +39,12 @@ function App() {
           <h1>Window Cleaning Manager</h1>
           <div className="user-info">
             <span>Welcome, {user.UserName}</span>
+            <button className="settings-btn" onClick={() => setShowSettings(true)}>Settings</button>
             {user.admin && <span className="admin-badge">Admin</span>}
-            <button className="logout-btn" onClick={handleLogout}>Logout</button>
+            <div className="logout-section">
+              <button className="logout-btn" onClick={handleLogout}>Logout</button>
+              <img src={versionImage} alt="Version" className="version-image" />
+            </div>
           </div>
         </div>
         <nav>
@@ -60,6 +73,13 @@ function App() {
         {activeTab === 'workload' && <WorkloadManager user={user} />}
         {activeTab === 'letters' && <Letters user={user} />}
       </main>
+      {showSettings && (
+        <Settings 
+          user={user} 
+          onClose={() => setShowSettings(false)} 
+          onSaved={handleSettingsSaved}
+        />
+      )}
     </div>
   )
 }

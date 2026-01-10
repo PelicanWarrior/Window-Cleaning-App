@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import './WorkloadManager.css'
+import { formatCurrency, getCurrencyConfig } from '../lib/format'
 
 function WorkloadManager({ user }) {
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -19,6 +20,16 @@ function WorkloadManager({ user }) {
   const [orderedCustomers, setOrderedCustomers] = useState([])
   const [draggedCustomerId, setDraggedCustomerId] = useState(null)
   const [dragOverIndex, setDragOverIndex] = useState(null)
+
+  const getFullAddress = (customer) => {
+    const parts = [
+      customer.Address || '',
+      customer.Address2 || '',
+      customer.Address3 || '',
+      customer.Postcode || ''
+    ].filter(Boolean)
+    return parts.join(', ')
+  }
 
   useEffect(() => {
     fetchCustomers()
@@ -256,6 +267,46 @@ function WorkloadManager({ user }) {
     setSelectedDate(day)
   }
 
+  // Sync customer price from CustomerPrices and update NextServices
+  const syncCustomerPriceAndServices = async (customerId) => {
+    try {
+      // Fetch Windows service price from CustomerPrices
+      const { data: priceData, error: priceError } = await supabase
+        .from('CustomerPrices')
+        .select('Price')
+        .eq('CustomerID', customerId)
+        .eq('Service', 'Windows')
+        .single()
+
+      if (priceError && priceError.code !== 'PGRST116') throw priceError
+
+      // Build update object
+      const updateObj = { NextServices: 'Windows' }
+      if (priceData) {
+        updateObj.Price = priceData.Price
+      }
+
+      console.log('Updating customer', customerId, 'with:', updateObj)
+
+      // Update customer with NextServices (and Price if available)
+      const { error: updateError } = await supabase
+        .from('Customers')
+        .update(updateObj)
+        .eq('id', customerId)
+
+      if (updateError) {
+        console.error('Update error:', updateError)
+        throw updateError
+      }
+      
+      console.log('Update successful, refreshing customers')
+      // Refresh customers list
+      await fetchCustomers()
+    } catch (error) {
+      console.error('Error syncing customer price:', error)
+    }
+  }
+
   // Handle Done and Paid
   const handleDoneAndPaid = async (customer) => {
     try {
@@ -285,6 +336,9 @@ function WorkloadManager({ user }) {
           }
         }
       }
+      
+      // Always sync price and services after marking as done
+      await syncCustomerPriceAndServices(customer.id)
     } catch (error) {
       console.error('Error updating customer:', error.message)
     }
@@ -324,6 +378,9 @@ function WorkloadManager({ user }) {
           }
         }
       }
+      
+      // Always sync price and services after marking as done
+      await syncCustomerPriceAndServices(customer.id)
     } catch (error) {
       console.error('Error updating customer:', error.message)
     }
@@ -342,9 +399,12 @@ function WorkloadManager({ user }) {
     
     if (message?.Message) {
       let messageContent = message.Message
-      // If IncludePrice is checked and message contains £, replace it with £[outstanding amount]
-      if (message.IncludePrice && messageContent.includes('£')) {
-        messageContent = messageContent.replace('£', `£${customer.Outstanding}`)
+      // Replace currency placeholder dynamically based on user country
+      if (message.IncludePrice) {
+        const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+        if (messageContent.includes(symbol)) {
+          messageContent = messageContent.replaceAll(symbol, `${symbol}${customer.Outstanding}`)
+        }
       }
       bodyParts.push(messageContent)
     }
@@ -539,9 +599,12 @@ function WorkloadManager({ user }) {
     
     if (letter?.Message) {
       let messageContent = letter.Message
-      // If IncludePrice is checked and message contains £, replace it with £[outstanding amount]
-      if (letter.IncludePrice && messageContent.includes('£')) {
-        messageContent = messageContent.replace('£', `£${customer.Outstanding}`)
+      // Replace currency placeholder dynamically based on user country
+      if (letter.IncludePrice) {
+        const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+        if (messageContent.includes(symbol)) {
+          messageContent = messageContent.replaceAll(symbol, `${symbol}${customer.Outstanding}`)
+        }
       }
       bodyParts.push(messageContent)
     }
@@ -630,9 +693,9 @@ function WorkloadManager({ user }) {
             <div className="overview-customer-list">
               {displayCustomers.map((customer) => (
                 <div key={customer.id} className="overview-customer-item">
-                  <div className="overview-customer-address">{customer.Address}</div>
+                  <div className="overview-customer-address">{getFullAddress(customer)}</div>
                   <div className="overview-customer-meta">
-                    £{customer.Price} • <span className="overview-route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
+                    {formatCurrency(customer.Price, user.SettingsCountry || 'United Kingdom')} • <span className="overview-route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
                   </div>
                 </div>
               ))}
@@ -694,7 +757,7 @@ function WorkloadManager({ user }) {
           <h3>
             Jobs for {monthNames[currentDate.getMonth()]} {selectedDate}, {currentDate.getFullYear()}
           </h3>
-          <p className="income-total">Income: £{totalIncome.toFixed(2)}</p>
+          <p className="income-total">Income: {formatCurrency(totalIncome, user.SettingsCountry || 'United Kingdom')}</p>
           {selectedDayCustomers.length > 0 && (
             <div className="message-all-section">
               <label className="message-all-label" htmlFor="messageAll">Message to All:</label>
@@ -738,14 +801,14 @@ function WorkloadManager({ user }) {
                   <div className="drag-handle">⋮⋮</div>
                   <div className="customer-content">
                     <div className="customer-header">
-                      <div className="customer-name">{customer.Address}</div>
+                      <div className="customer-name">{getFullAddress(customer)}</div>
                       <span className="route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
                     </div>
                     <div className="customer-details">
                       <span>{customer.CustomerName}</span>
                       {customer.PhoneNumber && <span> • {customer.PhoneNumber}</span>}
-                      <span> • £{customer.Price}</span>
-                      {customer.Outstanding > 0 && <span className="outstanding"> • Outstanding: £{customer.Outstanding}</span>}
+                      <span> • {formatCurrency(customer.Price, user.SettingsCountry || 'United Kingdom')}</span>
+                      {customer.Outstanding > 0 && <span className="outstanding"> • Outstanding: {formatCurrency(customer.Outstanding, user.SettingsCountry || 'United Kingdom')}</span>}
                       {customer.Notes && <span> • {customer.Notes}</span>}
                     </div>
                     <div className="customer-actions">

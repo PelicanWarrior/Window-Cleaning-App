@@ -33,8 +33,102 @@ function Auth({ onLogin }) {
           return
         }
 
+        // If SettingsCountry is empty, set it to United Kingdom
+        let userData = data
+        if (!userData.SettingsCountry) {
+          const { error: updateError } = await supabase
+            .from('Users')
+            .update({ SettingsCountry: 'United Kingdom' })
+            .eq('id', userData.id)
+          
+          if (updateError) throw updateError
+          userData = { ...userData, SettingsCountry: 'United Kingdom' }
+        }
+
+        // Smart arrange addresses: split comma-separated addresses and extract postcodes
+        const { data: customers, error: customersError } = await supabase
+          .from('Customers')
+          .select('id, Price, Address, Address2, Address3, Postcode')
+          .eq('UserId', userData.id)
+
+        if (!customersError && customers) {
+          const updates = []
+          
+          for (const customer of customers) {
+            // Only process if Address has content and other fields are empty
+            if (customer.Address && !customer.Address2 && !customer.Address3 && !customer.Postcode) {
+              const addressStr = customer.Address.trim()
+              
+              // UK postcode pattern (e.g., SG1 4LE, SW1A 1AA, etc.)
+              const postcodeRegex = /\b([A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2})\b/i
+              const postcodeMatch = addressStr.match(postcodeRegex)
+              
+              let postcode = ''
+              let remainingAddress = addressStr
+              
+              if (postcodeMatch) {
+                postcode = postcodeMatch[1].toUpperCase()
+                remainingAddress = addressStr.replace(postcodeMatch[0], '').trim()
+              }
+              
+              // Split by comma and clean up parts
+              const parts = remainingAddress.split(',').map(p => p.trim()).filter(Boolean)
+              
+              const updateData = {
+                Address: parts[0] || '',
+                Address2: parts[1] || '',
+                Address3: parts[2] || '',
+                Postcode: postcode
+              }
+              
+              updates.push(
+                supabase
+                  .from('Customers')
+                  .update(updateData)
+                  .eq('id', customer.id)
+              )
+            }
+          }
+          
+          if (updates.length > 0) {
+            await Promise.all(updates)
+          }
+        }
+
+        // Ensure all customers have a "Windows" service entry in CustomerPrices
+        if (customers) {
+          const { data: priceEntries, error: priceError } = await supabase
+            .from('CustomerPrices')
+            .select('CustomerID, Service')
+            .in('CustomerID', customers.map(c => c.id))
+
+          if (!priceError && priceEntries) {
+            const windowsEntries = new Set(
+              priceEntries
+                .filter(entry => entry.Service === 'Windows')
+                .map(entry => entry.CustomerID)
+            )
+
+            const missingWindows = customers.filter(c => !windowsEntries.has(c.id))
+
+            if (missingWindows.length > 0) {
+              const windowsPrices = missingWindows.map(customer => ({
+                CustomerID: customer.id,
+                Price: customer.Price || 0,
+                Service: 'Windows'
+              }))
+
+              const { error: insertError } = await supabase
+                .from('CustomerPrices')
+                .insert(windowsPrices)
+
+              if (insertError) throw insertError
+            }
+          }
+        }
+
         // Successful login
-        onLogin(data)
+        onLogin(userData)
       } else {
         // Sign up - create new account
         if (!formData.email || !formData.username || !formData.password) {
@@ -66,7 +160,8 @@ function Auth({ onLogin }) {
               password: formData.password,
               admin: false,
               CustomerSort: 'Route',
-              MessageFooter: `Thank you Gavin Pelican Window Cleaning`
+              SettingsCountry: 'United Kingdom',
+              MessageFooter: ''
             }
           ])
           .select()

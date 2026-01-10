@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import './CustomerList.css'
+import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
 
 function CustomerList({ user }) {
   const [customers, setCustomers] = useState([])
@@ -26,6 +27,9 @@ function CustomerList({ user }) {
   const [newCustomer, setNewCustomer] = useState({
     CustomerName: '',
     Address: '',
+    Address2: '',
+    Address3: '',
+    Postcode: '',
     PhoneNumber: '',
     EmailAddress: '',
     Price: '',
@@ -225,6 +229,16 @@ function CustomerList({ user }) {
     return firstToken || 'Customer'
   }
 
+  const getFullAddress = (customer) => {
+    const parts = [
+      customer.Address || '',
+      customer.Address2 || '',
+      customer.Address3 || '',
+      customer.Postcode || ''
+    ].filter(Boolean)
+    return parts.join(', ')
+  }
+
   const sendReminderMessage = (customer) => {
     if (!reminderLetter) {
       alert('No reminder message is configured.')
@@ -242,9 +256,12 @@ function CustomerList({ user }) {
     
     if (reminderLetter?.Message) {
       let messageContent = reminderLetter.Message
-      // If IncludePrice is checked and message contains £, replace it with £[outstanding amount]
-      if (reminderLetter.IncludePrice && messageContent.includes('£')) {
-        messageContent = messageContent.replace('£', `£${customer.Outstanding}`)
+      // Replace currency placeholder based on selected country
+      if (reminderLetter.IncludePrice) {
+        const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+        if (messageContent.includes(symbol)) {
+          messageContent = messageContent.replaceAll(symbol, `${symbol}${customer.Outstanding}`)
+        }
       }
       bodyParts.push(messageContent)
     }
@@ -323,11 +340,25 @@ function CustomerList({ user }) {
           .eq('id', user.id)
         
         if (updateError) throw updateError
+        
+        // Add entry to CustomerPrices table
+        const { error: priceError } = await supabase
+          .from('CustomerPrices')
+          .insert([{
+            CustomerID: newCustomerId,
+            Price: parseInt(newCustomer.Price) || 0,
+            Service: 'Windows'
+          }])
+        
+        if (priceError) throw priceError
       }
       
       setNewCustomer({ 
         CustomerName: '', 
         Address: '', 
+        Address2: '', 
+        Address3: '', 
+        Postcode: '',
         PhoneNumber: '', 
         EmailAddress: '',
         Price: '', 
@@ -363,6 +394,9 @@ function CustomerList({ user }) {
     setEditFormData({
       CustomerName: customer.CustomerName,
       Address: customer.Address,
+      Address2: customer.Address2 || '',
+      Address3: customer.Address3 || '',
+      Postcode: customer.Postcode || '',
       PhoneNumber: customer.PhoneNumber || '',
       EmailAddress: customer.EmailAddress || '',
       Price: customer.Price,
@@ -386,6 +420,9 @@ function CustomerList({ user }) {
         .update({
           CustomerName: editFormData.CustomerName,
           Address: editFormData.Address,
+          Address2: editFormData.Address2,
+          Address3: editFormData.Address3,
+          Postcode: editFormData.Postcode,
           PhoneNumber: editFormData.PhoneNumber,
           EmailAddress: editFormData.EmailAddress,
           Price: parseInt(editFormData.Price) || 0,
@@ -494,6 +531,9 @@ function CustomerList({ user }) {
           UserId: user.id,
           CustomerName: values[headers.indexOf('CustomerName')] || '',
           Address: values[headers.indexOf('Address')] || '',
+          Address2: values[headers.indexOf('Address2')] || '',
+          Address3: values[headers.indexOf('Address3')] || '',
+          Postcode: values[headers.indexOf('Postcode')] || '',
           PhoneNumber: values[headers.indexOf('PhoneNumber')] || '',
           EmailAddress: values[headers.indexOf('EmailAddress')] || '',
           Price: parseInt(values[headers.indexOf('Price')]) || 0,
@@ -603,6 +643,28 @@ function CustomerList({ user }) {
               value={newCustomer.Address}
               onChange={(e) => setNewCustomer({...newCustomer, Address: e.target.value})}
               required
+              style={{ gridColumn: '1 / -1' }}
+            />
+            <input
+              type="text"
+              placeholder="Address 2 (optional)"
+              value={newCustomer.Address2}
+              onChange={(e) => setNewCustomer({...newCustomer, Address2: e.target.value})}
+              style={{ gridColumn: '1 / -1' }}
+            />
+            <input
+              type="text"
+              placeholder="Address 3 (optional)"
+              value={newCustomer.Address3}
+              onChange={(e) => setNewCustomer({...newCustomer, Address3: e.target.value})}
+              style={{ gridColumn: '1 / -1' }}
+            />
+            <input
+              type="text"
+              placeholder="Postcode"
+              value={newCustomer.Postcode}
+              onChange={(e) => setNewCustomer({...newCustomer, Postcode: e.target.value})}
+              style={{ gridColumn: '1 / -1' }}
             />
             <input
               type="tel"
@@ -616,13 +678,19 @@ function CustomerList({ user }) {
               value={newCustomer.EmailAddress}
               onChange={(e) => setNewCustomer({...newCustomer, EmailAddress: e.target.value})}
             />
-            <input
-              type="number"
-              placeholder="Price"
-              value={newCustomer.Price}
-              onChange={(e) => setNewCustomer({...newCustomer, Price: e.target.value})}
-              required
-            />
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <span style={{ position: 'absolute', left: '8px', pointerEvents: 'none', fontWeight: '600', color: '#333' }}>
+                {getCurrencyConfig(user.SettingsCountry || 'United Kingdom').symbol}
+              </span>
+              <input
+                type="number"
+                placeholder="Price"
+                value={newCustomer.Price}
+                onChange={(e) => setNewCustomer({...newCustomer, Price: e.target.value})}
+                style={{ paddingLeft: '28px' }}
+                required
+              />
+            </div>
             <input
               type="number"
               placeholder="Weeks between cleans"
@@ -749,12 +817,21 @@ function CustomerList({ user }) {
                       onChange: (e) => setEditFormData({...editFormData, CustomerName: e.target.value})
                     })
                   } else if (col === 'Address') {
-                    rowCells.push({
-                      key: 'Address',
-                      isEdit: editingCustomerId === customer.id,
-                      value: editingCustomerId === customer.id ? editFormData.Address : customer.Address,
-                      onChange: (e) => setEditFormData({...editFormData, Address: e.target.value})
-                    })
+                    if (editingCustomerId === customer.id) {
+                      // Show all address fields when editing
+                      rowCells.push({
+                        key: 'Address',
+                        isEditAddress: true,
+                        customer: customer
+                      })
+                    } else {
+                      // Show full address when not editing
+                      rowCells.push({
+                        key: 'Address',
+                        isEdit: false,
+                        value: getFullAddress(customer)
+                      })
+                    }
                   } else if (col === 'Contact Details') {
                     rowCells.push({
                       key: 'Contact Details',
@@ -786,7 +863,8 @@ function CustomerList({ user }) {
                       value: editingCustomerId === customer.id ? editFormData.NextClean : customer.NextClean,
                       onChange: (e) => setEditFormData({...editFormData, NextClean: e.target.value}),
                       type: 'date',
-                      isDateField: !editingCustomerId === customer.id
+                      // When not editing, render formatted date per user country
+                      isDateField: editingCustomerId !== customer.id
                     })
                   } else if (col === 'Outstanding') {
                     rowCells.push({
@@ -834,6 +912,37 @@ function CustomerList({ user }) {
                               ⋮
                             </button>
                           </div>
+                        ) : cell.isEditAddress ? (
+                          <div style={{ display: 'grid', gap: '6px', minWidth: '200px' }}>
+                            <input
+                              type="text"
+                              value={editFormData.Address}
+                              onChange={(e) => setEditFormData({...editFormData, Address: e.target.value})}
+                              className="edit-input"
+                              placeholder="Address"
+                            />
+                            <input
+                              type="text"
+                              value={editFormData.Address2}
+                              onChange={(e) => setEditFormData({...editFormData, Address2: e.target.value})}
+                              className="edit-input"
+                              placeholder="Address 2"
+                            />
+                            <input
+                              type="text"
+                              value={editFormData.Address3}
+                              onChange={(e) => setEditFormData({...editFormData, Address3: e.target.value})}
+                              className="edit-input"
+                              placeholder="Address 3"
+                            />
+                            <input
+                              type="text"
+                              value={editFormData.Postcode}
+                              onChange={(e) => setEditFormData({...editFormData, Postcode: e.target.value})}
+                              className="edit-input"
+                              placeholder="Postcode"
+                            />
+                          </div>
                         ) : cell.isEdit ? (
                           <input
                             type={cell.type || 'text'}
@@ -843,8 +952,8 @@ function CustomerList({ user }) {
                             placeholder={cell.type === 'tel' ? 'Phone' : undefined}
                           />
                         ) : (
-                          cell.isOutstanding ? `£${parseFloat(cell.value || 0).toFixed(2)}` : 
-                          cell.isDateField ? new Date(cell.value).toLocaleDateString('en-GB') : 
+                          cell.isOutstanding ? formatCurrency(cell.value, user.SettingsCountry || 'United Kingdom') : 
+                          cell.isDateField ? formatDateByCountry(cell.value, user.SettingsCountry || 'United Kingdom') : 
                           cell.value
                         )}
                       </td>
