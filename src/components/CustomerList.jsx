@@ -308,8 +308,8 @@ function CustomerList({ user }) {
         const rect = buttonRef.getBoundingClientRect()
         setDropdownPositions({
           [customerId]: {
-            top: rect.top + window.scrollY,
-            left: rect.right + window.scrollX + 8
+            top: `${rect.top}px`,
+            left: `${rect.right + 8}px`
           }
         })
       }
@@ -955,8 +955,8 @@ function CustomerList({ user }) {
                               <div 
                                 className="actions-dropdown-menu-inline"
                                 style={{
-                                  top: `${dropdownPositions[customer.id]?.top || 0}px`,
-                                  left: `${dropdownPositions[customer.id]?.left || 0}px`
+                                  top: dropdownPositions[customer.id]?.top || '0px',
+                                  left: dropdownPositions[customer.id]?.left || '0px'
                                 }}
                               >
                                 {editingCustomerId === customer.id ? (
