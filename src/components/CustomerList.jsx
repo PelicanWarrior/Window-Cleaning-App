@@ -7,6 +7,7 @@ function CustomerList({ user }) {
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
   const [sortBy, setSortBy] = useState(user.CustomerSort || 'Route')
+  // Show the sorted column on initial load
   const [sortedColumn, setSortedColumn] = useState(user.CustomerSort || 'Route')
   const [showAddForm, setShowAddForm] = useState(false)
   const [expandedActionRows, setExpandedActionRows] = useState({})
@@ -18,6 +19,9 @@ function CustomerList({ user }) {
   const [messages, setMessages] = useState([])
   const [reminderLetter, setReminderLetter] = useState(null)
   const [messageFooter, setMessageFooter] = useState('')
+  const [showSortDropdown, setShowSortDropdown] = useState(false)
+  const [showCustomerModal, setShowCustomerModal] = useState(false)
+  const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [filters, setFilters] = useState({
     CustomerName: '',
     Address: '',
@@ -59,6 +63,13 @@ function CustomerList({ user }) {
       if (clickedOutside) {
         setExpandedActionRows({})
         setDropdownPositions({})
+      }
+
+      // Close Sort dropdown when clicking outside
+      const clickedOutsideSort = !event.target.closest('.sort-dropdown') &&
+                                 !event.target.closest('.sort-dropdown-menu')
+      if (clickedOutsideSort) {
+        setShowSortDropdown(false)
       }
     }
 
@@ -183,9 +194,9 @@ function CustomerList({ user }) {
     }
   }
 
-  // Get column order with Actions first, then sorted column
+  // Column order: Actions first, then selected sort column (if any), then Name + Address only
   const getColumnOrder = () => {
-    const allColumns = ['Name', 'Address', 'Contact Details', 'Price', 'Weeks', 'Next Clean', 'Outstanding', 'Route', 'Notes']
+    const base = ['Actions']
     const columnFieldMap = {
       'Next Clean': 'Next Clean',
       'Route': 'Route',
@@ -193,13 +204,21 @@ function CustomerList({ user }) {
       'Customer Name': 'Name',
       'Address': 'Address'
     }
-    
+
     if (sortedColumn) {
       const sortedColumnDisplay = columnFieldMap[sortedColumn] || sortedColumn
-      const filtered = allColumns.filter(col => col !== sortedColumnDisplay)
-      return ['Actions', sortedColumnDisplay, ...filtered]
+      // Insert the selected sort column to the left of Name/Address
+      if (sortedColumnDisplay === 'Name') {
+        return [...base, 'Name', 'Address']
+      }
+      if (sortedColumnDisplay === 'Address') {
+        return [...base, 'Address', 'Name']
+      }
+      return [...base, sortedColumnDisplay, 'Name', 'Address']
     }
-    return ['Actions', ...allColumns]
+
+    // Default view: only Name and Address
+    return [...base, 'Name', 'Address']
   }
 
   const columnOrder = getColumnOrder()
@@ -446,6 +465,29 @@ function CustomerList({ user }) {
 
   async function handleMarkAsPaid(customerId) {
     try {
+      // Get customer data first to access Outstanding amount
+      const { data: customer, error: fetchError } = await supabase
+        .from('Customers')
+        .select('Outstanding')
+        .eq('id', customerId)
+        .single()
+      
+      if (fetchError) throw fetchError
+
+      // Create history record
+      const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+      const historyMessage = `${symbol}${customer.Outstanding} mark as paid`
+      
+      const { error: historyError } = await supabase
+        .from('CustomerHistory')
+        .insert({
+          CustomerID: customerId,
+          Message: historyMessage
+        })
+      
+      if (historyError) throw historyError
+
+      // Update customer outstanding to 0
       const { error } = await supabase
         .from('Customers')
         .update({ Outstanding: 0 })
@@ -761,37 +803,23 @@ function CustomerList({ user }) {
       <div className="customer-table">
         <h3>Customer List ({customers.length})</h3>
         <div className="sort-buttons">
-          <span>Sort by:</span>
-          <button 
-            className={sortBy === 'Next Clean' ? 'active' : ''}
-            onClick={() => handleSortChange('Next Clean')}
-          >
-            Next Clean
-          </button>
-          <button 
-            className={sortBy === 'Route' ? 'active' : ''}
-            onClick={() => handleSortChange('Route')}
-          >
-            Route
-          </button>
-          <button 
-            className={sortBy === 'Outstanding' ? 'active' : ''}
-            onClick={() => handleSortChange('Outstanding')}
-          >
-            Outstanding
-          </button>
-          <button 
-            className={sortBy === 'Customer Name' ? 'active' : ''}
-            onClick={() => handleSortChange('Customer Name')}
-          >
-            Customer Name
-          </button>
-          <button 
-            className={sortBy === 'Address' ? 'active' : ''}
-            onClick={() => handleSortChange('Address')}
-          >
-            Address
-          </button>
+          <div className="sort-dropdown">
+            <button
+              className={`sort-toggle ${showSortDropdown ? 'open' : ''}`}
+              onClick={() => setShowSortDropdown((v) => !v)}
+            >
+              Sort By: {sortBy}
+            </button>
+            {showSortDropdown && (
+              <div className="sort-dropdown-menu">
+                <button onClick={() => { handleSortChange('Next Clean'); setShowSortDropdown(false) }}>Next Clean</button>
+                <button onClick={() => { handleSortChange('Route'); setShowSortDropdown(false) }}>Route</button>
+                <button onClick={() => { handleSortChange('Outstanding'); setShowSortDropdown(false) }}>Outstanding</button>
+                <button onClick={() => { handleSortChange('Customer Name'); setShowSortDropdown(false) }}>Customer Name</button>
+                <button onClick={() => { handleSortChange('Address'); setShowSortDropdown(false) }}>Address</button>
+              </div>
+            )}
+          </div>
         </div>
         {customers.length === 0 ? (
           <p className="empty-state">No customers yet. Add your first customer above!</p>
@@ -899,11 +927,20 @@ function CustomerList({ user }) {
                 })
                 
                 return (
-                  <tr key={customer.id}>
+                  <tr
+                    key={customer.id}
+                    className="customer-row"
+                    onClick={(e) => {
+                      // Ignore clicks originating from the actions dropdown
+                      if (e.target.closest('.actions-dropdown')) return
+                      setSelectedCustomer(customer)
+                      setShowCustomerModal(true)
+                    }}
+                  >
                     {rowCells.map((cell) => (
-                      <td key={cell.key}>
+                      <td key={cell.key} data-label={cell.key} className="customer-cell">
                         {cell.isActions ? (
-                          <div className="actions-dropdown">
+                          <div className="actions-dropdown" onClick={(ev) => ev.stopPropagation()}>
                             <button
                               className="actions-dropdown-btn"
                               ref={(el) => {if (el) dropdownRefs.current[customer.id] = el}}
@@ -1017,14 +1054,6 @@ function CustomerList({ user }) {
                   Mark as Paid
                 </button>
                 <button
-                  className="edit-btn"
-                  onClick={() => {
-                    handleEditCustomer(customer)
-                  }}
-                >
-                  Edit
-                </button>
-                <button
                   className="delete-btn"
                   onClick={() => deleteCustomer(customer.id)}
                 >
@@ -1035,6 +1064,27 @@ function CustomerList({ user }) {
           </div>
         )
       ))}
+
+      {showCustomerModal && selectedCustomer && (
+        <div className="modal-overlay" onClick={() => setShowCustomerModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setShowCustomerModal(false)}>×</button>
+            <h3>Customer Details</h3>
+            <div className="details-grid">
+              <div><strong>Name:</strong> {selectedCustomer.CustomerName}</div>
+              <div><strong>Address:</strong> {getFullAddress(selectedCustomer)}</div>
+              <div><strong>Phone:</strong> {selectedCustomer.PhoneNumber || '—'}</div>
+              <div><strong>Email:</strong> {selectedCustomer.EmailAddress || '—'}</div>
+              <div><strong>Price:</strong> {formatCurrency(selectedCustomer.Price, user.SettingsCountry || 'United Kingdom')}</div>
+              <div><strong>Weeks:</strong> {selectedCustomer.Weeks}</div>
+              <div><strong>Next Clean:</strong> {formatDateByCountry(selectedCustomer.NextClean, user.SettingsCountry || 'United Kingdom')}</div>
+              <div><strong>Outstanding:</strong> {formatCurrency(selectedCustomer.Outstanding, user.SettingsCountry || 'United Kingdom')}</div>
+              <div><strong>Route:</strong> {selectedCustomer.Route || '—'}</div>
+              <div className="notes-cell"><strong>Notes:</strong> {selectedCustomer.Notes || '—'}</div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

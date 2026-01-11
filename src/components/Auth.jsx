@@ -127,6 +127,26 @@ function Auth({ onLogin }) {
           }
         }
 
+        // Ensure all customers have NextServices populated with "Windows" if empty
+        if (customers) {
+          const customersNeedingNextServices = customers.filter(c => !c.NextServices)
+
+          if (customersNeedingNextServices.length > 0) {
+            const updates = customersNeedingNextServices.map(customer =>
+              supabase
+                .from('Customers')
+                .update({ NextServices: 'Windows' })
+                .eq('id', customer.id)
+            )
+
+            const results = await Promise.all(updates)
+            const errors = results.filter(r => r.error)
+            if (errors.length > 0) {
+              console.error('Errors updating NextServices:', errors)
+            }
+          }
+        }
+
         // Successful login
         onLogin(userData)
       } else {

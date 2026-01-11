@@ -307,6 +307,22 @@ function WorkloadManager({ user }) {
     }
   }
 
+  // Create a customer history record
+  const createCustomerHistory = async (customerId, message) => {
+    try {
+      const { error } = await supabase
+        .from('CustomerHistory')
+        .insert({
+          CustomerID: customerId,
+          Message: message
+        })
+      
+      if (error) throw error
+    } catch (error) {
+      console.error('Error creating customer history:', error)
+    }
+  }
+
   // Handle Done and Paid
   const handleDoneAndPaid = async (customer) => {
     try {
@@ -314,6 +330,11 @@ function WorkloadManager({ user }) {
       const weeksToAdd = parseInt(customer.Weeks) || 0
       const nextCleanDate = new Date(currentWorkDate)
       nextCleanDate.setDate(nextCleanDate.getDate() + (weeksToAdd * 7))
+      
+      // Create history record first
+      const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+      const historyMessage = `${customer.NextServices} done, Paid ${symbol}${customer.Price}`
+      await createCustomerHistory(customer.id, historyMessage)
       
       const { error } = await supabase
         .from('Customers')
@@ -351,6 +372,11 @@ function WorkloadManager({ user }) {
       const weeksToAdd = parseInt(customer.Weeks) || 0
       const nextCleanDate = new Date(currentWorkDate)
       nextCleanDate.setDate(nextCleanDate.getDate() + (weeksToAdd * 7))
+      
+      // Create history record first
+      const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+      const historyMessage = `${customer.NextServices} done, Not Paid ${symbol}${customer.Price}`
+      await createCustomerHistory(customer.id, historyMessage)
       
       const newOutstanding = (parseFloat(customer.Outstanding) || 0) + (parseFloat(customer.Price) || 0)
       
@@ -593,6 +619,9 @@ function WorkloadManager({ user }) {
     const selectedId = selectedLetters[customer.id] ?? messages[0]?.id
     let letter = messages.find((m) => String(m.id) === String(selectedId))
     if (!letter && messages.length) letter = messages[0]
+    
+    // Create history record
+    createCustomerHistory(customer.id, `Message ${letter?.MessageTitle} sent`)
 
     const formalName = getFormalCustomerName(customer.CustomerName)
     const bodyParts = [`Dear ${formalName}`]
