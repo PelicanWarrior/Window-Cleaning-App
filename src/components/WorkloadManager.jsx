@@ -31,6 +31,13 @@ function WorkloadManager({ user }) {
     return parts.join(', ')
   }
 
+  const getAdditionalServices = (customer) => {
+    if (!customer.NextServices) return ''
+    const services = customer.NextServices.split(',').map(s => s.trim())
+    const additionalServices = services.filter(s => s !== 'Windows')
+    return additionalServices.length > 0 ? ` (Inc ${additionalServices.join(', ')})` : ''
+  }
+
   useEffect(() => {
     fetchCustomers()
     fetchMessagesAndFooter()
@@ -724,7 +731,7 @@ function WorkloadManager({ user }) {
                 <div key={customer.id} className="overview-customer-item">
                   <div className="overview-customer-address">{getFullAddress(customer)}</div>
                   <div className="overview-customer-meta">
-                    {formatCurrency(customer.Price, user.SettingsCountry || 'United Kingdom')} • <span className="overview-route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
+                    {formatCurrency(customer.Price, user.SettingsCountry || 'United Kingdom')}{getAdditionalServices(customer)} • <span className="overview-route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
                   </div>
                 </div>
               ))}
@@ -836,7 +843,7 @@ function WorkloadManager({ user }) {
                     <div className="customer-details">
                       <span>{customer.CustomerName}</span>
                       {customer.PhoneNumber && <span> • {customer.PhoneNumber}</span>}
-                      <span> • {formatCurrency(customer.Price, user.SettingsCountry || 'United Kingdom')}</span>
+                      <span> • {formatCurrency(customer.Price, user.SettingsCountry || 'United Kingdom')}{getAdditionalServices(customer)}</span>
                       {customer.Outstanding > 0 && <span className="outstanding"> • Outstanding: {formatCurrency(customer.Outstanding, user.SettingsCountry || 'United Kingdom')}</span>}
                       {customer.Notes && <span> • {customer.Notes}</span>}
                     </div>

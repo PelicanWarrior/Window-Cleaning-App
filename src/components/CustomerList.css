@@ -390,7 +390,8 @@
    z-index: 100010;
  }
  .modal-content {
-   background: #fff;
+   background: #e3f2fd;
+   border: 3px solid #1565c0;
    border-radius: 8px;
    max-width: 640px;
    width: 92%;
@@ -621,6 +622,311 @@
   .actions-dropdown-btn {
     padding: 0.6rem 0.9rem;
     font-size: 1rem;
+  }
+
+  /* Modal Input Styles */
+  .modal-input {
+    width: 100%;
+    padding: 0.4rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.95rem;
+    font-family: inherit;
+  }
+
+  .modal-input:focus {
+    outline: none;
+    border-color: #1976d2;
+    box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+  }
+
+  textarea.modal-input {
+    resize: vertical;
+    min-height: 60px;
+  }
+
+  /* Modal Actions Container */
+  .modal-actions {
+    display: flex;
+    gap: 0.8rem;
+    justify-content: flex-end;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(21, 101, 192, 0.2);
+  }
+
+  /* Modal Button Styles */
+  .modal-edit-btn,
+  .modal-save-btn,
+  .modal-cancel-btn,
+  .modal-services-btn {
+    padding: 0.6rem 1.2rem;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+  }
+
+  .modal-edit-btn {
+    background-color: #1976d2;
+    color: white;
+  }
+
+  .modal-edit-btn:hover {
+    background-color: #1565c0;
+  }
+
+  .modal-save-btn {
+    background-color: #2e7d32;
+    color: white;
+  }
+
+  .modal-save-btn:hover {
+    background-color: #1b5e20;
+  }
+
+  .modal-cancel-btn {
+    background-color: #d32f2f;
+    color: white;
+  }
+
+  .modal-cancel-btn:hover {
+    background-color: #c62828;
+  }
+
+  .modal-services-btn {
+    background-color: #f57c00;
+    color: white;
+  }
+
+  .modal-services-btn:hover {
+    background-color: #ef6c00;
+  }
+
+  /* Services List Styles */
+  .services-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .services-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+  }
+
+  .services-table thead {
+    background-color: #f5f9ff;
+    position: sticky;
+    top: 0;
+  }
+
+  .services-table th {
+    text-align: left;
+    padding: 0.8rem 1rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #1565c0;
+    border-bottom: 2px solid #1565c0;
+  }
+
+  .services-table td {
+    padding: 0.8rem 1rem;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  .services-table tbody tr:hover {
+    background-color: #f9f9f9;
+  }
+
+  .services-table th:nth-child(1),
+  .services-table td:nth-child(1) {
+    width: 20%;
+  }
+
+  .services-table th:nth-child(2),
+  .services-table td:nth-child(2) {
+    width: 20%;
+  }
+
+  .services-table th:nth-child(3),
+  .services-table td:nth-child(3) {
+    width: 45%;
+  }
+
+  .services-table th:nth-child(4),
+  .services-table td:nth-child(4) {
+    width: 15%;
+  }
+
+  .actions-col {
+    text-align: center;
+    position: relative;
+  }
+
+  .service-actions-btn {
+    background: none;
+    border: none;
+    font-size: 1.4rem;
+    cursor: pointer;
+    padding: 0.2rem 0.6rem;
+    color: #666;
+    transition: color 0.2s;
+  }
+
+  .service-actions-btn:hover {
+    color: #1565c0;
+  }
+
+  .service-actions-dropdown {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 1000;
+    min-width: 160px;
+    overflow: hidden;
+  }
+
+  .service-actions-dropdown button {
+    display: block;
+    width: 100%;
+    padding: 0.7rem 1rem;
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background-color 0.2s;
+  }
+
+  .service-actions-dropdown button:hover {
+    background-color: #f0f0f0;
+  }
+
+  .editing-row .modal-input {
+    width: 100%;
+    padding: 0.4rem;
+    font-size: 0.9rem;
+  }
+
+  .service-save-btn,
+  .service-cancel-btn {
+    padding: 0.4rem 0.8rem;
+    margin: 0 0.2rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: bold;
+  }
+
+  .service-save-btn {
+    background-color: #2e7d32;
+    color: white;
+  }
+
+  .service-save-btn:hover {
+    background-color: #1b5e20;
+  }
+
+  .service-cancel-btn {
+    background-color: #d32f2f;
+    color: white;
+  }
+
+  .service-cancel-btn:hover {
+    background-color: #c62828;
+  }
+
+  .add-service-btn {
+    padding: 0.8rem 1.2rem;
+    background-color: #2e7d32;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    align-self: flex-start;
+    margin-bottom: 1rem;
+  }
+
+  .add-service-btn:hover {
+    background-color: #1b5e20;
+  }
+
+  .new-service-form {
+    padding: 1rem;
+    background-color: #f0f7f0;
+    border: 2px solid #2e7d32;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+  }
+
+  .service-form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 2fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .service-form-row > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .service-form-row label {
+    font-size: 0.9rem;
+    color: #555;
+  }
+
+  .service-form-actions {
+    display: flex;
+    gap: 0.8rem;
+    justify-content: flex-end;
+  }
+
+  @media (max-width: 768px) {
+    .services-table {
+      font-size: 0.9rem;
+    }
+
+    .services-table th,
+    .services-table td {
+      padding: 0.6rem 0.5rem;
+    }
+
+    .service-form-row {
+      grid-template-columns: 1fr;
+    }
+
+    .service-form-actions {
+      flex-direction: column;
+    }
+
+    .service-form-actions button {
+      width: 100%;
+    }
+  }
+      flex-direction: column;
+    }
+
+    .modal-edit-btn,
+    .modal-save-btn,
+    .modal-cancel-btn,
+    .modal-services-btn {
+      width: 100%;
+    }
   }
 
   .edit-btn,

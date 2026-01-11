@@ -22,6 +22,15 @@ function CustomerList({ user }) {
   const [showSortDropdown, setShowSortDropdown] = useState(false)
   const [showCustomerModal, setShowCustomerModal] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState(null)
+  const [isEditingModal, setIsEditingModal] = useState(false)
+  const [modalEditData, setModalEditData] = useState({})
+  const [showServices, setShowServices] = useState(false)
+  const [customerServices, setCustomerServices] = useState([])
+  const [isAddingService, setIsAddingService] = useState(false)
+  const [newServiceData, setNewServiceData] = useState({ Service: '', Price: '', Description: '' })
+  const [serviceDropdownOpen, setServiceDropdownOpen] = useState(null)
+  const [editingServiceId, setEditingServiceId] = useState(null)
+  const [editServiceData, setEditServiceData] = useState({})
   const [filters, setFilters] = useState({
     CustomerName: '',
     Address: '',
@@ -463,6 +472,157 @@ function CustomerList({ user }) {
     }
   }
 
+  async function fetchCustomerServices(customerId) {
+    try {
+      const { data, error } = await supabase
+        .from('CustomerPrices')
+        .select('*')
+        .eq('CustomerID', customerId)
+      
+      if (error) throw error
+      setCustomerServices(data || [])
+    } catch (error) {
+      console.error('Error fetching customer services:', error.message)
+    }
+  }
+
+  async function handleModalSave() {
+    try {
+      const { error } = await supabase
+        .from('Customers')
+        .update({
+          CustomerName: modalEditData.CustomerName,
+          Address: modalEditData.Address,
+          Address2: modalEditData.Address2,
+          Address3: modalEditData.Address3,
+          Postcode: modalEditData.Postcode,
+          PhoneNumber: modalEditData.PhoneNumber,
+          EmailAddress: modalEditData.EmailAddress,
+          Price: modalEditData.Price,
+          Weeks: modalEditData.Weeks,
+          NextClean: modalEditData.NextClean,
+          Outstanding: modalEditData.Outstanding,
+          Route: modalEditData.Route,
+          Notes: modalEditData.Notes
+        })
+        .eq('id', selectedCustomer.id)
+      
+      if (error) throw error
+      
+      setIsEditingModal(false)
+      fetchCustomers() // Refresh the customer list
+    } catch (error) {
+      console.error('Error updating customer:', error.message)
+      alert('Failed to update customer. Please try again.')
+    }
+  }
+
+  async function handleAddService() {
+    try {
+      const { error } = await supabase
+        .from('CustomerPrices')
+        .insert({
+          CustomerID: selectedCustomer.id,
+          Service: newServiceData.Service,
+          Price: parseFloat(newServiceData.Price) || 0,
+          Description: newServiceData.Description
+        })
+      
+      if (error) throw error
+      
+      setIsAddingService(false)
+      setNewServiceData({ Service: '', Price: '', Description: '' })
+      fetchCustomerServices(selectedCustomer.id) // Refresh the services list
+    } catch (error) {
+      console.error('Error adding service:', error.message)
+      alert('Failed to add service. Please try again.')
+    }
+  }
+
+  async function handleEditService(serviceId) {
+    try {
+      const { error } = await supabase
+        .from('CustomerPrices')
+        .update({
+          Service: editServiceData.Service,
+          Price: parseFloat(editServiceData.Price) || 0,
+          Description: editServiceData.Description
+        })
+        .eq('id', serviceId)
+      
+      if (error) throw error
+      
+      setEditingServiceId(null)
+      setEditServiceData({})
+      fetchCustomerServices(selectedCustomer.id)
+    } catch (error) {
+      console.error('Error updating service:', error.message)
+      alert('Failed to update service. Please try again.')
+    }
+  }
+
+  async function handleDeleteService(serviceId) {
+    if (!confirm('Are you sure you want to delete this service?')) return
+    
+    try {
+      const { error } = await supabase
+        .from('CustomerPrices')
+        .delete()
+        .eq('id', serviceId)
+      
+      if (error) throw error
+      
+      fetchCustomerServices(selectedCustomer.id)
+    } catch (error) {
+      console.error('Error deleting service:', error.message)
+      alert('Failed to delete service. Please try again.')
+    }
+  }
+
+  async function handleAddToNextClean(service) {
+    try {
+      // Get current customer data
+      const { data: customer, error: fetchError } = await supabase
+        .from('Customers')
+        .select('NextServices, Price')
+        .eq('id', selectedCustomer.id)
+        .single()
+      
+      if (fetchError) throw fetchError
+      
+      // Check if service is already in NextServices
+      const currentServices = customer.NextServices ? customer.NextServices.split(',').map(s => s.trim()) : []
+      if (currentServices.includes(service.Service)) {
+        alert('Service already added')
+        return
+      }
+      
+      // Add service to NextServices (comma-separated)
+      currentServices.push(service.Service)
+      const newNextServices = currentServices.join(', ')
+      
+      // Add price to existing price
+      const newPrice = (customer.Price || 0) + service.Price
+      
+      // Update customer
+      const { error: updateError } = await supabase
+        .from('Customers')
+        .update({
+          NextServices: newNextServices,
+          Price: newPrice
+        })
+        .eq('id', selectedCustomer.id)
+      
+      if (updateError) throw updateError
+      
+      alert(`${service.Service} added to next clean!`)
+      fetchCustomers() // Refresh customer list
+    } catch (error) {
+      console.error('Error adding to next clean:', error.message)
+      alert('Failed to add to next clean. Please try again.')
+    }
+  }
+
   async function handleMarkAsPaid(customerId) {
     try {
       // Get customer data first to access Outstanding amount
@@ -475,8 +635,7 @@ function CustomerList({ user }) {
       if (fetchError) throw fetchError
 
       // Create history record
-      const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
-      const historyMessage = `${symbol}${customer.Outstanding} mark as paid`
+      const historyMessage = `Outstanding mark as paid`
       
       const { error: historyError } = await supabase
         .from('CustomerHistory')
@@ -1062,22 +1221,152 @@ function CustomerList({ user }) {
       </div>
 
       {showCustomerModal && selectedCustomer && (
-        <div className="modal-overlay" onClick={() => setShowCustomerModal(false)}>
+        <div className="modal-overlay" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); }}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setShowCustomerModal(false)}>×</button>
-            <h3>Customer Details</h3>
-            <div className="details-grid">
-              <div><strong>Name:</strong> {selectedCustomer.CustomerName}</div>
-              <div><strong>Address:</strong> {getFullAddress(selectedCustomer)}</div>
-              <div><strong>Phone:</strong> {selectedCustomer.PhoneNumber || '—'}</div>
-              <div><strong>Email:</strong> {selectedCustomer.EmailAddress || '—'}</div>
-              <div><strong>Price:</strong> {formatCurrency(selectedCustomer.Price, user.SettingsCountry || 'United Kingdom')}</div>
-              <div><strong>Weeks:</strong> {selectedCustomer.Weeks}</div>
-              <div><strong>Next Clean:</strong> {formatDateByCountry(selectedCustomer.NextClean, user.SettingsCountry || 'United Kingdom')}</div>
-              <div><strong>Outstanding:</strong> {formatCurrency(selectedCustomer.Outstanding, user.SettingsCountry || 'United Kingdom')}</div>
-              <div><strong>Route:</strong> {selectedCustomer.Route || '—'}</div>
-              <div className="notes-cell"><strong>Notes:</strong> {selectedCustomer.Notes || '—'}</div>
+            <button className="modal-close" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); }}>×</button>
+            <h3>{showServices ? 'Customer Services' : 'Customer Details'}</h3>
+            
+            <div className="modal-actions">
+              {isEditingModal ? (
+                <>
+                  <button className="modal-save-btn" onClick={handleModalSave}>Save</button>
+                  <button className="modal-cancel-btn" onClick={() => setIsEditingModal(false)}>Cancel</button>
+                </>
+              ) : (
+                <>
+                  {!showServices && <button className="modal-edit-btn" onClick={() => { setIsEditingModal(true); setModalEditData({...selectedCustomer}); }}>Edit</button>}
+                  <button className="modal-services-btn" onClick={() => { setShowServices(!showServices); if (!showServices) fetchCustomerServices(selectedCustomer.id); }}>{showServices ? 'Customer Details' : 'Services'}</button>
+                </>
+              )}
             </div>
+            
+            {!showServices ? (
+              // Customer Details View
+              isEditingModal ? (
+                <div className="details-grid">
+                  <div><strong>Name:</strong> <input type="text" value={modalEditData.CustomerName} onChange={(e) => setModalEditData({...modalEditData, CustomerName: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Address:</strong> <input type="text" value={modalEditData.Address} onChange={(e) => setModalEditData({...modalEditData, Address: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Address 2:</strong> <input type="text" value={modalEditData.Address2} onChange={(e) => setModalEditData({...modalEditData, Address2: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Address 3:</strong> <input type="text" value={modalEditData.Address3} onChange={(e) => setModalEditData({...modalEditData, Address3: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Postcode:</strong> <input type="text" value={modalEditData.Postcode} onChange={(e) => setModalEditData({...modalEditData, Postcode: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Phone:</strong> <input type="tel" value={modalEditData.PhoneNumber} onChange={(e) => setModalEditData({...modalEditData, PhoneNumber: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Email:</strong> <input type="email" value={modalEditData.EmailAddress} onChange={(e) => setModalEditData({...modalEditData, EmailAddress: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Price:</strong> <input type="number" value={modalEditData.Price} onChange={(e) => setModalEditData({...modalEditData, Price: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Weeks:</strong> <input type="number" value={modalEditData.Weeks} onChange={(e) => setModalEditData({...modalEditData, Weeks: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Next Clean:</strong> <input type="date" value={modalEditData.NextClean} onChange={(e) => setModalEditData({...modalEditData, NextClean: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Outstanding:</strong> <input type="number" value={modalEditData.Outstanding} onChange={(e) => setModalEditData({...modalEditData, Outstanding: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Route:</strong> <input type="text" value={modalEditData.Route} onChange={(e) => setModalEditData({...modalEditData, Route: e.target.value})} className="modal-input" /></div>
+                  <div style={{gridColumn: '1 / -1'}}><strong>Notes:</strong> <textarea value={modalEditData.Notes} onChange={(e) => setModalEditData({...modalEditData, Notes: e.target.value})} className="modal-input" rows="3" /></div>
+                </div>
+              ) : (
+                <div className="details-grid">
+                  <div><strong>Name:</strong> {selectedCustomer.CustomerName}</div>
+                  <div><strong>Address:</strong> {getFullAddress(selectedCustomer)}</div>
+                  <div><strong>Phone:</strong> {selectedCustomer.PhoneNumber || '—'}</div>
+                  <div><strong>Email:</strong> {selectedCustomer.EmailAddress || '—'}</div>
+                  <div><strong>Price:</strong> {formatCurrency(selectedCustomer.Price, user.SettingsCountry || 'United Kingdom')}</div>
+                  <div><strong>Weeks:</strong> {selectedCustomer.Weeks}</div>
+                  <div><strong>Next Clean:</strong> {formatDateByCountry(selectedCustomer.NextClean, user.SettingsCountry || 'United Kingdom')}</div>
+                  <div><strong>Outstanding:</strong> {formatCurrency(selectedCustomer.Outstanding, user.SettingsCountry || 'United Kingdom')}</div>
+                  <div><strong>Route:</strong> {selectedCustomer.Route || '—'}</div>
+                  <div className="notes-cell"><strong>Notes:</strong> {selectedCustomer.Notes || '—'}</div>
+                </div>
+              )
+            ) : (
+              // Services View
+              <div className="services-list">
+                {!isAddingService ? (
+                  <button className="add-service-btn" onClick={() => setIsAddingService(true)}>+ Add Service</button>
+                ) : (
+                  <div className="new-service-form">
+                    <div className="service-form-row">
+                      <div>
+                        <label><strong>Service:</strong></label>
+                        <input 
+                          type="text" 
+                          value={newServiceData.Service} 
+                          onChange={(e) => setNewServiceData({...newServiceData, Service: e.target.value})} 
+                          className="modal-input"
+                          placeholder="e.g., Windows, Gutters"
+                        />
+                      </div>
+                      <div>
+                        <label><strong>Price:</strong></label>
+                        <input 
+                          type="number" 
+                          value={newServiceData.Price} 
+                          onChange={(e) => setNewServiceData({...newServiceData, Price: e.target.value})} 
+                          className="modal-input"
+                          placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <label><strong>Description:</strong></label>
+                        <input 
+                          type="text" 
+                          value={newServiceData.Description} 
+                          onChange={(e) => setNewServiceData({...newServiceData, Description: e.target.value})} 
+                          className="modal-input"
+                          placeholder="Optional"
+                        />
+                      </div>
+                    </div>
+                    <div className="service-form-actions">
+                      <button className="modal-save-btn" onClick={handleAddService}>Save</button>
+                      <button className="modal-cancel-btn" onClick={() => { setIsAddingService(false); setNewServiceData({ Service: '', Price: '', Description: '' }); }}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+                
+                {customerServices.length > 0 && (
+                  <table className="services-table">
+                    <thead>
+                      <tr>
+                        <th>Service</th>
+                        <th>Price</th>
+                        <th>Description</th>
+                        <th className="actions-col">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {customerServices.map((service) => (
+                        editingServiceId === service.id ? (
+                          <tr key={service.id} className="editing-row">
+                            <td><input type="text" value={editServiceData.Service} onChange={(e) => setEditServiceData({...editServiceData, Service: e.target.value})} className="modal-input" /></td>
+                            <td><input type="number" value={editServiceData.Price} onChange={(e) => setEditServiceData({...editServiceData, Price: e.target.value})} className="modal-input" /></td>
+                            <td><input type="text" value={editServiceData.Description} onChange={(e) => setEditServiceData({...editServiceData, Description: e.target.value})} className="modal-input" /></td>
+                            <td>
+                              <button className="service-save-btn" onClick={() => handleEditService(service.id)}>✓</button>
+                              <button className="service-cancel-btn" onClick={() => { setEditingServiceId(null); setEditServiceData({}); }}>✕</button>
+                            </td>
+                          </tr>
+                        ) : (
+                          <tr key={service.id}>
+                            <td>{service.Service}</td>
+                            <td>{formatCurrency(service.Price, user.SettingsCountry || 'United Kingdom')}</td>
+                            <td>{service.Description || '—'}</td>
+                            <td className="actions-col">
+                              <button className="service-actions-btn" onClick={() => setServiceDropdownOpen(serviceDropdownOpen === service.id ? null : service.id)}>⋮</button>
+                              {serviceDropdownOpen === service.id && (
+                                <div className="service-actions-dropdown">
+                                  <button onClick={() => { setEditingServiceId(service.id); setEditServiceData({...service}); setServiceDropdownOpen(null); }}>Edit</button>
+                                  <button onClick={() => { handleDeleteService(service.id); setServiceDropdownOpen(null); }}>Delete</button>
+                                  <button onClick={() => { handleAddToNextClean(service); setServiceDropdownOpen(null); }}>Add to Next Clean</button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                
+                {customerServices.length === 0 && !isAddingService && (
+                  <p>No services found for this customer.</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
