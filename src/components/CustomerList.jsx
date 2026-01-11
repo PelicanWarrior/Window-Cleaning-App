@@ -303,13 +303,13 @@ function CustomerList({ user }) {
         [customerId]: false
       }))
     } else {
-      // Opening a new dropdown - close all others first
+      // Opening a new dropdown - position to the right of the button
       if (buttonRef) {
         const rect = buttonRef.getBoundingClientRect()
         setDropdownPositions({
           [customerId]: {
-            top: rect.bottom + window.scrollY + 4,
-            left: rect.left
+            top: rect.top + window.scrollY,
+            left: rect.right + window.scrollX + 8
           }
         })
       }
@@ -948,6 +948,61 @@ function CustomerList({ user }) {
                             >
                               ⋮
                             </button>
+                            {expandedActionRows[customer.id] && (
+                              <div 
+                                className="actions-dropdown-menu-inline"
+                                style={{
+                                  top: `${dropdownPositions[customer.id]?.top || 0}px`,
+                                  left: `${dropdownPositions[customer.id]?.left || 0}px`
+                                }}
+                              >
+                                {editingCustomerId === customer.id ? (
+                                  <>
+                                    <button
+                                      className="save-btn"
+                                      onClick={() => {
+                                        handleSaveEdit(customer.id)
+                                        setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
+                                      }}
+                                    >
+                                      Save
+                                    </button>
+                                    <button
+                                      className="cancel-btn"
+                                      onClick={() => {
+                                        setEditingCustomerId(null)
+                                        setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
+                                      }}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    {reminderLetter && (
+                                      <button
+                                        className="reminder-btn"
+                                        onClick={() => sendReminderMessage(customer)}
+                                      >
+                                        Pay Reminder
+                                      </button>
+                                    )}
+                                    <button
+                                      className="paid-btn"
+                                      onClick={() => handleMarkAsPaid(customer.id)}
+                                    >
+                                      Mark as Paid
+                                    </button>
+                                    <button
+                                      className="delete-btn"
+                                      onClick={() => deleteCustomer(customer.id)}
+                                    >
+                                      Delete
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ) : cell.isEditAddress ? (
                           <div style={{ display: 'grid', gap: '6px', minWidth: '200px' }}>
@@ -1002,68 +1057,6 @@ function CustomerList({ user }) {
           </table>
         )}
       </div>
-
-      {/* Render all dropdown menus at root level to avoid z-index issues */}
-      {customers.map((customer) => (
-        expandedActionRows[customer.id] && dropdownPositions[customer.id] && (
-          <div 
-            key={customer.id}
-            className="actions-dropdown-menu"
-            style={{
-              position: 'fixed',
-              top: `${dropdownPositions[customer.id].top}px`,
-              left: `${dropdownPositions[customer.id].left}px`,
-              zIndex: 100001
-            }}
-          >
-            {editingCustomerId === customer.id ? (
-              <>
-                <button
-                  className="save-btn"
-                  onClick={() => {
-                    handleSaveEdit(customer.id)
-                    setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
-                  }}
-                >
-                  Save
-                </button>
-                <button
-                  className="cancel-btn"
-                  onClick={() => {
-                    setEditingCustomerId(null)
-                    setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
-                  }}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <>
-                {reminderLetter && (
-                  <button
-                    className="reminder-btn"
-                    onClick={() => sendReminderMessage(customer)}
-                  >
-                    Pay Reminder
-                  </button>
-                )}
-                <button
-                  className="paid-btn"
-                  onClick={() => handleMarkAsPaid(customer.id)}
-                >
-                  Mark as Paid
-                </button>
-                <button
-                  className="delete-btn"
-                  onClick={() => deleteCustomer(customer.id)}
-                >
-                  Delete
-                </button>
-              </>
-            )}
-          </div>
-        )
-      ))}
 
       {showCustomerModal && selectedCustomer && (
         <div className="modal-overlay" onClick={() => setShowCustomerModal(false)}>

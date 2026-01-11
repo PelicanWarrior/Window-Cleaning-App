@@ -143,7 +143,7 @@
 .actions-dropdown {
   position: relative;
   display: inline-block;
-  z-index: 100000;
+  z-index: 100003;
 }
 
 .actions-dropdown-btn {
@@ -175,6 +175,16 @@
   z-index: 100001;
 }
 
+.actions-dropdown-menu-inline {
+  position: fixed;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  min-width: 120px;
+  z-index: 100004;
+}
+
 .actions-dropdown-menu button {
   display: block;
   width: 100%;
@@ -187,55 +197,80 @@
   transition: background-color 0.2s;
 }
 
-.actions-dropdown-menu button:first-child {
+.actions-dropdown-menu-inline button {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.2s;
+}
+
+.actions-dropdown-menu button:first-child,
+.actions-dropdown-menu-inline button:first-child {
   border-radius: 3px 3px 0 0;
 }
 
-.actions-dropdown-menu button:last-child {
+.actions-dropdown-menu button:last-child,
+.actions-dropdown-menu-inline button:last-child {
   border-radius: 0 0 3px 3px;
 }
 
-.actions-dropdown-menu .edit-btn {
+.actions-dropdown-menu .edit-btn,
+.actions-dropdown-menu-inline .edit-btn {
   color: #3498db;
 }
 
-.actions-dropdown-menu .edit-btn:hover {
+.actions-dropdown-menu .edit-btn:hover,
+.actions-dropdown-menu-inline .edit-btn:hover {
   background-color: #ebf5fb;
 }
 
-.actions-dropdown-menu .delete-btn {
+.actions-dropdown-menu .delete-btn,
+.actions-dropdown-menu-inline .delete-btn {
   color: #e74c3c;
 }
 
-.actions-dropdown-menu .delete-btn:hover {
+.actions-dropdown-menu .delete-btn:hover,
+.actions-dropdown-menu-inline .delete-btn:hover {
   background-color: #fadbd8;
 }
 
-.actions-dropdown-menu .reminder-btn {
+.actions-dropdown-menu .reminder-btn,
+.actions-dropdown-menu-inline .reminder-btn {
   color: #f39c12;
 }
 
-.actions-dropdown-menu .reminder-btn:hover {
+.actions-dropdown-menu .reminder-btn:hover,
+.actions-dropdown-menu-inline .reminder-btn:hover {
   background-color: #fef5e7;
 }
 
-.actions-dropdown-menu .paid-btn {
+.actions-dropdown-menu .paid-btn,
+.actions-dropdown-menu-inline .paid-btn {
   color: #27ae60;
 }
 
-.actions-dropdown-menu .paid-btn:hover {
+.actions-dropdown-menu .paid-btn:hover,
+.actions-dropdown-menu-inline .paid-btn:hover {
   background-color: #d5f4e6;
 }
 
-.actions-dropdown-menu .save-btn {
+.actions-dropdown-menu .save-btn,
+.actions-dropdown-menu-inline .save-btn {
   color: #27ae60;
 }
 
-.actions-dropdown-menu .save-btn:hover {
+.actions-dropdown-menu .save-btn:hover,
+.actions-dropdown-menu-inline .save-btn:hover {
   background-color: #d5f4e6;
 }
 
-.actions-dropdown-menu .cancel-btn {
+.actions-dropdown-menu .cancel-btn,
+.actions-dropdown-menu-inline .cancel-btn {
   padding: 0.5rem 1rem;
   color: #95a5a6;
   flex: none;
@@ -243,7 +278,8 @@
   width: 100%;
 }
 
-.actions-dropdown-menu .cancel-btn:hover {
+.actions-dropdown-menu .cancel-btn:hover,
+.actions-dropdown-menu-inline .cancel-btn:hover {
   background-color: #ecf0f1;
 }
 
@@ -303,7 +339,7 @@
   border-radius: 4px;
   box-shadow: 0 4px 6px rgba(0,0,0,0.1);
   min-width: 180px;
-  z-index: 100002;
+  z-index: 100005;
 }
 .sort-dropdown-menu button {
   display: block;
