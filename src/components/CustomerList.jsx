@@ -944,7 +944,10 @@ function CustomerList({ user }) {
                             <button
                               className="actions-dropdown-btn"
                               ref={(el) => {if (el) dropdownRefs.current[customer.id] = el}}
-                              onClick={(e) => toggleActionDropdown(customer.id, e.currentTarget)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                toggleActionDropdown(customer.id, e.currentTarget)
+                              }}
                             >
                               ⋮
                             </button>
