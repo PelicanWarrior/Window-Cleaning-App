@@ -232,6 +232,17 @@
   flex-wrap: wrap;
 }
 
+.customer-select {
+  display: flex;
+  align-items: center;
+  margin-right: 0.25rem;
+}
+
+.customer-select input {
+  width: 16px;
+  height: 16px;
+}
+
 .customer-name {
   font-weight: bold;
   color: #2c3e50;
@@ -354,6 +365,47 @@
 
 .done-not-paid-btn:hover {
   opacity: 0.9;
+}
+
+.calendar-icon-btn {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #3498db;
+  background-color: white;
+  color: #3498db;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  height: 40px;
+}
+
+.calendar-icon-btn:hover {
+  background-color: #3498db;
+  color: white;
+}
+
+.bulk-date-picker-wrapper {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.date-picker-input {
+  padding: 0.5rem;
+  border: 1px solid #3498db;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.date-picker-input:focus {
+  outline: none;
+  border-color: #2980b9;
+  box-shadow: 0 0 4px rgba(52, 152, 219, 0.3);
 }
 
 .move-date-section {

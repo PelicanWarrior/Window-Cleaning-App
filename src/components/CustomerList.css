@@ -421,8 +421,6 @@
  @media (max-width: 480px) {
    .details-grid { grid-template-columns: 1fr; }
  }
-  top: 0;
-}
 
 .notes-cell {
   max-width: 150px;
@@ -648,8 +646,11 @@
   /* Modal Actions Container */
   .modal-actions {
     display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
     gap: 0.8rem;
-    justify-content: flex-end;
+    justify-content: flex-start;
+    align-items: center;
     margin-bottom: 1.5rem;
     padding-bottom: 1rem;
     border-bottom: 1px solid rgba(21, 101, 192, 0.2);
@@ -659,7 +660,8 @@
   .modal-edit-btn,
   .modal-save-btn,
   .modal-cancel-btn,
-  .modal-services-btn {
+  .modal-services-btn,
+  .modal-history-btn {
     padding: 0.6rem 1.2rem;
     border-radius: 6px;
     font-size: 0.95rem;
@@ -667,6 +669,8 @@
     cursor: pointer;
     border: none;
     transition: all 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .modal-edit-btn {
@@ -703,6 +707,15 @@
 
   .modal-services-btn:hover {
     background-color: #ef6c00;
+  }
+
+  .modal-history-btn {
+    background-color: #7b1fa2;
+    color: white;
+  }
+
+  .modal-history-btn:hover {
+    background-color: #6a1b9a;
   }
 
   /* Services List Styles */
@@ -897,6 +910,63 @@
   }
 
   @media (max-width: 768px) {
+    /* History Table Styles */
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+
+    .history-table thead {
+      background-color: #f5f9ff;
+      position: sticky;
+      top: 0;
+    }
+
+    .history-table th {
+      text-align: left;
+      padding: 0.8rem 1rem;
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: #1565c0;
+      border-bottom: 2px solid #1565c0;
+    }
+
+    .history-table td {
+      padding: 0.8rem 1rem;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .history-table tbody tr:hover {
+      background-color: #f9f9f9;
+    }
+
+    .history-table th:nth-child(1),
+    .history-table td:nth-child(1) {
+      width: 20%;
+    }
+
+    .history-table th:nth-child(2),
+    .history-table td:nth-child(2) {
+      width: 80%;
+    }
+
+    .modal-history-btn {
+      background-color: #7b1fa2;
+      color: white;
+    }
+
+    .modal-history-btn:hover {
+      background-color: #6a1b9a;
+    }
+
     .services-table {
       font-size: 0.9rem;
     }
@@ -917,15 +987,17 @@
     .service-form-actions button {
       width: 100%;
     }
-  }
-      flex-direction: column;
+
+    .modal-actions {
+      flex-direction: row;
+      flex-wrap: nowrap;
     }
 
     .modal-edit-btn,
     .modal-save-btn,
     .modal-cancel-btn,
     .modal-services-btn {
-      width: 100%;
+      width: auto;
     }
   }
 

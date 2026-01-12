@@ -12,9 +12,11 @@ function WorkloadManager({ user }) {
   const [messageFooter, setMessageFooter] = useState('')
   const [selectedLetters, setSelectedLetters] = useState({})
   const [selectedLetterAll, setSelectedLetterAll] = useState('')
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState([])
   const [activeView, setActiveView] = useState('Calendar')
   const [expandedDays, setExpandedDays] = useState({})
-  const [expandedMoveDate, setExpandedMoveDate] = useState({})
+  const [expandedDatePickers, setExpandedDatePickers] = useState({})
+  const [bulkDatePickerOpen, setBulkDatePickerOpen] = useState(false)
   const [customerPayLetter, setCustomerPayLetter] = useState(null)
   const [userRouteOrder, setUserRouteOrder] = useState('')
   const [orderedCustomers, setOrderedCustomers] = useState([])
@@ -48,6 +50,10 @@ function WorkloadManager({ user }) {
 
   useEffect(() => {
     setSelectedLetterAll('')
+  }, [selectedDate, currentDate])
+
+  useEffect(() => {
+    setSelectedCustomerIds([])
   }, [selectedDate, currentDate])
 
   // Fetch and initialize user route order from Users table
@@ -449,34 +455,76 @@ function WorkloadManager({ user }) {
     window.open(url, '_blank')
   }
 
-  // Handle Move Date
-  const handleMoveDate = async (customer, days) => {
+  // Handle Move Date to specific date
+  const handleMoveToDate = async (customer, newDate) => {
     try {
-      const currentNextClean = new Date(customer.NextClean)
-      const newNextClean = new Date(currentNextClean)
-      newNextClean.setDate(newNextClean.getDate() + days)
-      
       const { error } = await supabase
         .from('Customers')
         .update({ 
-          NextClean: newNextClean.toISOString().split('T')[0]
+          NextClean: newDate
         })
         .eq('id', customer.id)
       
       if (error) throw error
       
+      setExpandedDatePickers(prev => ({...prev, [customer.id]: false}))
       fetchCustomers()
     } catch (error) {
       console.error('Error moving date:', error.message)
     }
   }
 
-  // Bulk move dates for all customers on the selected day
-  const handleMoveDateBulk = async (days) => {
-    if (!selectedDayCustomers.length) return
+  // Bulk move to specific date
+  const handleBulkMoveToDate = async (newDate) => {
+    const targetCustomers = selectedCustomerIds.length
+      ? selectedDayCustomers.filter((customer) => selectedCustomerIds.includes(customer.id))
+      : selectedDayCustomers
+
+    if (!targetCustomers.length) return
     try {
       await Promise.all(
-        selectedDayCustomers
+        targetCustomers
+          .filter((customer) => customer.NextClean)
+          .map(async (customer) => {
+            const { error } = await supabase
+              .from('Customers')
+              .update({ NextClean: newDate })
+              .eq('id', customer.id)
+
+            if (error) throw error
+          })
+      )
+
+      setBulkDatePickerOpen(false)
+      fetchCustomers()
+    } catch (error) {
+      console.error('Error bulk moving dates:', error.message)
+    }
+  }
+
+  // Handle Move Date (legacy - for backwards compatibility if needed)
+  const handleMoveDate = async (customer, days) => {
+    try {
+      const currentNextClean = new Date(customer.NextClean)
+      const newNextClean = new Date(currentNextClean)
+      newNextClean.setDate(newNextClean.getDate() + days)
+      
+      await handleMoveToDate(customer, newNextClean.toISOString().split('T')[0])
+    } catch (error) {
+      console.error('Error moving date:', error.message)
+    }
+  }
+
+  // Bulk move dates for selected customers (or all if none selected)
+  const handleMoveDateBulk = async (days) => {
+    const targetCustomers = selectedCustomerIds.length
+      ? selectedDayCustomers.filter((customer) => selectedCustomerIds.includes(customer.id))
+      : selectedDayCustomers
+
+    if (!targetCustomers.length) return
+    try {
+      await Promise.all(
+        targetCustomers
           .filter((customer) => customer.NextClean)
           .map(async (customer) => {
             const currentNextClean = new Date(customer.NextClean)
@@ -502,21 +550,33 @@ function WorkloadManager({ user }) {
     setSelectedLetters((prev) => ({ ...prev, [customerId]: messageId }))
   }
 
-  const handleSelectLetterAll = (messageId, customersForDay) => {
+  const handleSelectLetterAll = (messageId) => {
     setSelectedLetterAll(messageId)
-    if (!messageId) return
+
+    const targetCustomers = selectedCustomerIds.length
+      ? selectedDayCustomers.filter((customer) => selectedCustomerIds.includes(customer.id))
+      : selectedDayCustomers
+
+    if (!messageId || !targetCustomers.length) return
 
     setSelectedLetters((prev) => {
       const updated = { ...prev }
-      customersForDay.forEach((customer) => {
+      targetCustomers.forEach((customer) => {
         updated[customer.id] = messageId
       })
       return updated
     })
   }
+  const toggleCustomerSelection = (customerId) => {
+    setSelectedCustomerIds((prev) =>
+      prev.includes(customerId)
+        ? prev.filter((id) => id !== customerId)
+        : [...prev, customerId]
+    )
+  }
 
-  const toggleMoveDate = (customerId) => {
-    setExpandedMoveDate((prev) => ({
+  const toggleDatePicker = (customerId) => {
+    setExpandedDatePickers((prev) => ({
       ...prev,
       [customerId]: !prev[customerId]
     }))
@@ -691,6 +751,8 @@ function WorkloadManager({ user }) {
   if (loading) return <div className="loading">Loading workload...</div>
 
   const selectedDayCustomers = selectedDate ? getCustomersForDate(selectedDate) : []
+  const selectedCustomersForDay = selectedDayCustomers.filter((customer) => selectedCustomerIds.includes(customer.id))
+  const hasSelectedCustomers = selectedCustomersForDay.length > 0
   const totalIncome = selectedDayCustomers.reduce((sum, customer) => sum + (parseFloat(customer.Price) || 0), 0)
 
   // Route color helper
@@ -796,11 +858,11 @@ function WorkloadManager({ user }) {
           <p className="income-total">Income: {formatCurrency(totalIncome, user.SettingsCountry || 'United Kingdom')}</p>
           {selectedDayCustomers.length > 0 && (
             <div className="message-all-section">
-              <label className="message-all-label" htmlFor="messageAll">Message to All:</label>
+              <label className="message-all-label" htmlFor="messageAll">Message to {hasSelectedCustomers ? 'Selected' : 'All'}:</label>
               <select
                 id="messageAll"
                 value={selectedLetterAll || ''}
-                onChange={(e) => handleSelectLetterAll(e.target.value, selectedDayCustomers)}
+                onChange={(e) => handleSelectLetterAll(e.target.value)}
                 disabled={!messages.length}
               >
                 {!messages.length && <option value="">No letters available</option>}
@@ -813,97 +875,122 @@ function WorkloadManager({ user }) {
           )}
           {selectedDayCustomers.length > 0 && (
             <div className="bulk-move-section">
-              <span className="bulk-move-label">Move all jobs:</span>
-              <button onClick={() => handleMoveDateBulk(-1)} className="bulk-move-btn">-1 Day</button>
-              <button onClick={() => handleMoveDateBulk(1)} className="bulk-move-btn">+1 Day</button>
-              <button onClick={() => handleMoveDateBulk(-7)} className="bulk-move-btn">-1 Week</button>
-              <button onClick={() => handleMoveDateBulk(7)} className="bulk-move-btn">+1 Week</button>
+              <span className="bulk-move-label">Move {hasSelectedCustomers ? 'selected' : 'all'} jobs:</span>
+              <div className="bulk-date-picker-wrapper">
+                <button 
+                  onClick={() => setBulkDatePickerOpen(!bulkDatePickerOpen)}
+                  className="calendar-icon-btn"
+                  title="Pick a date"
+                >
+                  📅
+                </button>
+                {bulkDatePickerOpen && (
+                  <input
+                    type="date"
+                    value={new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate).toISOString().split('T')[0]}
+                    onChange={(e) => handleBulkMoveToDate(e.target.value)}
+                    className="date-picker-input"
+                    autoFocus
+                  />
+                )}
+              </div>
             </div>
           )}
           {selectedDayCustomers.length === 0 ? (
             <p className="empty-state">No customers scheduled for this day.</p>
           ) : (
             <div className="customer-list">
-              {(orderedCustomers.length > 0 ? orderedCustomers : selectedDayCustomers).map((customer, index) => (
-                <div
-                  key={customer.id}
-                  className={`customer-item ${draggedCustomerId === customer.id ? 'dragging' : ''} ${dragOverIndex === index ? 'drag-over' : ''}`}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, customer.id)}
-                  onDragOver={(e) => handleDragOver(e, index)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, index)}
-                >
-                  <div className="drag-handle">⋮⋮</div>
-                  <div className="customer-content">
-                    <div className="customer-header">
-                      <div className="customer-name">{getFullAddress(customer)}</div>
-                      <span className="route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
-                    </div>
-                    <div className="customer-details">
-                      <span>{customer.CustomerName}</span>
-                      {customer.PhoneNumber && <span> • {customer.PhoneNumber}</span>}
-                      <span> • {formatCurrency(customer.Price, user.SettingsCountry || 'United Kingdom')}{getAdditionalServices(customer)}</span>
-                      {customer.Outstanding > 0 && <span className="outstanding"> • Outstanding: {formatCurrency(customer.Outstanding, user.SettingsCountry || 'United Kingdom')}</span>}
-                      {customer.Notes && <span> • {customer.Notes}</span>}
-                    </div>
-                    <div className="customer-actions">
-                      <button onClick={() => handleDoneAndPaid(customer)} className="done-paid-btn">
-                        Done and Paid
-                      </button>
-                      <button onClick={() => handleDoneAndNotPaid(customer)} className="done-not-paid-btn">
-                        Done and Not Paid
-                      </button>
-                    </div>
-                    <div className="customer-footer">
-                      <button
-                        className="move-date-toggle-btn"
-                        onClick={() => toggleMoveDate(customer.id)}
-                      >
-                        {expandedMoveDate[customer.id] ? '− Hide' : '+ Move Date'}
-                      </button>
-                      <div className="text-message-section">
-                        <select
-                          value={selectedLetters[customer.id] || messages[0]?.id || ''}
-                          onChange={(e) => handleSelectLetter(customer.id, e.target.value)}
-                          disabled={!messages.length}
+              {(orderedCustomers.length > 0 ? orderedCustomers : selectedDayCustomers).map((customer, index) => {
+                const isSelected = selectedCustomerIds.includes(customer.id)
+
+                return (
+                  <div
+                    key={customer.id}
+                    className={`customer-item ${draggedCustomerId === customer.id ? 'dragging' : ''} ${dragOverIndex === index ? 'drag-over' : ''}`}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, customer.id)}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, index)}
+                  >
+                    <div className="drag-handle">⋮⋮</div>
+                    <div className="customer-content">
+                      <div className="customer-header">
+                        <label
+                          className="customer-select"
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
                         >
-                          {!messages.length && <option value="">No letters available</option>}
-                          {messages.length > 0 && !selectedLetters[customer.id] && (
-                            <option value="">Select letter</option>
-                          )}
-                          {messages.map((msg) => (
-                            <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
-                          ))}
-                        </select>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleCustomerSelection(customer.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                          />
+                        </label>
+                        <div className="customer-name">{getFullAddress(customer)}</div>
+                        <span className="route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
+                      </div>
+                      <div className="customer-details">
+                        <span>{customer.CustomerName}</span>
+                        {customer.PhoneNumber && <span> • {customer.PhoneNumber}</span>}
+                        <span> • {formatCurrency(customer.Price, user.SettingsCountry || 'United Kingdom')}{getAdditionalServices(customer)}</span>
+                        {customer.Outstanding > 0 && <span className="outstanding"> • Outstanding: {formatCurrency(customer.Outstanding, user.SettingsCountry || 'United Kingdom')}</span>}
+                        {customer.Notes && <span> • {customer.Notes}</span>}
+                      </div>
+                      <div className="customer-actions">
+                        <button onClick={() => handleDoneAndPaid(customer)} className="done-paid-btn">
+                          Done and Paid
+                        </button>
+                        <button onClick={() => handleDoneAndNotPaid(customer)} className="done-not-paid-btn">
+                          Done and Not Paid
+                        </button>
+                      </div>
+                      <div className="customer-footer">
                         <button
-                          className="text-btn"
-                          onClick={() => handleSendWhatsApp(customer)}
-                          disabled={!customer.PhoneNumber || !messages.length}
+                          className="calendar-icon-btn"
+                          onClick={() => toggleDatePicker(customer.id)}
+                          title="Pick a date to move to"
                         >
-                          Text
+                          📅
                         </button>
+                        {expandedDatePickers[customer.id] && (
+                          <input
+                            type="date"
+                            value={customer.NextClean || ''}
+                            onChange={(e) => handleMoveToDate(customer, e.target.value)}
+                            className="date-picker-input"
+                            autoFocus
+                          />
+                        )}
+                        <div className="text-message-section">
+                          <select
+                            value={selectedLetters[customer.id] || messages[0]?.id || ''}
+                            onChange={(e) => handleSelectLetter(customer.id, e.target.value)}
+                            disabled={!messages.length}
+                          >
+                            {!messages.length && <option value="">No letters available</option>}
+                            {messages.length > 0 && !selectedLetters[customer.id] && (
+                              <option value="">Select letter</option>
+                            )}
+                            {messages.map((msg) => (
+                              <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
+                            ))}
+                          </select>
+                          <button
+                            className="text-btn"
+                            onClick={() => handleSendWhatsApp(customer)}
+                            disabled={!customer.PhoneNumber || !messages.length}
+                          >
+                            Text
+                          </button>
+                        </div>
                       </div>
                     </div>
-                    {expandedMoveDate[customer.id] && (
-                      <div className="move-date-buttons">
-                        <button onClick={() => handleMoveDate(customer, -1)} className="move-date-btn">
-                          -1 Day
-                        </button>
-                        <button onClick={() => handleMoveDate(customer, 1)} className="move-date-btn">
-                          +1 Day
-                        </button>
-                        <button onClick={() => handleMoveDate(customer, -7)} className="move-date-btn">
-                          -1 Week
-                        </button>
-                        <button onClick={() => handleMoveDate(customer, 7)} className="move-date-btn">
-                          +1 Week
-                        </button>
-                      </div>
-                    )}
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

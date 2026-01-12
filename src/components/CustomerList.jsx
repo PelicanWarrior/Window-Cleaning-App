@@ -31,6 +31,8 @@ function CustomerList({ user }) {
   const [serviceDropdownOpen, setServiceDropdownOpen] = useState(null)
   const [editingServiceId, setEditingServiceId] = useState(null)
   const [editServiceData, setEditServiceData] = useState({})
+  const [showHistory, setShowHistory] = useState(false)
+  const [customerHistory, setCustomerHistory] = useState([])
   const [filters, setFilters] = useState({
     CustomerName: '',
     Address: '',
@@ -483,6 +485,21 @@ function CustomerList({ user }) {
       setCustomerServices(data || [])
     } catch (error) {
       console.error('Error fetching customer services:', error.message)
+    }
+  }
+
+  async function fetchCustomerHistory(customerId) {
+    try {
+      const { data, error } = await supabase
+        .from('CustomerHistory')
+        .select('*')
+        .eq('CustomerID', customerId)
+        .order('created_at', { ascending: false })
+      
+      if (error) throw error
+      setCustomerHistory(data || [])
+    } catch (error) {
+      console.error('Error fetching customer history:', error.message)
     }
   }
 
@@ -1221,10 +1238,10 @@ function CustomerList({ user }) {
       </div>
 
       {showCustomerModal && selectedCustomer && (
-        <div className="modal-overlay" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); }}>
+        <div className="modal-overlay" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); setShowHistory(false); }}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); }}>×</button>
-            <h3>{showServices ? 'Customer Services' : 'Customer Details'}</h3>
+            <button className="modal-close" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); setShowHistory(false); }}>×</button>
+            <h3>{showHistory ? 'Customer History' : showServices ? 'Customer Services' : 'Customer Details'}</h3>
             
             <div className="modal-actions">
               {isEditingModal ? (
@@ -1234,13 +1251,14 @@ function CustomerList({ user }) {
                 </>
               ) : (
                 <>
-                  {!showServices && <button className="modal-edit-btn" onClick={() => { setIsEditingModal(true); setModalEditData({...selectedCustomer}); }}>Edit</button>}
-                  <button className="modal-services-btn" onClick={() => { setShowServices(!showServices); if (!showServices) fetchCustomerServices(selectedCustomer.id); }}>{showServices ? 'Customer Details' : 'Services'}</button>
+                  {!showServices && !showHistory && <button className="modal-edit-btn" onClick={() => { setIsEditingModal(true); setModalEditData({...selectedCustomer}); }}>Edit</button>}
+                  <button className="modal-services-btn" onClick={() => { setShowServices(!showServices); setShowHistory(false); if (!showServices) fetchCustomerServices(selectedCustomer.id); }}>{showServices ? 'Customer Details' : 'Services'}</button>
+                  <button className="modal-history-btn" onClick={() => { setShowHistory(!showHistory); setShowServices(false); if (!showHistory) fetchCustomerHistory(selectedCustomer.id); }}>{showHistory ? 'Customer Details' : 'History'}</button>
                 </>
               )}
             </div>
             
-            {!showServices ? (
+            {!showServices && !showHistory ? (
               // Customer Details View
               isEditingModal ? (
                 <div className="details-grid">
@@ -1272,7 +1290,56 @@ function CustomerList({ user }) {
                   <div className="notes-cell"><strong>Notes:</strong> {selectedCustomer.Notes || '—'}</div>
                 </div>
               )
+            ) : showHistory ? (
+
+              // History View
+
+              <div className="history-list">
+
+                {customerHistory.length > 0 ? (
+
+                  <table className="history-table">
+
+                    <thead>
+
+                      <tr>
+
+                        <th>Date</th>
+
+                        <th>Message</th>
+
+                      </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                      {customerHistory.map((entry, index) => (
+
+                        <tr key={index}>
+
+                          <td>{formatDateByCountry(entry.created_at, user.SettingsCountry || 'United Kingdom')}</td>
+
+                          <td>{entry.Message}</td>
+
+                        </tr>
+
+                      ))}
+
+                    </tbody>
+
+                  </table>
+
+                ) : (
+
+                  <p>No history found for this customer.</p>
+
+                )}
+
+              </div>
+
             ) : (
+
               // Services View
               <div className="services-list">
                 {!isAddingService ? (
