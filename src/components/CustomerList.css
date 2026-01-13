@@ -140,10 +140,11 @@
   background-color: #7f8c8d;
 }
 
+
 .actions-dropdown {
   position: relative;
   display: inline-block;
-  z-index: 100003;
+  z-index: 1;
 }
 
 .actions-dropdown-btn {
@@ -158,7 +159,7 @@
   transition: background-color 0.2s;
   white-space: nowrap;
   position: relative;
-  z-index: 100000;
+  z-index: 1;
 }
 
 .actions-dropdown-btn:hover {
@@ -172,7 +173,7 @@
   box-shadow: 0 4px 6px rgba(0,0,0,0.1);
   min-width: 100px;
   position: relative;
-  z-index: 100001;
+  z-index: 2;
 }
 
 .actions-dropdown-menu-inline {
@@ -182,7 +183,7 @@
   border-radius: 4px;
   box-shadow: 0 4px 6px rgba(0,0,0,0.1);
   min-width: 140px;
-  z-index: 100004;
+  z-index: 2;
 }
 
 .actions-dropdown-menu button {
