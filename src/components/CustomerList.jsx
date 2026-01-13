@@ -33,6 +33,7 @@ function CustomerList({ user }) {
   const [editServiceData, setEditServiceData] = useState({})
   const [showHistory, setShowHistory] = useState(false)
   const [customerHistory, setCustomerHistory] = useState([])
+  const [cancelServiceModal, setCancelServiceModal] = useState({ show: false, reason: '' })
   const [filters, setFilters] = useState({
     CustomerName: '',
     Address: '',
@@ -269,7 +270,7 @@ function CustomerList({ user }) {
     return parts.join(', ')
   }
 
-  const sendReminderMessage = (customer) => {
+  const sendReminderMessage = async (customer) => {
     if (!reminderLetter) {
       alert('No reminder message is configured.')
       return
@@ -301,6 +302,20 @@ function CustomerList({ user }) {
     const text = bodyParts.join('\n')
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
     window.open(url, '_blank')
+    
+    // Add to CustomerHistory
+    try {
+      const { error } = await supabase
+        .from('CustomerHistory')
+        .insert({
+          CustomerID: customer.id,
+          Message: 'Message Pay Reminder Sent'
+        })
+      
+      if (error) throw error
+    } catch (error) {
+      console.error('Error adding to history:', error.message)
+    }
     
     // Close the dropdown after sending
     setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
@@ -652,7 +667,8 @@ function CustomerList({ user }) {
       if (fetchError) throw fetchError
 
       // Create history record
-      const historyMessage = `Outstanding mark as paid`
+      const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+      const historyMessage = `${symbol}${customer.Outstanding} mark as paid`
       
       const { error: historyError } = await supabase
         .from('CustomerHistory')
@@ -676,6 +692,43 @@ function CustomerList({ user }) {
     } catch (error) {
       console.error('Error marking as paid:', error.message)
       alert('Error marking as paid: ' + error.message)
+    }
+  }
+
+  async function handleCancelService(reason) {
+    if (!selectedCustomer) return
+
+    try {
+      // Clear NextClean field
+      const { error: updateError } = await supabase
+        .from('Customers')
+        .update({ NextClean: null })
+        .eq('id', selectedCustomer.id)
+      
+      if (updateError) throw updateError
+      
+      // Add to CustomerHistory
+      let historyMessage = 'Cancelled Service'
+      if (reason && reason.trim()) {
+        historyMessage += ` - ${reason.trim()}`
+      }
+      
+      const { error: historyError } = await supabase
+        .from('CustomerHistory')
+        .insert({
+          CustomerID: selectedCustomer.id,
+          Message: historyMessage
+        })
+      
+      if (historyError) throw historyError
+      
+      // Close modal and refresh
+      setCancelServiceModal({ show: false, reason: '' })
+      setShowCustomerModal(false)
+      fetchCustomers()
+    } catch (error) {
+      console.error('Error cancelling service:', error.message)
+      alert('Error cancelling service: ' + error.message)
     }
   }
 
@@ -1277,6 +1330,7 @@ function CustomerList({ user }) {
                   <div style={{gridColumn: '1 / -1'}}><strong>Notes:</strong> <textarea value={modalEditData.Notes} onChange={(e) => setModalEditData({...modalEditData, Notes: e.target.value})} className="modal-input" rows="3" /></div>
                 </div>
               ) : (
+                <>
                 <div className="details-grid">
                   <div><strong>Name:</strong> {selectedCustomer.CustomerName}</div>
                   <div><strong>Address:</strong> {getFullAddress(selectedCustomer)}</div>
@@ -1289,6 +1343,14 @@ function CustomerList({ user }) {
                   <div><strong>Route:</strong> {selectedCustomer.Route || '—'}</div>
                   <div className="notes-cell"><strong>Notes:</strong> {selectedCustomer.Notes || '—'}</div>
                 </div>
+                <button 
+                  className="cancel-service-btn"
+                  onClick={() => setCancelServiceModal({ show: true, reason: '' })}
+                  title="Cancel this customer's service"
+                >
+                  Cancel Service
+                </button>
+                </>
               )
             ) : showHistory ? (
 
@@ -1434,6 +1496,38 @@ function CustomerList({ user }) {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {cancelServiceModal.show && selectedCustomer && (
+        <div className="modal-overlay" onClick={() => setCancelServiceModal({ show: false, reason: '' })}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Cancel Service</h3>
+            <div className="modal-form">
+              <label htmlFor="cancelReason">Reason for Cancelation:</label>
+              <textarea
+                id="cancelReason"
+                value={cancelServiceModal.reason}
+                onChange={(e) => setCancelServiceModal(prev => ({ ...prev, reason: e.target.value }))}
+                placeholder="Enter reason (optional)"
+                rows="4"
+              />
+            </div>
+            <div className="modal-buttons">
+              <button 
+                onClick={() => handleCancelService(cancelServiceModal.reason)}
+                className="modal-ok-btn"
+              >
+                OK
+              </button>
+              <button 
+                onClick={() => setCancelServiceModal({ show: false, reason: '' })}
+                className="modal-cancel-btn"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

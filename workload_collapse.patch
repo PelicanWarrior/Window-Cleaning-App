@@ -1,0 +1,46 @@
+--- Add state for calendar collapse
+const [draggedCustomerId, setDraggedCustomerId] = useState(null)
+const [dragOverIndex, setDragOverIndex] = useState(null)
++const [calendarCollapsed, setCalendarCollapsed] = useState(false)
+
+--- Add collapse button in calendar header
+<div className="calendar-header">
+  <button onClick={previousMonth} className="month-nav-btn">←</button>
+  <h2>{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</h2>
+  <button onClick={nextMonth} className="month-nav-btn">→</button>
++  <button onClick={() => setCalendarCollapsed(!calendarCollapsed)} className="collapse-btn">
++    {calendarCollapsed ? '▼' : '▲'}
++  </button>
+</div>
+
+--- Wrap calendar grid in conditional
+{activeView === 'Calendar' ? (
+  <>
++    {!calendarCollapsed && (
+      <div className="calendar-grid">
+        <div className="calendar-day-header">Sun</div>
+        <div className="calendar-day-header">Mon</div>
+        <div className="calendar-day-header">Tue</div>
+        <div className="calendar-day-header">Wed</div>
+        <div className="calendar-day-header">Thu</div>
+        <div className="calendar-day-header">Fri</div>
+        <div className="calendar-day-header">Sat</div>
+        {generateCalendar()}
+      </div>
++    )}
+
+--- Wrap overview grid in conditional
+) : (
++  {!calendarCollapsed && (
+    <div className="overview-grid">
+      <div className="calendar-day-header">Sun</div>
+      <div className="calendar-day-header">Mon</div>
+      <div className="calendar-day-header">Tue</div>
+      <div className="calendar-day-header">Wed</div>
+      <div className="calendar-day-header">Thu</div>
+      <div className="calendar-day-header">Fri</div>
+      <div className="calendar-day-header">Sat</div>
+      {generateOverviewCalendar()}
+    </div>
++  )}
+)}

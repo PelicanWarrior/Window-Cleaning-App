@@ -65,6 +65,33 @@
 
 .month-nav-btn:hover {
   background-color: #2980b9;
+
+.collapse-btn {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 12px;
+  width: 260px;
+  height: 48px;
+  font-size: 1.4rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.collapse-btn:hover {
+  background-color: #2980b9;
+}
+
+.collapse-btn-row {
+  margin-top: 1rem;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
 }
 
 .calendar-grid {
@@ -189,40 +216,227 @@
 .customer-list {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.5rem;
 }
 
-.customer-item {
-  padding: 0;
-  border: 2px solid #e0e0e0;
-  border-radius: 12px;
+.customer-row-item {
+  display: grid;
+  grid-template-columns: 40px 40px 80px 1.5fr 80px auto;
+  gap: 0.8rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
   background-color: white;
   transition: all 0.2s;
-  display: flex;
-  gap: 1rem;
   align-items: flex-start;
 }
 
-.customer-item:hover {
+.customer-row-item:hover {
   background-color: #f8f9fa;
   border-color: #3498db;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
-.customer-info {
+.customer-grid-col {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 1rem;
-  padding: 1rem 1.5rem;
-  flex: 1;
+  min-height: 40px;
 }
-.customer-content {
+
+.drag-col {
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.checkbox-col {
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.outstanding-col {
+  font-weight: 600;
+  color: #e74c3c;
+  min-width: 80px;
+}
+
+.name-col {
+  font-weight: 500;
+  color: #2c3e50;
+  min-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.info-col {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem 1.5rem;
+  gap: 0.2rem;
   flex: 1;
+  overflow: visible;
+  min-width: 0;
+}
+
+.price-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 1rem;
+  color: #2c3e50;
+}
+
+.price-display {
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.price-display:hover {
+  background-color: #e8f4f8;
+  border: 1px solid #3498db;
+}
+
+.price-edit-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.price-button-row {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.price-edit-container input {
+  width: 70px;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #3498db;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.price-save-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background-color: #27ae60;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+}
+
+.price-save-btn:hover {
+  background-color: #229954;
+}
+
+.price-cancel-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+}
+
+.price-cancel-btn:hover {
+  background-color: #c0392b;
+}
+
+.customer-address-main {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 0.95rem;
+  overflow: visible;
+  word-wrap: break-word;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.customer-name-sub {
+  font-size: 0.85rem;
+  color: #7f8c8d;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.address-col {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  overflow: hidden;
+}
+
+.actions-col {
+  flex-shrink: 0;
+}
+
+.row-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.row-actions-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.row-message-and-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.row-message-section {
+  display: flex;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.row-message-section select {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  min-width: 120px;
+}
+
+.row-calendar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.change-date-label {
+  font-size: 0.8rem;
+  color: #555;
+  font-weight: 500;
 }
 
 .customer-header {
@@ -280,15 +494,16 @@
 }
 
 .text-btn {
-  padding: 0.55rem 1rem;
+  padding: 0.35rem 0.7rem;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   background-color: #25d366;
   color: white;
   cursor: pointer;
   font-weight: 600;
   transition: opacity 0.2s;
   white-space: nowrap;
+  font-size: 0.8rem;
 }
 
 .text-btn:hover {
@@ -339,11 +554,11 @@
 
 .done-paid-btn,
 .done-not-paid-btn {
-  padding: 0.5rem 1rem;
+  padding: 0.4rem 0.8rem;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   font-weight: 500;
   transition: opacity 0.2s;
   white-space: nowrap;
@@ -368,19 +583,19 @@
 }
 
 .calendar-icon-btn {
-  padding: 0.5rem 0.75rem;
+  padding: 0.35rem 0.5rem;
   border: 1px solid #3498db;
   background-color: white;
   color: #3498db;
-  border-radius: 6px;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 1.2rem;
+  font-size: 1rem;
   transition: all 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 40px;
-  height: 40px;
+  min-width: 35px;
+  height: 35px;
 }
 
 .calendar-icon-btn:hover {
@@ -551,6 +766,115 @@
 
 .show-all-btn:hover {
   opacity: 0.9;
+}
+
+/* Mobile Menu Styles */
+.mobile-menu-container {
+  display: none;
+  position: relative;
+}
+
+.mobile-menu-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  color: #2c3e50;
+  transition: color 0.2s;
+}
+
+.mobile-menu-btn:hover {
+  color: #3498db;
+}
+
+.mobile-menu-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  min-width: 200px;
+  margin-top: 0.5rem;
+}
+
+.mobile-menu-item {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.2s;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.mobile-menu-item:last-child {
+  border-bottom: none;
+}
+
+.mobile-menu-item:hover {
+  background-color: #f8f9fa;
+}
+
+.mobile-menu-item.done-paid-btn {
+  background-color: #27ae60;
+  color: white;
+  font-weight: 600;
+  border-bottom: 1px solid #229954 !important;
+}
+
+.mobile-menu-item.done-paid-btn:hover {
+  background-color: #229954;
+}
+
+.mobile-menu-item.done-not-paid-btn {
+  background-color: #e67e22;
+  color: white;
+  font-weight: 600;
+  border-bottom: 1px solid #d35400 !important;
+}
+
+.mobile-menu-item.done-not-paid-btn:hover {
+  background-color: #d35400;
+}
+
+.mobile-menu-item.text-btn {
+  color: #25d366;
+  font-weight: 600;
+}
+
+.mobile-menu-item.calendar-icon-btn {
+  color: #3498db;
+  font-weight: 600;
+}
+
+.mobile-menu-section {
+  padding: 0.5rem;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.mobile-menu-select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.mobile-menu-date-input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #3498db;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  margin: 0.5rem;
 }
 
 /* Tablet styles */
@@ -789,6 +1113,84 @@
 
   .customer-content {
     padding: 0;
+  }
+
+  .customer-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+  }
+
+  .customer-controls {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .customer-messaging {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .customer-calendar {
+    width: 100%;
+  }
+
+  .customer-row-item {
+    grid-template-columns: 1fr;
+    padding: 0.75rem;
+  }
+
+  .drag-col,
+  .checkbox-col,
+  .outstanding-col,
+  .name-col,
+  .address-col {
+    width: 100%;
+  }
+
+  .row-actions-buttons {
+    display: none;
+  }
+
+  .row-message-and-calendar {
+    display: none;
+  }
+
+  .mobile-menu-container {
+    display: block;
+  }
+
+  .row-actions-group {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .row-actions-buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .done-paid-btn,
+  .done-not-paid-btn {
+    width: 100%;
+  }
+
+  .row-message-section {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .row-message-section select {
+    width: 100%;
+    min-width: unset;
+  }
+
+  .row-calendar-section {
+    width: 100%;
   }
 
   .customer-header {

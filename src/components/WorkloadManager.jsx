@@ -6,7 +6,7 @@ import { formatCurrency, getCurrencyConfig } from '../lib/format'
 function WorkloadManager({ user }) {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [customers, setCustomers] = useState([])
-  const [selectedDate, setSelectedDate] = useState(new Date().getDate())
+  const [selectedDate, setSelectedDate] = useState(null)
   const [loading, setLoading] = useState(true)
   const [messages, setMessages] = useState([])
   const [messageFooter, setMessageFooter] = useState('')
@@ -22,6 +22,10 @@ function WorkloadManager({ user }) {
   const [orderedCustomers, setOrderedCustomers] = useState([])
   const [draggedCustomerId, setDraggedCustomerId] = useState(null)
   const [dragOverIndex, setDragOverIndex] = useState(null)
+  const [calendarCollapsed, setCalendarCollapsed] = useState(false)
+  const [editingPriceCustomerId, setEditingPriceCustomerId] = useState(null)
+  const [editingPriceValue, setEditingPriceValue] = useState('')
+  const [mobileMenuOpenCustomerId, setMobileMenuOpenCustomerId] = useState(null)
 
   const getFullAddress = (customer) => {
     const parts = [
@@ -46,6 +50,7 @@ function WorkloadManager({ user }) {
     fetchCalendarView()
     fetchCustomerPayLetter()
     fetchAndInitializeUserRouteOrder()
+    fetchCalendarDate()
   }, [user])
 
   useEffect(() => {
@@ -100,6 +105,28 @@ function WorkloadManager({ user }) {
     } catch (error) {
       console.error('Error fetching/initializing route order:', error.message)
     }
+  }
+
+  // Derive ordered customers for a specific day based on user's RouteOrder
+  const getOrderedCustomersForDate = (day) => {
+    const dayCustomers = getCustomersForDate(day)
+    if (!userRouteOrder || dayCustomers.length === 0) {
+      return dayCustomers
+    }
+
+    const idToCustomer = new Map(dayCustomers.map(c => [c.id, c]))
+    const routeIds = userRouteOrder.split(',')
+      .map(id => parseInt(id.trim()))
+      .filter(id => !isNaN(id))
+
+    // In-order customers from route
+    const orderedFromRoute = routeIds
+      .map(id => idToCustomer.get(id))
+      .filter(Boolean)
+
+    // Append any remaining customers not included in route
+    const remaining = dayCustomers.filter(c => !routeIds.includes(c.id))
+    return [...orderedFromRoute, ...remaining]
   }
 
   // Derive ordered customers for selected date based on user's RouteOrder
@@ -209,6 +236,30 @@ function WorkloadManager({ user }) {
     }
   }
 
+  async function fetchCalendarDate() {
+    try {
+      const { data, error } = await supabase
+        .from('Users')
+        .select('CalenderDate')
+        .eq('id', user.id)
+        .single()
+
+      if (error) throw error
+      
+      if (data?.CalenderDate) {
+        const savedDate = new Date(data.CalenderDate)
+        setCurrentDate(new Date(savedDate.getFullYear(), savedDate.getMonth(), 1))
+        setSelectedDate(savedDate.getDate())
+      } else {
+        // If no saved date, use today
+        setSelectedDate(new Date().getDate())
+      }
+    } catch (error) {
+      console.error('Error fetching calendar date:', error.message)
+      setSelectedDate(new Date().getDate())
+    }
+  }
+
   async function updateCalendarView(view) {
     setActiveView(view)
     try {
@@ -276,8 +327,21 @@ function WorkloadManager({ user }) {
   }
 
   // Handle day click
-  const handleDayClick = (day) => {
+  const handleDayClick = async (day) => {
     setSelectedDate(day)
+    
+    // Save the selected date to CalenderDate in Users table
+    try {
+      const selectedDateStr = new Date(currentDate.getFullYear(), currentDate.getMonth(), day).toISOString().split('T')[0]
+      const { error } = await supabase
+        .from('Users')
+        .update({ CalenderDate: selectedDateStr })
+        .eq('id', user.id)
+      
+      if (error) throw error
+    } catch (error) {
+      console.error('Error updating calendar date:', error.message)
+    }
   }
 
   // Sync customer price from CustomerPrices and update NextServices
@@ -422,6 +486,31 @@ function WorkloadManager({ user }) {
       await syncCustomerPriceAndServices(customer.id)
     } catch (error) {
       console.error('Error updating customer:', error.message)
+    }
+  }
+
+  // Update customer price
+  const handleUpdatePrice = async (customerId, newPrice) => {
+    try {
+      const numericPrice = parseFloat(newPrice)
+      if (isNaN(numericPrice) || numericPrice < 0) {
+        alert('Please enter a valid price')
+        return
+      }
+
+      const { error } = await supabase
+        .from('Customers')
+        .update({ Price: numericPrice })
+        .eq('id', customerId)
+
+      if (error) throw error
+
+      setEditingPriceCustomerId(null)
+      setEditingPriceValue('')
+      fetchCustomers()
+    } catch (error) {
+      console.error('Error updating price:', error.message)
+      alert('Failed to update price')
     }
   }
 
@@ -628,8 +717,35 @@ function WorkloadManager({ user }) {
 
   const saveUserRouteOrder = async (customerList) => {
     try {
-      // Build new route order from all customers in their new sequence
-      const newRouteOrderStr = customerList.map(c => c.id).join(',')
+      // Get current full route order
+      const currentRouteIds = userRouteOrder.split(',')
+        .map(id => parseInt(id.trim()))
+        .filter(id => !isNaN(id))
+
+      // Get IDs from the reordered list (customers on this day)
+      const reorderedIds = customerList.map(c => c.id)
+      
+      // Remove the reordered customer IDs from the current route
+      const otherCustomerIds = currentRouteIds.filter(id => !reorderedIds.includes(id))
+      
+      // Insert the reordered customers at the position of the first one in the original order
+      const firstReorderedId = reorderedIds[0]
+      const insertIndex = currentRouteIds.indexOf(firstReorderedId)
+      
+      let newRouteIds
+      if (insertIndex === -1) {
+        // If not found, append at the end
+        newRouteIds = [...otherCustomerIds, ...reorderedIds]
+      } else {
+        // Insert at the original position
+        newRouteIds = [
+          ...otherCustomerIds.slice(0, insertIndex),
+          ...reorderedIds,
+          ...otherCustomerIds.slice(insertIndex)
+        ]
+      }
+
+      const newRouteOrderStr = newRouteIds.join(',')
 
       // Update Users table RouteOrder field
       const { error } = await supabase
@@ -779,7 +895,7 @@ function WorkloadManager({ user }) {
 
     // Add days of the month with customer lists
     for (let day = 1; day <= daysInMonth; day++) {
-      const dayCustomers = getCustomersForDate(day)
+      const dayCustomers = getOrderedCustomersForDate(day)
       const isExpanded = expandedDays[day]
       const displayCustomers = isExpanded ? dayCustomers : dayCustomers.slice(0, 10)
       const hasMore = dayCustomers.length > 10
@@ -839,7 +955,7 @@ function WorkloadManager({ user }) {
 
       {activeView === 'Calendar' ? (
         <>
-          <div className="calendar-grid">
+          {!calendarCollapsed && <div className="calendar-grid">
             <div className="calendar-day-header">Sun</div>
             <div className="calendar-day-header">Mon</div>
             <div className="calendar-day-header">Tue</div>
@@ -848,6 +964,12 @@ function WorkloadManager({ user }) {
             <div className="calendar-day-header">Fri</div>
             <div className="calendar-day-header">Sat</div>
             {generateCalendar()}
+          </div>}
+
+          <div className="collapse-btn-row">
+            <button onClick={() => setCalendarCollapsed(!calendarCollapsed)} className="collapse-btn">
+              {calendarCollapsed ? '▼' : '▲'}
+            </button>
           </div>
 
           {selectedDate && (
@@ -906,40 +1028,100 @@ function WorkloadManager({ user }) {
                 return (
                   <div
                     key={customer.id}
-                    className={`customer-item ${draggedCustomerId === customer.id ? 'dragging' : ''} ${dragOverIndex === index ? 'drag-over' : ''}`}
+                    className={`customer-row-item ${draggedCustomerId === customer.id ? 'dragging' : ''} ${dragOverIndex === index ? 'drag-over' : ''}`}
                     draggable
                     onDragStart={(e) => handleDragStart(e, customer.id)}
                     onDragOver={(e) => handleDragOver(e, index)}
                     onDragLeave={handleDragLeave}
                     onDrop={(e) => handleDrop(e, index)}
                   >
-                    <div className="drag-handle">⋮⋮</div>
-                    <div className="customer-content">
-                      <div className="customer-header">
-                        <label
-                          className="customer-select"
+                    <div className="customer-grid-col drag-col">
+                      <div className="drag-handle">⋮⋮</div>
+                    </div>
+
+                    <div className="customer-grid-col checkbox-col">
+                      <label
+                        className="customer-select"
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleCustomerSelection(customer.id)}
                           onClick={(e) => e.stopPropagation()}
                           onMouseDown={(e) => e.stopPropagation()}
-                        >
+                        />
+                      </label>
+                    </div>
+
+                    <div className="customer-grid-col outstanding-col">
+                      {customer.Outstanding > 0 && (
+                        <span className="outstanding">{formatCurrency(customer.Outstanding, user.SettingsCountry || 'United Kingdom')}</span>
+                      )}
+                    </div>
+
+                    <div className="customer-grid-col info-col">
+                      <div className="customer-address-main">{getFullAddress(customer)}</div>
+                      <div className="customer-name-sub">{customer.CustomerName}</div>
+                      <span className="route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
+                    </div>
+
+                    <div className="customer-grid-col price-col">
+                      {editingPriceCustomerId === customer.id ? (
+                        <div className="price-edit-container">
                           <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleCustomerSelection(customer.id)}
-                            onClick={(e) => e.stopPropagation()}
-                            onMouseDown={(e) => e.stopPropagation()}
+                            type="number"
+                            value={editingPriceValue}
+                            onChange={(e) => setEditingPriceValue(e.target.value)}
+                            placeholder="0.00"
+                            step="0.01"
+                            min="0"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                handleUpdatePrice(customer.id, editingPriceValue)
+                              } else if (e.key === 'Escape') {
+                                setEditingPriceCustomerId(null)
+                                setEditingPriceValue('')
+                              }
+                            }}
                           />
-                        </label>
-                        <div className="customer-name">{getFullAddress(customer)}</div>
-                        <span className="route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
-                      </div>
-                      <div className="customer-details">
-                        <span>{customer.CustomerName}</span>
-                        {customer.PhoneNumber && <span> • {customer.PhoneNumber}</span>}
-                        <span> • {formatCurrency(customer.Price, user.SettingsCountry || 'United Kingdom')}{getAdditionalServices(customer)}</span>
-                        {customer.Outstanding > 0 && <span className="outstanding"> • Outstanding: {formatCurrency(customer.Outstanding, user.SettingsCountry || 'United Kingdom')}</span>}
-                        {customer.Notes && <span> • {customer.Notes}</span>}
-                      </div>
-                      <div className="customer-actions">
+                          <div className="price-button-row">
+                            <button
+                              className="price-save-btn"
+                              onClick={() => handleUpdatePrice(customer.id, editingPriceValue)}
+                              title="Save price"
+                            >
+                              ✓
+                            </button>
+                            <button
+                              className="price-cancel-btn"
+                              onClick={() => {
+                                setEditingPriceCustomerId(null)
+                                setEditingPriceValue('')
+                              }}
+                              title="Cancel"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          className="price-display"
+                          onClick={() => {
+                            setEditingPriceCustomerId(customer.id)
+                            setEditingPriceValue(customer.Price || '')
+                          }}
+                        >
+                          {customer.Price && formatCurrency(customer.Price, user.SettingsCountry || 'United Kingdom')}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="customer-grid-col actions-col">
+                      <div className="row-actions-buttons">
                         <button onClick={() => handleDoneAndPaid(customer)} className="done-paid-btn">
                           Done and Paid
                         </button>
@@ -947,24 +1129,9 @@ function WorkloadManager({ user }) {
                           Done and Not Paid
                         </button>
                       </div>
-                      <div className="customer-footer">
-                        <button
-                          className="calendar-icon-btn"
-                          onClick={() => toggleDatePicker(customer.id)}
-                          title="Pick a date to move to"
-                        >
-                          📅
-                        </button>
-                        {expandedDatePickers[customer.id] && (
-                          <input
-                            type="date"
-                            value={customer.NextClean || ''}
-                            onChange={(e) => handleMoveToDate(customer, e.target.value)}
-                            className="date-picker-input"
-                            autoFocus
-                          />
-                        )}
-                        <div className="text-message-section">
+
+                      <div className="row-message-and-calendar">
+                        <div className="row-message-section">
                           <select
                             value={selectedLetters[customer.id] || messages[0]?.id || ''}
                             onChange={(e) => handleSelectLetter(customer.id, e.target.value)}
@@ -986,6 +1153,108 @@ function WorkloadManager({ user }) {
                             Text
                           </button>
                         </div>
+
+                        <div className="row-calendar-section">
+                          <span className="change-date-label">Change clean date</span>
+                          <button
+                            className="calendar-icon-btn"
+                            onClick={() => toggleDatePicker(customer.id)}
+                            title="Pick a date to move to"
+                          >
+                            📅
+                          </button>
+                          {expandedDatePickers[customer.id] && (
+                            <input
+                              type="date"
+                              value={customer.NextClean || ''}
+                              onChange={(e) => handleMoveToDate(customer, e.target.value)}
+                              className="date-picker-input"
+                              autoFocus
+                            />
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mobile-menu-container">
+                        <button
+                          className="mobile-menu-btn"
+                          onClick={() => setMobileMenuOpenCustomerId(
+                            mobileMenuOpenCustomerId === customer.id ? null : customer.id
+                          )}
+                          title="More options"
+                        >
+                          ⋯
+                        </button>
+                        
+                        {mobileMenuOpenCustomerId === customer.id && (
+                          <div className="mobile-menu-dropdown">
+                            <button 
+                              className="mobile-menu-item done-paid-btn"
+                              onClick={() => {
+                                handleDoneAndPaid(customer)
+                                setMobileMenuOpenCustomerId(null)
+                              }}
+                            >
+                              Done and Paid
+                            </button>
+                            <button 
+                              className="mobile-menu-item done-not-paid-btn"
+                              onClick={() => {
+                                handleDoneAndNotPaid(customer)
+                                setMobileMenuOpenCustomerId(null)
+                              }}
+                            >
+                              Done and Not Paid
+                            </button>
+                            <div className="mobile-menu-section">
+                              <select
+                                value={selectedLetters[customer.id] || messages[0]?.id || ''}
+                                onChange={(e) => handleSelectLetter(customer.id, e.target.value)}
+                                disabled={!messages.length}
+                                className="mobile-menu-select"
+                              >
+                                {!messages.length && <option value="">No letters available</option>}
+                                {messages.length > 0 && !selectedLetters[customer.id] && (
+                                  <option value="">Select letter</option>
+                                )}
+                                {messages.map((msg) => (
+                                  <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
+                                ))}
+                              </select>
+                              <button
+                                className="mobile-menu-item text-btn"
+                                onClick={() => {
+                                  handleSendWhatsApp(customer)
+                                  setMobileMenuOpenCustomerId(null)
+                                }}
+                                disabled={!customer.PhoneNumber || !messages.length}
+                              >
+                                Text
+                              </button>
+                            </div>
+                            <button
+                              className="mobile-menu-item calendar-icon-btn"
+                              onClick={() => {
+                                toggleDatePicker(customer.id)
+                              }}
+                              title="Pick a date to move to"
+                            >
+                              📅 Change Date
+                            </button>
+                            {expandedDatePickers[customer.id] && (
+                              <input
+                                type="date"
+                                value={customer.NextClean || ''}
+                                onChange={(e) => {
+                                  handleMoveToDate(customer, e.target.value)
+                                  setMobileMenuOpenCustomerId(null)
+                                }}
+                                className="mobile-menu-date-input"
+                                autoFocus
+                              />
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -997,16 +1266,24 @@ function WorkloadManager({ user }) {
       )}
         </>
       ) : (
-        <div className="overview-grid">
-          <div className="calendar-day-header">Sun</div>
-          <div className="calendar-day-header">Mon</div>
-          <div className="calendar-day-header">Tue</div>
-          <div className="calendar-day-header">Wed</div>
-          <div className="calendar-day-header">Thu</div>
-          <div className="calendar-day-header">Fri</div>
-          <div className="calendar-day-header">Sat</div>
-          {generateOverviewCalendar()}
-        </div>
+        <>
+          {!calendarCollapsed && <div className="overview-grid">
+            <div className="calendar-day-header">Sun</div>
+            <div className="calendar-day-header">Mon</div>
+            <div className="calendar-day-header">Tue</div>
+            <div className="calendar-day-header">Wed</div>
+            <div className="calendar-day-header">Thu</div>
+            <div className="calendar-day-header">Fri</div>
+            <div className="calendar-day-header">Sat</div>
+            {generateOverviewCalendar()}
+          </div>}
+
+          <div className="collapse-btn-row">
+            <button onClick={() => setCalendarCollapsed(!calendarCollapsed)} className="collapse-btn">
+              {calendarCollapsed ? '▼' : '▲'}
+            </button>
+          </div>
+        </>
       )}
     </div>
   )
