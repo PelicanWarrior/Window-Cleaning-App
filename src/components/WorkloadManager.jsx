@@ -51,6 +51,7 @@ function WorkloadManager({ user }) {
     fetchCustomerPayLetter()
     fetchAndInitializeUserRouteOrder()
     fetchCalendarDate()
+    fetchCalendarPosition()
   }, [user])
 
   useEffect(() => {
@@ -257,6 +258,39 @@ function WorkloadManager({ user }) {
     } catch (error) {
       console.error('Error fetching calendar date:', error.message)
       setSelectedDate(new Date().getDate())
+    }
+  }
+
+  async function fetchCalendarPosition() {
+    try {
+      const { data, error } = await supabase
+        .from('Users')
+        .select('CalenderPosition')
+        .eq('id', user.id)
+        .single()
+
+      if (error) throw error
+      
+      if (data?.CalenderPosition === 'Up') {
+        setCalendarCollapsed(true)
+      } else {
+        setCalendarCollapsed(false)
+      }
+    } catch (error) {
+      console.error('Error fetching calendar position:', error.message)
+    }
+  }
+
+  async function updateCalendarPosition(position) {
+    try {
+      const { error } = await supabase
+        .from('Users')
+        .update({ CalenderPosition: position })
+        .eq('id', user.id)
+
+      if (error) throw error
+    } catch (error) {
+      console.error('Error updating calendar position:', error.message)
     }
   }
 
@@ -931,31 +965,14 @@ function WorkloadManager({ user }) {
   }
 
   return (
-    <div className="workload-manager">
-      <div className="view-tabs">
-        <button
-          className={`view-tab ${activeView === 'Calendar' ? 'active' : ''}`}
-          onClick={() => updateCalendarView('Calendar')}
-        >
-          Calendar
-        </button>
-        <button
-          className={`view-tab ${activeView === 'Overview' ? 'active' : ''}`}
-          onClick={() => updateCalendarView('Overview')}
-        >
-          Overview
-        </button>
-      </div>
-
+    <div className={`workload-manager ${calendarCollapsed ? 'calendar-collapsed' : ''}`}>
       <div className="calendar-header">
         <button onClick={previousMonth} className="month-nav-btn">←</button>
         <h2>{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</h2>
         <button onClick={nextMonth} className="month-nav-btn">→</button>
       </div>
 
-      {activeView === 'Calendar' ? (
-        <>
-          {!calendarCollapsed && <div className="calendar-grid">
+      {!calendarCollapsed && <div className="calendar-grid">
             <div className="calendar-day-header">Sun</div>
             <div className="calendar-day-header">Mon</div>
             <div className="calendar-day-header">Tue</div>
@@ -967,16 +984,20 @@ function WorkloadManager({ user }) {
           </div>}
 
           <div className="collapse-btn-row">
-            <button onClick={() => setCalendarCollapsed(!calendarCollapsed)} className="collapse-btn">
+            <button onClick={() => {
+              const newState = !calendarCollapsed
+              setCalendarCollapsed(newState)
+              updateCalendarPosition(newState ? 'Up' : 'Down')
+            }} className="collapse-btn">
               {calendarCollapsed ? '▼' : '▲'}
             </button>
           </div>
 
           {selectedDate && (
-        <div className="selected-day-customers">
-          <h3>
-            Jobs for {monthNames[currentDate.getMonth()]} {selectedDate}, {currentDate.getFullYear()}
-          </h3>
+            <div className="selected-day-customers">
+              <h3>
+                Jobs for {monthNames[currentDate.getMonth()]} {selectedDate}, {currentDate.getFullYear()}
+              </h3>
           <p className="income-total">Income: {formatCurrency(totalIncome, user.SettingsCountry || 'United Kingdom')}</p>
           {selectedDayCustomers.length > 0 && (
             <div className="message-all-section">
@@ -1263,27 +1284,6 @@ function WorkloadManager({ user }) {
             </div>
           )}
         </div>
-      )}
-        </>
-      ) : (
-        <>
-          {!calendarCollapsed && <div className="overview-grid">
-            <div className="calendar-day-header">Sun</div>
-            <div className="calendar-day-header">Mon</div>
-            <div className="calendar-day-header">Tue</div>
-            <div className="calendar-day-header">Wed</div>
-            <div className="calendar-day-header">Thu</div>
-            <div className="calendar-day-header">Fri</div>
-            <div className="calendar-day-header">Sat</div>
-            {generateOverviewCalendar()}
-          </div>}
-
-          <div className="collapse-btn-row">
-            <button onClick={() => setCalendarCollapsed(!calendarCollapsed)} className="collapse-btn">
-              {calendarCollapsed ? '▼' : '▲'}
-            </button>
-          </div>
-        </>
       )}
     </div>
   )
