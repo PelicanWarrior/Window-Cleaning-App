@@ -810,7 +810,7 @@
   border: 1px solid #e0e0e0;
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
+  z-index: 1;
   min-width: 200px;
   margin-top: 0.5rem;
 }
@@ -1152,19 +1152,20 @@
   }
 
   .customer-row-item {
-    grid-template-columns: 40px 40px 1fr 60px auto;
-    gap: 0.25rem;
+    grid-template-columns: 32px 32px 1fr 60px auto;
+    gap: 0.15rem;
     padding: 0.5rem;
     align-items: center;
   }
 
   .drag-col {
     flex-shrink: 0;
+    justify-content: flex-start;
   }
 
   .checkbox-col {
     flex-shrink: 0;
-    margin-left: -0.25rem;
+    margin-left: -0.35rem;
   }
 
   .outstanding-col {
