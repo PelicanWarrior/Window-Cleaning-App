@@ -1153,7 +1153,7 @@
 
   .customer-row-item {
     grid-template-columns: 40px 40px 1fr 60px auto;
-    gap: 0.5rem;
+    gap: 0.25rem;
     padding: 0.5rem;
     align-items: center;
   }
@@ -1164,6 +1164,7 @@
 
   .checkbox-col {
     flex-shrink: 0;
+    margin-left: -0.25rem;
   }
 
   .outstanding-col {
