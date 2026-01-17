@@ -18,18 +18,20 @@ const COUNTRY_OPTIONS = [
 function Settings({ user, onClose, onSaved }) {
   const [password, setPassword] = useState('')
   const [country, setCountry] = useState(user.SettingsCountry || 'United Kingdom')
+  const [routeWeeks, setRouteWeeks] = useState(user.RouteWeeks || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     setCountry(user.SettingsCountry || 'United Kingdom')
+    setRouteWeeks(user.RouteWeeks || '')
   }, [user])
 
   const handleSave = async () => {
     setError('')
     setSaving(true)
     try {
-      const updateFields = { SettingsCountry: country }
+      const updateFields = { SettingsCountry: country, RouteWeeks: routeWeeks || null }
       if (password) {
         updateFields.password = password
       }
@@ -43,7 +45,7 @@ function Settings({ user, onClose, onSaved }) {
 
       if (updateError) throw updateError
 
-      onSaved({ SettingsCountry: country, ...(password ? { password } : {}) })
+      onSaved({ SettingsCountry: country, RouteWeeks: routeWeeks, ...(password ? { password } : {}) })
     } catch (err) {
       setError(err.message || 'Error saving settings')
     } finally {
@@ -77,6 +79,19 @@ function Settings({ user, onClose, onSaved }) {
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
+          </div>
+          <div className="settings-field route-weeks-field">
+            <label>Length of Route</label>
+            <div className="route-weeks-input-row">
+              <input
+                type="number"
+                value={routeWeeks}
+                onChange={(e) => setRouteWeeks(e.target.value)}
+                placeholder="e.g., 4"
+                min="1"
+              />
+              <span className="weeks-label">Weeks</span>
+            </div>
           </div>
         </div>
         <div className="settings-actions">

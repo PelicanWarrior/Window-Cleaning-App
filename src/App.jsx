@@ -3,13 +3,14 @@ import './App.css'
 import Auth from './components/Auth'
 import CustomerList from './components/CustomerList'
 import WorkloadManager from './components/WorkloadManager'
+import Quotes from './components/Quotes'
 import Letters from './components/Letters'
 import Settings from './components/Settings'
 import versionImage from '../pictures/Version.png'
 
 function App() {
   const [user, setUser] = useState(null)
-  const [activeTab, setActiveTab] = useState('customers')
+  const [activeTab, setActiveTab] = useState('workload')
   const [showSettings, setShowSettings] = useState(false)
 
   const handleLogin = (userData) => {
@@ -18,7 +19,7 @@ function App() {
 
   const handleLogout = () => {
     setUser(null)
-    setActiveTab('customers')
+    setActiveTab('workload')
   }
 
   const handleSettingsSaved = (updatedUserFields) => {
@@ -51,16 +52,22 @@ function App() {
         </div>
         <nav>
           <button 
+            className={activeTab === 'workload' ? 'active' : ''}
+            onClick={() => setActiveTab('workload')}
+          >
+            Workload
+          </button>
+          <button 
             className={activeTab === 'customers' ? 'active' : ''}
             onClick={() => setActiveTab('customers')}
           >
             Customers
           </button>
           <button 
-            className={activeTab === 'workload' ? 'active' : ''}
-            onClick={() => setActiveTab('workload')}
+            className={activeTab === 'quotes' ? 'active' : ''}
+            onClick={() => setActiveTab('quotes')}
           >
-            Workload
+            Quotes
           </button>
           <button 
             className={activeTab === 'letters' ? 'active' : ''}
@@ -71,8 +78,9 @@ function App() {
         </nav>
       </header>
       <main className="app-main">
-        {activeTab === 'customers' && <CustomerList user={user} />}
         {activeTab === 'workload' && <WorkloadManager user={user} />}
+        {activeTab === 'customers' && <CustomerList user={user} />}
+        {activeTab === 'quotes' && <Quotes user={user} />}
         {activeTab === 'letters' && <Letters user={user} />}
       </main>
       {showSettings && (

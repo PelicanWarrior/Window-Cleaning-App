@@ -69,3 +69,22 @@
   border-radius: 6px;
   margin: 8px 0;
 }
+
+.route-weeks-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.route-weeks-input-row input {
+  flex: 0 0 auto;
+  width: 100px;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+.weeks-label {
+  font-weight: 500;
+  color: #333;
+}

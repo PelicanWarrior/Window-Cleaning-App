@@ -12,7 +12,7 @@ function Letters({ user }) {
   const [messageFooter, setMessageFooter] = useState(user.MessageFooter || '')
   const [selectedPayLetter, setSelectedPayLetter] = useState('')
   const [selectedReminderLetter, setSelectedReminderLetter] = useState('')
-  const [activeTab, setActiveTab] = useState('Default Messages')
+  const [activeTab, setActiveTab] = useState('Messages')
   const [formData, setFormData] = useState({
     MessageTitle: '',
     Message: '',
@@ -194,6 +194,12 @@ function Letters({ user }) {
       
       <div className="message-tabs">
         <button
+          className={`message-tab ${activeTab === 'Messages' ? 'active' : ''}`}
+          onClick={() => setActiveTab('Messages')}
+        >
+          Messages
+        </button>
+        <button
           className={`message-tab ${activeTab === 'Default Messages' ? 'active' : ''}`}
           onClick={() => setActiveTab('Default Messages')}
         >
@@ -204,12 +210,6 @@ function Letters({ user }) {
           onClick={() => setActiveTab('Message Footer')}
         >
           Message Footer
-        </button>
-        <button
-          className={`message-tab ${activeTab === 'Messages' ? 'active' : ''}`}
-          onClick={() => setActiveTab('Messages')}
-        >
-          Messages
         </button>
       </div>
       

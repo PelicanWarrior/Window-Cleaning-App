@@ -168,15 +168,33 @@
   color: #2c3e50;
 }
 
+.day-indicators {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
 .work-indicator {
   width: 8px;
   height: 8px;
   background-color: #3498db;
   border-radius: 50%;
-  margin-top: 4px;
+  margin-top: 0;
+}
+
+.quote-indicator {
+  width: 8px;
+  height: 8px;
+  background-color: #e74c3c;
+  border-radius: 50%;
 }
 
 .calendar-day.selected .work-indicator {
+  background-color: white;
+}
+
+.calendar-day.selected .quote-indicator {
   background-color: white;
 }
 
@@ -231,6 +249,171 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.quotes-list-card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+  margin-bottom: 10px;
+}
+
+.quotes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quote-item {
+  padding: 10px;
+  border: 1px solid #e6e6e6;
+  border-radius: 6px;
+  background: #fafafa;
+  cursor: pointer;
+}
+
+.quote-item:hover {
+  background: #f0f6ff;
+}
+
+.quotes-list-card {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #fff;
+  border: 2px solid #e74c3c;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(231, 76, 60, 0.1);
+}
+
+.quotes-list-card h4 {
+  margin-bottom: 0.75rem;
+  color: #e74c3c;
+  font-size: 1.1rem;
+}
+
+.quotes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quote-item-with-button {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.quote-item {
+  padding: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex: 1;
+}
+
+.quote-item:hover {
+  background: #f8f9fa;
+  border-color: #e74c3c;
+}
+
+.quote-book-btn {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background-color 0.2s;
+  white-space: nowrap;
+}
+
+.quote-book-btn:hover {
+  background-color: #2980b9;
+}
+
+.quote-name {
+  font-weight: 700;
+  color: #2c3e50;
+}
+
+.quote-address {
+  color: #555;
+  margin-top: 4px;
+  font-size: 0.9rem;
+}
+
+.book-job-btn,
+.cancel-service-btn {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  margin-top: 1rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.cancel-service-btn {
+  background-color: #e74c3c;
+  color: white;
+}
+
+.cancel-service-btn:hover {
+  background-color: #c0392b;
+}
+
+.book-job-btn {
+  background-color: #27ae60;
+  color: white;
+}
+
+.book-job-btn:hover {
+  background-color: #229954;
+}
+
+.services-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 0.5rem;
+}
+
+.service-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.service-checkbox-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.service-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: #2c3e50;
+  flex: 1;
+}
+
+.service-total {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e0e0e0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #27ae60;
 }
 
 .customer-row-item {
@@ -298,6 +481,27 @@
   font-weight: 600;
   font-size: 1rem;
   color: #2c3e50;
+}
+
+.price-display {
+  cursor: pointer;
+  transition: background-color 0.2s;
+  padding: 0.25rem;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.price-display:hover {
+  background-color: #f0f0f0;
+}
+
+.additional-services {
+  font-size: 0.8rem;
+  color: #7f8c8d;
+  font-weight: normal;
 }
 
 .price-display {
@@ -922,7 +1126,16 @@
     font-size: 1rem;
   }
 
+  .day-indicators {
+    gap: 4px;
+  }
+
   .work-indicator {
+    width: 6px;
+    height: 6px;
+  }
+
+  .quote-indicator {
     width: 6px;
     height: 6px;
   }
@@ -981,10 +1194,19 @@
     font-size: 0.85rem;
   }
 
+  .day-indicators {
+    gap: 3px;
+  }
+
   .work-indicator {
     width: 5px;
     height: 5px;
-    margin-top: 2px;
+    margin-top: 0;
+  }
+
+  .quote-indicator {
+    width: 5px;
+    height: 5px;
   }
 
   .customer-item {

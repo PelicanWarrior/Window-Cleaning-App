@@ -45,6 +45,17 @@ function Auth({ onLogin }) {
           userData = { ...userData, SettingsCountry: 'United Kingdom' }
         }
 
+        // If RouteWeeks is empty, set it to 4
+        if (!userData.RouteWeeks) {
+          const { error: updateError } = await supabase
+            .from('Users')
+            .update({ RouteWeeks: 4 })
+            .eq('id', userData.id)
+          
+          if (updateError) throw updateError
+          userData = { ...userData, RouteWeeks: 4 }
+        }
+
         // Smart arrange addresses: split comma-separated addresses and extract postcodes
         const { data: customers, error: customersError } = await supabase
           .from('Customers')
@@ -158,14 +169,27 @@ function Auth({ onLogin }) {
         }
 
         // Check if username or email already exists
-        const { data: existingUser } = await supabase
+        const { data: existingUsers, error: existingError } = await supabase
           .from('Users')
-          .select('id')
+          .select('UserName, email_address')
           .or(`UserName.eq.${formData.username},email_address.eq.${formData.email}`)
-          .single()
+          .limit(1)
 
-        if (existingUser) {
-          setError('Username or email already exists')
+        if (existingError) throw existingError
+
+        if (existingUsers && existingUsers.length > 0) {
+          const match = existingUsers[0]
+          const usernameTaken = match.UserName?.toLowerCase() === formData.username.toLowerCase()
+          const emailTaken = match.email_address?.toLowerCase() === formData.email.toLowerCase()
+
+          if (usernameTaken && emailTaken) {
+            setError('Username has been taken and email address is being used')
+          } else if (usernameTaken) {
+            setError('Username has been taken')
+          } else {
+            setError('Email address is being used')
+          }
+
           setLoading(false)
           return
         }
@@ -181,7 +205,8 @@ function Auth({ onLogin }) {
               admin: false,
               CustomerSort: 'Route',
               SettingsCountry: 'United Kingdom',
-              MessageFooter: ''
+              MessageFooter: '',
+              RouteWeeks: 4
             }
           ])
           .select()

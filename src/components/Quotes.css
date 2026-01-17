@@ -1,0 +1,194 @@
+.quotes-page {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.quotes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.quotes-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.add-quote-btn {
+  background-color: #27ae60;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.875rem 1.5rem;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 600;
+  transition: background-color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.add-quote-btn:hover {
+  background-color: #229954;
+}
+
+.quote-form {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+}
+
+.quote-form .form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quote-form label {
+  font-weight: 600;
+}
+
+.quote-form input,
+.quote-form textarea {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 8px;
+  width: 100%;
+}
+
+.quote-form textarea {
+  resize: vertical;
+}
+
+.quote-form .three-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.quote-form .two-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.save-btn {
+  background: #2d7cf1;
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.cancel-btn {
+  background: #eee;
+  color: #333;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.placeholder-text {
+  color: #666;
+}
+
+.quotes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quote-item-with-button {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.quote-item {
+  padding: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+  cursor: pointer;
+  flex: 1;
+}
+
+.quote-book-btn {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background-color 0.2s;
+  white-space: nowrap;
+}
+
+.quote-book-btn:hover {
+  background-color: #2980b9;
+}
+
+.quote-name {
+  font-weight: 700;
+  color: #2c3e50;
+}
+
+.quote-address {
+  color: #555;
+  margin-top: 4px;
+}
+.services-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 0.5rem;
+}
+
+.service-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.service-checkbox-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.service-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: #2c3e50;
+  flex: 1;
+}
+
+.service-total {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e0e0e0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #27ae60;
+}

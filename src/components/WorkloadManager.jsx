@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import './WorkloadManager.css'
-import { formatCurrency, getCurrencyConfig } from '../lib/format'
+import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
 
 function WorkloadManager({ user }) {
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -26,6 +26,21 @@ function WorkloadManager({ user }) {
   const [editingPriceCustomerId, setEditingPriceCustomerId] = useState(null)
   const [editingPriceValue, setEditingPriceValue] = useState('')
   const [mobileMenuOpenCustomerId, setMobileMenuOpenCustomerId] = useState(null)
+  const [showCustomerModal, setShowCustomerModal] = useState(false)
+  const [selectedCustomer, setSelectedCustomer] = useState(null)
+  const [isEditingModal, setIsEditingModal] = useState(false)
+  const [modalEditData, setModalEditData] = useState({})
+  const [showServices, setShowServices] = useState(false)
+  const [customerServices, setCustomerServices] = useState([])
+  const [isAddingService, setIsAddingService] = useState(false)
+  const [newServiceData, setNewServiceData] = useState({ Service: '', Price: '', Description: '' })
+  const [serviceDropdownOpen, setServiceDropdownOpen] = useState(null)
+  const [editingServiceId, setEditingServiceId] = useState(null)
+  const [editServiceData, setEditServiceData] = useState({})
+  const [showHistory, setShowHistory] = useState(false)
+  const [customerHistory, setCustomerHistory] = useState([])
+  const [cancelServiceModal, setCancelServiceModal] = useState({ show: false, reason: '' })
+  const [bookJobModal, setBookJobModal] = useState({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
 
   const getFullAddress = (customer) => {
     const parts = [
@@ -108,9 +123,9 @@ function WorkloadManager({ user }) {
     }
   }
 
-  // Derive ordered customers for a specific day based on user's RouteOrder
+  // Derive ordered customers (non-quote jobs) for a specific day based on user's RouteOrder
   const getOrderedCustomersForDate = (day) => {
-    const dayCustomers = getCustomersForDate(day)
+    const dayCustomers = getJobsForDate(day)
     if (!userRouteOrder || dayCustomers.length === 0) {
       return dayCustomers
     }
@@ -137,7 +152,7 @@ function WorkloadManager({ user }) {
       return
     }
 
-    const dayCustomers = getCustomersForDate(selectedDate)
+    const dayCustomers = getJobsForDate(selectedDate)
     if (!userRouteOrder) {
       setOrderedCustomers(dayCustomers)
       return
@@ -340,11 +355,22 @@ function WorkloadManager({ user }) {
     setSelectedDate(null)
   }
 
-  // Check if a date has any customers scheduled
-  const hasCustomersOnDate = (day) => {
+  const isQuoteCustomer = (customer) => customer.Quote === true
+
+  // Check if a date has any jobs scheduled (non-quote)
+  const hasJobsOnDate = (day) => {
     const dateStr = new Date(currentDate.getFullYear(), currentDate.getMonth(), day).toISOString().split('T')[0]
     return customers.some(customer => {
-      if (!customer.NextClean) return false
+      if (!customer.NextClean || isQuoteCustomer(customer)) return false
+      const nextCleanDate = new Date(customer.NextClean).toISOString().split('T')[0]
+      return nextCleanDate === dateStr
+    })
+  }
+
+  const hasQuotesOnDate = (day) => {
+    const dateStr = new Date(currentDate.getFullYear(), currentDate.getMonth(), day).toISOString().split('T')[0]
+    return customers.some(customer => {
+      if (!customer.NextClean || !isQuoteCustomer(customer)) return false
       const nextCleanDate = new Date(customer.NextClean).toISOString().split('T')[0]
       return nextCleanDate === dateStr
     })
@@ -359,6 +385,9 @@ function WorkloadManager({ user }) {
       return nextCleanDate === dateStr
     })
   }
+
+  const getJobsForDate = (day) => getCustomersForDate(day).filter(c => !isQuoteCustomer(c))
+  const getQuotesForDate = (day) => getCustomersForDate(day).filter(c => isQuoteCustomer(c))
 
   // Handle day click
   const handleDayClick = async (day) => {
@@ -600,8 +629,8 @@ function WorkloadManager({ user }) {
   // Bulk move to specific date
   const handleBulkMoveToDate = async (newDate) => {
     const targetCustomers = selectedCustomerIds.length
-      ? selectedDayCustomers.filter((customer) => selectedCustomerIds.includes(customer.id))
-      : selectedDayCustomers
+      ? selectedDayJobs.filter((customer) => selectedCustomerIds.includes(customer.id))
+      : selectedDayJobs
 
     if (!targetCustomers.length) return
     try {
@@ -641,8 +670,8 @@ function WorkloadManager({ user }) {
   // Bulk move dates for selected customers (or all if none selected)
   const handleMoveDateBulk = async (days) => {
     const targetCustomers = selectedCustomerIds.length
-      ? selectedDayCustomers.filter((customer) => selectedCustomerIds.includes(customer.id))
-      : selectedDayCustomers
+      ? selectedDayJobs.filter((customer) => selectedCustomerIds.includes(customer.id))
+      : selectedDayJobs
 
     if (!targetCustomers.length) return
     try {
@@ -677,8 +706,8 @@ function WorkloadManager({ user }) {
     setSelectedLetterAll(messageId)
 
     const targetCustomers = selectedCustomerIds.length
-      ? selectedDayCustomers.filter((customer) => selectedCustomerIds.includes(customer.id))
-      : selectedDayCustomers
+      ? selectedDayJobs.filter((customer) => selectedCustomerIds.includes(customer.id))
+      : selectedDayJobs
 
     if (!messageId || !targetCustomers.length) return
 
@@ -726,7 +755,7 @@ function WorkloadManager({ user }) {
 
     if (draggedCustomerId === null) return
 
-    const displayListBase = orderedCustomers.length > 0 ? orderedCustomers : selectedDayCustomers
+    const displayListBase = orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs
     const displayList = [...displayListBase]
     const draggedIndex = displayList.findIndex(c => c.id === draggedCustomerId)
 
@@ -821,6 +850,280 @@ function WorkloadManager({ user }) {
     return firstToken || 'Customer'
   }
 
+  // Modal helper functions
+  async function fetchCustomerServices(customerId) {
+    try {
+      const { data, error } = await supabase
+        .from('CustomerPrices')
+        .select('*')
+        .eq('CustomerID', customerId)
+      
+      if (error) throw error
+      setCustomerServices(data || [])
+    } catch (error) {
+      console.error('Error fetching customer services:', error.message)
+    }
+  }
+
+  async function fetchCustomerHistory(customerId) {
+    try {
+      const { data, error } = await supabase
+        .from('CustomerHistory')
+        .select('*')
+        .eq('CustomerID', customerId)
+        .order('created_at', { ascending: false })
+      
+      if (error) throw error
+      setCustomerHistory(data || [])
+    } catch (error) {
+      console.error('Error fetching customer history:', error.message)
+    }
+  }
+
+  async function handleModalSave() {
+    try {
+      const { error } = await supabase
+        .from('Customers')
+        .update({
+          CustomerName: modalEditData.CustomerName,
+          Address: modalEditData.Address,
+          Address2: modalEditData.Address2,
+          Address3: modalEditData.Address3,
+          Postcode: modalEditData.Postcode,
+          PhoneNumber: modalEditData.PhoneNumber,
+          EmailAddress: modalEditData.EmailAddress,
+          Price: modalEditData.Price,
+          Weeks: modalEditData.Weeks,
+          NextClean: modalEditData.NextClean,
+          Outstanding: modalEditData.Outstanding,
+          Route: modalEditData.Route,
+          Notes: modalEditData.Notes
+        })
+        .eq('id', selectedCustomer.id)
+      
+      if (error) throw error
+      
+      setIsEditingModal(false)
+      fetchCustomers() // Refresh the customer list
+    } catch (error) {
+      console.error('Error updating customer:', error.message)
+      alert('Failed to update customer. Please try again.')
+    }
+  }
+
+  async function handleAddService() {
+    try {
+      const { error } = await supabase
+        .from('CustomerPrices')
+        .insert({
+          CustomerID: selectedCustomer.id,
+          Service: newServiceData.Service,
+          Price: parseFloat(newServiceData.Price) || 0,
+          Description: newServiceData.Description
+        })
+      
+      if (error) throw error
+      
+      setIsAddingService(false)
+      setNewServiceData({ Service: '', Price: '', Description: '' })
+      fetchCustomerServices(selectedCustomer.id) // Refresh the services list
+    } catch (error) {
+      console.error('Error adding service:', error.message)
+      alert('Failed to add service. Please try again.')
+    }
+  }
+
+  async function handleEditService(serviceId) {
+    try {
+      const { error } = await supabase
+        .from('CustomerPrices')
+        .update({
+          Service: editServiceData.Service,
+          Price: parseFloat(editServiceData.Price) || 0,
+          Description: editServiceData.Description
+        })
+        .eq('id', serviceId)
+      
+      if (error) throw error
+      
+      setEditingServiceId(null)
+      setEditServiceData({})
+      fetchCustomerServices(selectedCustomer.id)
+    } catch (error) {
+      console.error('Error updating service:', error.message)
+      alert('Failed to update service. Please try again.')
+    }
+  }
+
+  async function handleDeleteService(serviceId) {
+    if (!confirm('Are you sure you want to delete this service?')) return
+    
+    try {
+      const { error } = await supabase
+        .from('CustomerPrices')
+        .delete()
+        .eq('id', serviceId)
+      
+      if (error) throw error
+      
+      fetchCustomerServices(selectedCustomer.id)
+    } catch (error) {
+      console.error('Error deleting service:', error.message)
+      alert('Failed to delete service. Please try again.')
+    }
+  }
+
+  async function handleAddToNextClean(service) {
+    try {
+      // Get current customer data
+      const { data: customer, error: fetchError } = await supabase
+        .from('Customers')
+        .select('NextServices, Price')
+        .eq('id', selectedCustomer.id)
+        .single()
+      
+      if (fetchError) throw fetchError
+      
+      // Check if service is already in NextServices
+      const currentServices = customer.NextServices ? customer.NextServices.split(',').map(s => s.trim()) : []
+      if (currentServices.includes(service.Service)) {
+        alert('Service already added')
+        return
+      }
+      
+      // Add service to NextServices (comma-separated)
+      currentServices.push(service.Service)
+      const newNextServices = currentServices.join(', ')
+      
+      // Add price to existing price
+      const newPrice = (customer.Price || 0) + service.Price
+      
+      // Update customer
+      const { error: updateError } = await supabase
+        .from('Customers')
+        .update({
+          NextServices: newNextServices,
+          Price: newPrice
+        })
+        .eq('id', selectedCustomer.id)
+      
+      if (updateError) throw updateError
+      
+      alert(`${service.Service} added to next clean!`)
+      fetchCustomers() // Refresh customer list
+    } catch (error) {
+      console.error('Error adding to next clean:', error.message)
+      alert('Failed to add to next clean. Please try again.')
+    }
+  }
+
+  async function handleCancelService(reason) {
+    if (!selectedCustomer) return
+
+    try {
+      // Clear NextClean field
+      const { error: updateError } = await supabase
+        .from('Customers')
+        .update({ NextClean: null })
+        .eq('id', selectedCustomer.id)
+      
+      if (updateError) throw updateError
+      
+      // Add to CustomerHistory
+      let historyMessage = 'Cancelled Service'
+      if (reason && reason.trim()) {
+        historyMessage += ` - ${reason.trim()}`
+      }
+      
+      const { error: historyError } = await supabase
+        .from('CustomerHistory')
+        .insert({
+          CustomerID: selectedCustomer.id,
+          Message: historyMessage
+        })
+      
+      if (historyError) throw historyError
+      
+      // Close modal and refresh
+      setCancelServiceModal({ show: false, reason: '' })
+      setShowCustomerModal(false)
+      fetchCustomers()
+    } catch (error) {
+      console.error('Error cancelling service:', error.message)
+      alert('Error cancelling service: ' + error.message)
+    }
+  }
+
+  async function handleBookJob(customer) {
+    // Fetch customer services first
+    try {
+      const { data: services, error } = await supabase
+        .from('CustomerPrices')
+        .select('*')
+        .eq('CustomerID', customer.id)
+      
+      if (error) throw error
+      
+      if (!services || services.length === 0) {
+        alert('You need to add at least 1 service')
+        // Open the customer modal and navigate to services tab
+        setSelectedCustomer(customer)
+        setShowCustomerModal(true)
+        setShowServices(true)
+        setShowHistory(false)
+        return
+      }
+      
+      // Show date and service picker modal
+      setBookJobModal({ show: true, customer, selectedDate: '', services: services || [], selectedServices: [] })
+    } catch (error) {
+      console.error('Error checking services:', error.message)
+      alert('Error checking services: ' + error.message)
+    }
+  }
+
+  async function handleBookJobSave() {
+    if (!bookJobModal.customer || !bookJobModal.selectedDate || bookJobModal.selectedServices.length === 0) {
+      alert('Please select a date and at least one service')
+      return
+    }
+    
+    try {
+      const selectedServiceObjects = bookJobModal.services.filter(s => bookJobModal.selectedServices.includes(s.id))
+      const totalPrice = selectedServiceObjects.reduce((sum, s) => sum + (parseFloat(s.Price) || 0), 0)
+      const serviceNames = selectedServiceObjects.map(s => s.Service).join(', ')
+      
+      const { error } = await supabase
+        .from('Customers')
+        .update({ 
+          NextClean: bookJobModal.selectedDate,
+          Price: totalPrice,
+          NextServices: serviceNames,
+          Quote: false 
+        })
+        .eq('id', bookJobModal.customer.id)
+      
+      if (error) throw error
+      
+      // Create history record
+      const { error: historyError } = await supabase
+        .from('CustomerHistory')
+        .insert({
+          CustomerID: bookJobModal.customer.id,
+          Message: 'Quote converted to job, scheduled for ' + formatDateByCountry(bookJobModal.selectedDate, user.SettingsCountry || 'United Kingdom') + ', Services: ' + serviceNames
+        })
+      
+      if (historyError) throw historyError
+      
+      setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
+      setShowCustomerModal(false)
+      fetchCustomers()
+    } catch (error) {
+      console.error('Error booking job:', error.message)
+      alert('Error booking job: ' + error.message)
+    }
+  }
+
   const handleSendWhatsApp = (customer) => {
     const phone = formatPhoneForWhatsApp(customer.PhoneNumber)
     if (!phone) {
@@ -875,17 +1178,24 @@ function WorkloadManager({ user }) {
 
     // Add days of the month
     for (let day = 1; day <= daysInMonth; day++) {
-      const hasWork = hasCustomersOnDate(day)
+      const hasJobs = hasJobsOnDate(day)
+      const hasQuotes = hasQuotesOnDate(day)
+      const hasAnyWork = hasJobs || hasQuotes
       const isSelected = selectedDate === day
       
       days.push(
         <div
           key={day}
-          className={`calendar-day ${hasWork ? 'has-work' : ''} ${isSelected ? 'selected' : ''}`}
+          className={`calendar-day ${hasAnyWork ? 'has-work' : ''} ${isSelected ? 'selected' : ''}`}
           onClick={() => handleDayClick(day)}
         >
           <div className="day-number">{day}</div>
-          {hasWork && <div className="work-indicator"></div>}
+          {(hasJobs || hasQuotes) && (
+            <div className="day-indicators">
+              {hasJobs && <div className="work-indicator"></div>}
+              {hasQuotes && <div className="quote-indicator"></div>}
+            </div>
+          )}
         </div>
       )
     }
@@ -900,10 +1210,11 @@ function WorkloadManager({ user }) {
 
   if (loading) return <div className="loading">Loading workload...</div>
 
-  const selectedDayCustomers = selectedDate ? getCustomersForDate(selectedDate) : []
-  const selectedCustomersForDay = selectedDayCustomers.filter((customer) => selectedCustomerIds.includes(customer.id))
+  const selectedDayJobs = selectedDate ? getJobsForDate(selectedDate) : []
+  const selectedDayQuotes = selectedDate ? getQuotesForDate(selectedDate) : []
+  const selectedCustomersForDay = selectedDayJobs.filter((customer) => selectedCustomerIds.includes(customer.id))
   const hasSelectedCustomers = selectedCustomersForDay.length > 0
-  const totalIncome = selectedDayCustomers.reduce((sum, customer) => sum + (parseFloat(customer.Price) || 0), 0)
+  const totalIncome = selectedDayJobs.reduce((sum, customer) => sum + (parseFloat(customer.Price) || 0), 0)
 
   // Route color helper
   const routeColors = [
@@ -999,7 +1310,39 @@ function WorkloadManager({ user }) {
                 Jobs for {monthNames[currentDate.getMonth()]} {selectedDate}, {currentDate.getFullYear()}
               </h3>
           <p className="income-total">Income: {formatCurrency(totalIncome, user.SettingsCountry || 'United Kingdom')}</p>
-          {selectedDayCustomers.length > 0 && (
+
+          {selectedDayQuotes.length > 0 && (
+            <div className="quotes-list-card">
+              <h4>Quotes for this day ({selectedDayQuotes.length})</h4>
+              <div className="quotes-list">
+                {selectedDayQuotes.map((q) => (
+                  <div key={q.id} className="quote-item-with-button">
+                    <div
+                      className="quote-item"
+                      onClick={() => {
+                        setSelectedCustomer(q)
+                        setShowCustomerModal(true)
+                      }}
+                    >
+                      <div className="quote-name">{q.CustomerName}</div>
+                      <div className="quote-address">{getFullAddress(q)}</div>
+                    </div>
+                    <button 
+                      className="quote-book-btn"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleBookJob(q)
+                      }}
+                    >
+                      Book Job
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {selectedDayJobs.length > 0 && (
             <div className="message-all-section">
               <label className="message-all-label" htmlFor="messageAll">Message to {hasSelectedCustomers ? 'Selected' : 'All'}:</label>
               <select
@@ -1016,7 +1359,7 @@ function WorkloadManager({ user }) {
               </select>
             </div>
           )}
-          {selectedDayCustomers.length > 0 && (
+          {selectedDayJobs.length > 0 && (
             <div className="bulk-move-section">
               <span className="bulk-move-label">Move {hasSelectedCustomers ? 'selected' : 'all'} jobs:</span>
               <div className="bulk-date-picker-wrapper">
@@ -1039,11 +1382,11 @@ function WorkloadManager({ user }) {
               </div>
             </div>
           )}
-          {selectedDayCustomers.length === 0 ? (
-            <p className="empty-state">No customers scheduled for this day.</p>
+          {selectedDayJobs.length === 0 ? (
+            <p className="empty-state">No jobs scheduled for this day.</p>
           ) : (
             <div className="customer-list">
-              {(orderedCustomers.length > 0 ? orderedCustomers : selectedDayCustomers).map((customer, index) => {
+              {(orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs).map((customer, index) => {
                 const isSelected = selectedCustomerIds.includes(customer.id)
 
                 return (
@@ -1082,7 +1425,10 @@ function WorkloadManager({ user }) {
                       )}
                     </div>
 
-                    <div className="customer-grid-col info-col">
+                    <div className="customer-grid-col info-col" onClick={() => {
+                      setSelectedCustomer(customer)
+                      setShowCustomerModal(true)
+                    }}>
                       <div className="customer-address-main">{getFullAddress(customer)}</div>
                       <div className="customer-name-sub">{customer.CustomerName}</div>
                       <span className="route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
@@ -1136,7 +1482,8 @@ function WorkloadManager({ user }) {
                             setEditingPriceValue(customer.Price || '')
                           }}
                         >
-                          {customer.Price && formatCurrency(customer.Price, user.SettingsCountry || 'United Kingdom')}
+                          <div>{customer.Price && formatCurrency(customer.Price, user.SettingsCountry || 'United Kingdom')}</div>
+                          {getAdditionalServices(customer) && <div className="additional-services">{getAdditionalServices(customer)}</div>}
                         </div>
                       )}
                     </div>
@@ -1283,6 +1630,333 @@ function WorkloadManager({ user }) {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {showCustomerModal && selectedCustomer && (
+        <div className="modal-overlay" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); setShowHistory(false); }}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); setShowHistory(false); }}>×</button>
+            <h3>{showHistory ? 'Customer History' : showServices ? 'Customer Services' : 'Customer Details'}</h3>
+            
+            <div className="modal-actions">
+              {isEditingModal ? (
+                <>
+                  <button className="modal-save-btn" onClick={handleModalSave}>Save</button>
+                  <button className="modal-cancel-btn" onClick={() => setIsEditingModal(false)}>Cancel</button>
+                </>
+              ) : (
+                <>
+                  {!showServices && !showHistory && <button className="modal-edit-btn" onClick={() => { setIsEditingModal(true); setModalEditData({...selectedCustomer}); }}>Edit</button>}
+                  <button className="modal-services-btn" onClick={() => { setShowServices(!showServices); setShowHistory(false); if (!showServices) fetchCustomerServices(selectedCustomer.id); }}>{showServices ? 'Customer Details' : 'Services'}</button>
+                  <button className="modal-history-btn" onClick={() => { setShowHistory(!showHistory); setShowServices(false); if (!showHistory) fetchCustomerHistory(selectedCustomer.id); }}>{showHistory ? 'Customer Details' : 'History'}</button>
+                </>
+              )}
+            </div>
+            
+            {!showServices && !showHistory ? (
+              // Customer Details View
+              isEditingModal ? (
+                <div className="details-grid">
+                  <div><strong>Name:</strong> <input type="text" value={modalEditData.CustomerName} onChange={(e) => setModalEditData({...modalEditData, CustomerName: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Address:</strong> <input type="text" value={modalEditData.Address} onChange={(e) => setModalEditData({...modalEditData, Address: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Address 2:</strong> <input type="text" value={modalEditData.Address2} onChange={(e) => setModalEditData({...modalEditData, Address2: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Address 3:</strong> <input type="text" value={modalEditData.Address3} onChange={(e) => setModalEditData({...modalEditData, Address3: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Postcode:</strong> <input type="text" value={modalEditData.Postcode} onChange={(e) => setModalEditData({...modalEditData, Postcode: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Phone:</strong> <input type="tel" value={modalEditData.PhoneNumber} onChange={(e) => setModalEditData({...modalEditData, PhoneNumber: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Email:</strong> <input type="email" value={modalEditData.EmailAddress} onChange={(e) => setModalEditData({...modalEditData, EmailAddress: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Price:</strong> <input type="number" value={modalEditData.Price} onChange={(e) => setModalEditData({...modalEditData, Price: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Weeks:</strong> <input type="number" value={modalEditData.Weeks} onChange={(e) => setModalEditData({...modalEditData, Weeks: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Next Clean:</strong> <input type="date" value={modalEditData.NextClean} onChange={(e) => setModalEditData({...modalEditData, NextClean: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Outstanding:</strong> <input type="number" value={modalEditData.Outstanding} onChange={(e) => setModalEditData({...modalEditData, Outstanding: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Route:</strong> <input type="text" value={modalEditData.Route} onChange={(e) => setModalEditData({...modalEditData, Route: e.target.value})} className="modal-input" /></div>
+                  <div style={{gridColumn: '1 / -1'}}><strong>Notes:</strong> <textarea value={modalEditData.Notes} onChange={(e) => setModalEditData({...modalEditData, Notes: e.target.value})} className="modal-input" rows="3" /></div>
+                </div>
+              ) : (
+                <>
+                <div className="details-grid">
+                  <div><strong>Name:</strong> {selectedCustomer.CustomerName}</div>
+                  <div><strong>Address:</strong> {getFullAddress(selectedCustomer)}</div>
+                  <div><strong>Phone:</strong> {selectedCustomer.PhoneNumber || '—'}</div>
+                  <div><strong>Email:</strong> {selectedCustomer.EmailAddress || '—'}</div>
+                  <div><strong>Price:</strong> {formatCurrency(selectedCustomer.Price, user.SettingsCountry || 'United Kingdom')}</div>
+                  <div><strong>Weeks:</strong> {selectedCustomer.Weeks}</div>
+                  <div><strong>{isQuoteCustomer(selectedCustomer) ? 'Quotation Booked:' : 'Next Clean:'}</strong> {formatDateByCountry(selectedCustomer.NextClean, user.SettingsCountry || 'United Kingdom')}</div>
+                  <div><strong>Outstanding:</strong> {formatCurrency(selectedCustomer.Outstanding, user.SettingsCountry || 'United Kingdom')}</div>
+                  <div><strong>Route:</strong> {selectedCustomer.Route || '—'}</div>
+                  <div className="notes-cell"><strong>Notes:</strong> {selectedCustomer.Notes || '—'}</div>
+                </div>
+                <button 
+                  className="cancel-service-btn"
+                  onClick={() => setCancelServiceModal({ show: true, reason: '' })}
+                  title={isQuoteCustomer(selectedCustomer) ? "Cancel this quote" : "Cancel this customer's service"}
+                >
+                  {isQuoteCustomer(selectedCustomer) ? 'Cancel Quote' : 'Cancel Service'}
+                </button>
+                {isQuoteCustomer(selectedCustomer) && (
+                  <button 
+                    className="book-job-btn"
+                    onClick={() => handleBookJob(selectedCustomer)}
+                    title="Convert quote to job"
+                  >
+                    Book Job
+                  </button>
+                )}
+                </>
+              )
+            ) : showHistory ? (
+
+              // History View
+
+              <div className="history-list">
+
+                {customerHistory.length > 0 ? (
+
+                  <table className="history-table">
+
+                    <thead>
+
+                      <tr>
+
+                        <th>Date</th>
+
+                        <th>Message</th>
+
+                      </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                      {customerHistory.map((entry, index) => (
+
+                        <tr key={index}>
+
+                          <td>{formatDateByCountry(entry.created_at, user.SettingsCountry || 'United Kingdom')}</td>
+
+                          <td>{entry.Message}</td>
+
+                        </tr>
+
+                      ))}
+
+                    </tbody>
+
+                  </table>
+
+                ) : (
+
+                  <p>No history found for this customer.</p>
+
+                )}
+
+              </div>
+
+            ) : (
+
+              // Services View
+              <div className="services-list">
+                {!isAddingService ? (
+                  <button className="add-service-btn" onClick={() => setIsAddingService(true)}>+ Add Service</button>
+                ) : (
+                  <div className="new-service-form">
+                    <div className="service-form-row">
+                      <div>
+                        <label><strong>Service:</strong></label>
+                        <input 
+                          type="text" 
+                          value={newServiceData.Service} 
+                          onChange={(e) => setNewServiceData({...newServiceData, Service: e.target.value})} 
+                          className="modal-input"
+                          placeholder="e.g., Windows, Gutters"
+                        />
+                      </div>
+                      <div>
+                        <label><strong>Price:</strong></label>
+                        <input 
+                          type="number" 
+                          value={newServiceData.Price} 
+                          onChange={(e) => setNewServiceData({...newServiceData, Price: e.target.value})} 
+                          className="modal-input"
+                          placeholder="0"
+                        />
+                      </div>
+                      <div>
+                        <label><strong>Description:</strong></label>
+                        <input 
+                          type="text" 
+                          value={newServiceData.Description} 
+                          onChange={(e) => setNewServiceData({...newServiceData, Description: e.target.value})} 
+                          className="modal-input"
+                          placeholder="Optional"
+                        />
+                      </div>
+                    </div>
+                    <div className="service-form-actions">
+                      <button className="modal-save-btn" onClick={handleAddService}>Save</button>
+                      <button className="modal-cancel-btn" onClick={() => { setIsAddingService(false); setNewServiceData({ Service: '', Price: '', Description: '' }); }}>Cancel</button>
+                    </div>
+                  </div>
+                )}
+                
+                {customerServices.length > 0 && (
+                  <table className="services-table">
+                    <thead>
+                      <tr>
+                        <th>Service</th>
+                        <th>Price</th>
+                        <th>Description</th>
+                        <th className="actions-col">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {customerServices.map((service) => (
+                        editingServiceId === service.id ? (
+                          <tr key={service.id} className="editing-row">
+                            <td><input type="text" value={editServiceData.Service} onChange={(e) => setEditServiceData({...editServiceData, Service: e.target.value})} className="modal-input" /></td>
+                            <td><input type="number" value={editServiceData.Price} onChange={(e) => setEditServiceData({...editServiceData, Price: e.target.value})} className="modal-input" /></td>
+                            <td><input type="text" value={editServiceData.Description} onChange={(e) => setEditServiceData({...editServiceData, Description: e.target.value})} className="modal-input" /></td>
+                            <td>
+                              <button className="service-save-btn" onClick={() => handleEditService(service.id)}>✓</button>
+                              <button className="service-cancel-btn" onClick={() => { setEditingServiceId(null); setEditServiceData({}); }}>✕</button>
+                            </td>
+                          </tr>
+                        ) : (
+                          <tr key={service.id}>
+                            <td>{service.Service}</td>
+                            <td>{formatCurrency(service.Price, user.SettingsCountry || 'United Kingdom')}</td>
+                            <td>{service.Description || '—'}</td>
+                            <td className="actions-col">
+                              <button className="service-actions-btn" onClick={() => setServiceDropdownOpen(serviceDropdownOpen === service.id ? null : service.id)}>⋮</button>
+                              {serviceDropdownOpen === service.id && (
+                                <div className="service-actions-dropdown">
+                                  <button onClick={() => { setEditingServiceId(service.id); setEditServiceData({...service}); setServiceDropdownOpen(null); }}>Edit</button>
+                                  <button onClick={() => { handleDeleteService(service.id); setServiceDropdownOpen(null); }}>Delete</button>
+                                  <button onClick={() => { handleAddToNextClean(service); setServiceDropdownOpen(null); }}>Add to Next Clean</button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                
+                {customerServices.length === 0 && !isAddingService && (
+                  <p>No services found for this customer.</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {cancelServiceModal.show && selectedCustomer && (
+        <div className="modal-overlay" onClick={() => setCancelServiceModal({ show: false, reason: '' })}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>{isQuoteCustomer(selectedCustomer) ? 'Cancel Quote' : 'Cancel Service'}</h3>
+            <div className="modal-form">
+              <label htmlFor="cancelReason">Reason for Cancelation:</label>
+              <textarea
+                id="cancelReason"
+                value={cancelServiceModal.reason}
+                onChange={(e) => setCancelServiceModal(prev => ({ ...prev, reason: e.target.value }))}
+                placeholder="Enter reason (optional)"
+                rows="4"
+              />
+            </div>
+            <div className="modal-buttons">
+              <button 
+                onClick={() => handleCancelService(cancelServiceModal.reason)}
+                className="modal-ok-btn"
+              >
+                OK
+              </button>
+              <button 
+                onClick={() => setCancelServiceModal({ show: false, reason: '' })}
+                className="modal-cancel-btn"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bookJobModal.show && bookJobModal.customer && (
+        <div className="modal-overlay" onClick={() => setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Book Job for {bookJobModal.customer.CustomerName}</h3>
+            <div className="modal-form">
+              <label htmlFor="jobDate">Select Job Date:</label>
+              <input
+                id="jobDate"
+                type="date"
+                value={bookJobModal.selectedDate}
+                onChange={(e) => setBookJobModal(prev => ({ ...prev, selectedDate: e.target.value }))}
+                className="modal-input"
+              />
+              
+              {bookJobModal.services.length > 0 && (
+                <>
+                  <label style={{ marginTop: '1rem' }}>Select Services:</label>
+                  <div className="services-checklist">
+                    {bookJobModal.services.map((service) => (
+                      <div key={service.id} className="service-checkbox-item">
+                        <input
+                          type="checkbox"
+                          id={`service-${service.id}`}
+                          checked={bookJobModal.selectedServices.includes(service.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setBookJobModal(prev => ({
+                                ...prev,
+                                selectedServices: [...prev.selectedServices, service.id]
+                              }))
+                            } else {
+                              setBookJobModal(prev => ({
+                                ...prev,
+                                selectedServices: prev.selectedServices.filter(id => id !== service.id)
+                              }))
+                            }
+                          }}
+                        />
+                        <label htmlFor={`service-${service.id}`} className="service-label">
+                          {service.Service} - {formatCurrency(service.Price, user.SettingsCountry || 'United Kingdom')}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {bookJobModal.selectedServices.length > 0 && (
+                    <div className="service-total">
+                      Total Price: {formatCurrency(
+                        bookJobModal.services
+                          .filter(s => bookJobModal.selectedServices.includes(s.id))
+                          .reduce((sum, s) => sum + (parseFloat(s.Price) || 0), 0),
+                        user.SettingsCountry || 'United Kingdom'
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="modal-buttons">
+              <button 
+                onClick={() => handleBookJobSave()}
+                className="modal-ok-btn"
+              >
+                Save
+              </button>
+              <button 
+                onClick={() => setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })}
+                className="modal-cancel-btn"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

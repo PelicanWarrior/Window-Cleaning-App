@@ -125,6 +125,7 @@ function CustomerList({ user }) {
         .from('Customers')
         .select('*')
         .eq('UserId', user.id)
+        .or('Quote.is.null,Quote.eq.false')
 
       // Apply filters
       if (filters.CustomerName) {
