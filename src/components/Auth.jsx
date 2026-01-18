@@ -120,7 +120,7 @@ function Auth({ onLogin }) {
                 .map(entry => entry.CustomerID)
             )
 
-            const missingWindows = customers.filter(c => !windowsEntries.has(c.id))
+            const missingWindows = customers.filter(c => !windowsEntries.has(c.id) && c.Quote !== true)
 
             if (missingWindows.length > 0) {
               const windowsPrices = missingWindows.map(customer => ({
