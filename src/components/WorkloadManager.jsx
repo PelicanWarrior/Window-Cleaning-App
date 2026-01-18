@@ -1054,6 +1054,32 @@ function WorkloadManager({ user }) {
     }
   }
 
+  // Handle Skip Clean
+  const handleSkipClean = async (customer) => {
+    try {
+      const weeksToAdd = parseInt(user.SettingsRouteWeeks) || parseInt(customer.Weeks) || 1
+      const currentCleanDate = new Date(customer.NextClean)
+      const nextCleanDate = new Date(currentCleanDate)
+      nextCleanDate.setDate(nextCleanDate.getDate() + (weeksToAdd * 7))
+      
+      // Create history record
+      await createCustomerHistory(customer.id, 'Skipped this clean')
+      
+      // Update customer with new NextClean date
+      const { error } = await supabase
+        .from('Customers')
+        .update({ NextClean: nextCleanDate.toISOString().split('T')[0] })
+        .eq('id', customer.id)
+      
+      if (error) throw error
+      
+      fetchCustomers()
+    } catch (error) {
+      console.error('Error skipping clean:', error.message)
+      alert('Error skipping clean: ' + error.message)
+    }
+  }
+
   async function handleBookJob(customer) {
     // Fetch customer services first
     try {
@@ -1495,6 +1521,9 @@ function WorkloadManager({ user }) {
                         </button>
                         <button onClick={() => handleDoneAndNotPaid(customer)} className="done-not-paid-btn">
                           Done and Not Paid
+                        </button>
+                        <button onClick={() => handleSkipClean(customer)} className="skip-clean-btn">
+                          Skip
                         </button>
                       </div>
 

@@ -800,6 +800,23 @@
   opacity: 0.9;
 }
 
+.skip-clean-btn {
+  padding: 0.4rem 0.8rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: opacity 0.2s;
+  white-space: nowrap;
+  background-color: #3498db;
+  color: white;
+}
+
+.skip-clean-btn:hover {
+  opacity: 0.9;
+}
+
 .calendar-icon-btn {
   padding: 0.35rem 0.5rem;
   border: 1px solid #3498db;
@@ -1065,6 +1082,21 @@
   background-color: #d35400;
 }
 
+.mobile-menu-item.skip-clean-btn {
+  background-color: #3498db;
+  color: white;
+  font-weight: 600;
+  border-bottom: 1px solid #2980b9 !important;
+}
+
+.mobile-menu-item.skip-clean-btn:hover {
+  background-color: #2980b9;
+}
+
+.mobile-menu-item.done-not-paid-btn:hover {
+  background-color: #d35400;
+}
+
 .mobile-menu-item.text-btn {
   color: #25d366;
   font-weight: 600;
@@ -1151,7 +1183,8 @@
   }
 
   .done-paid-btn,
-  .done-not-paid-btn {
+  .done-not-paid-btn,
+  .skip-clean-btn {
     flex: 1;
   }
 
