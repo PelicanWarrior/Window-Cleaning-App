@@ -1603,6 +1603,15 @@ function WorkloadManager({ user }) {
                             >
                               Done and Not Paid
                             </button>
+                            <button 
+                              className="mobile-menu-item skip-clean-btn"
+                              onClick={() => {
+                                handleSkipClean(customer)
+                                setMobileMenuOpenCustomerId(null)
+                              }}
+                            >
+                              Skip
+                            </button>
                             <div className="mobile-menu-section">
                               <select
                                 value={selectedLetters[customer.id] || messages[0]?.id || ''}
