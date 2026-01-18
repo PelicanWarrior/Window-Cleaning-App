@@ -1057,7 +1057,7 @@ function WorkloadManager({ user }) {
   // Handle Skip Clean
   const handleSkipClean = async (customer) => {
     try {
-      const weeksToAdd = parseInt(user.SettingsRouteWeeks) || parseInt(customer.Weeks) || 1
+      const weeksToAdd = parseInt(user.RouteWeeks) || 1
       const currentCleanDate = new Date(customer.NextClean)
       const nextCleanDate = new Date(currentCleanDate)
       nextCleanDate.setDate(nextCleanDate.getDate() + (weeksToAdd * 7))
