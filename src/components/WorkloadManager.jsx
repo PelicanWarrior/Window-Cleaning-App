@@ -1554,13 +1554,15 @@ function WorkloadManager({ user }) {
                         </div>
 
                         <div className="row-calendar-section">
-                          <button
-                            className="calendar-icon-btn"
-                            onClick={() => setInvoiceModal({ show: true, customer })}
-                            title="Create invoice"
-                          >
-                            🧾
-                          </button>
+                          {user.admin && (
+                            <button
+                              className="calendar-icon-btn"
+                              onClick={() => setInvoiceModal({ show: true, customer })}
+                              title="Create invoice"
+                            >
+                              🧾
+                            </button>
+                          )}
                           <span className="change-date-label">Change clean date</span>
                           <button
                             className="calendar-icon-btn"
@@ -1656,15 +1658,17 @@ function WorkloadManager({ user }) {
                             >
                               📅 Change Date
                             </button>
-                            <button
-                              className="mobile-menu-item"
-                              onClick={() => {
-                                setInvoiceModal({ show: true, customer })
-                                setMobileMenuOpenCustomerId(null)
-                              }}
-                            >
-                              🧾 Create Invoice
-                            </button>
+                            {user.admin && (
+                              <button
+                                className="mobile-menu-item"
+                                onClick={() => {
+                                  setInvoiceModal({ show: true, customer })
+                                  setMobileMenuOpenCustomerId(null)
+                                }}
+                              >
+                                🧾 Create Invoice
+                              </button>
+                            )}
                             {expandedDatePickers[customer.id] && (
                               <input
                                 type="date"
@@ -1689,7 +1693,7 @@ function WorkloadManager({ user }) {
         </div>
       )}
 
-      {invoiceModal.show && invoiceModal.customer && (
+      {user.admin && invoiceModal.show && invoiceModal.customer && (
         <InvoiceModal
           user={user}
           customer={invoiceModal.customer}

@@ -5,6 +5,7 @@ import './Invoice.css'
 import InvoiceItemsModal from './InvoiceItemsModal'
 // jsPDF loaded via CDN script; fallback avoids bundler import issues
 const jsPDFRef = typeof window !== 'undefined' && window.jspdf ? window.jspdf.jsPDF : null
+import { sendInvoiceWhatsApp } from '../lib/whatsappCloud'
 
 function InvoicesModal({ user, customer, onClose }) {
   const [invoices, setInvoices] = useState([])
@@ -59,24 +60,41 @@ function InvoicesModal({ user, customer, onClose }) {
       alert('Failed to generate PDF')
       return
     }
-    
     const bodyText = await buildBody(inv)
-    
-    // Try Web Share API (works on mobile to attach to WhatsApp)
-    const shared = await attemptShareWithPdf(pdfBlob, `Invoice-${inv.InvoiceID}.pdf`, bodyText)
-    
-    if (!shared) {
-      // Fallback: download PDF and open WhatsApp
-      alert('PDF will be downloaded. Please attach it manually to your WhatsApp message.')
+
+    // Prefer sharing only on mobile devices that support file sharing
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : ''
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(ua)
+    let shared = false
+    let apiSent = false
+
+    // Try WhatsApp Cloud API first if configured
+    try {
+      const phone = formatPhoneForWhatsApp(customer.PhoneNumber)
+      if (phone && import.meta.env.VITE_WHATSAPP_ENABLED === 'true') {
+        await sendInvoiceWhatsApp({ phoneE164: phone, filename: `Invoice-${inv.InvoiceID}.pdf`, pdfBlob, messageText: bodyText })
+        apiSent = true
+      }
+    } catch (e) {
+      console.log('WhatsApp API send failed, falling back:', e)
+    }
+
+    if (!apiSent && isMobile) {
+      shared = await attemptShareWithPdf(pdfBlob, `Invoice-${inv.InvoiceID}.pdf`, bodyText)
+    }
+
+    if (!shared && !apiSent) {
+      // Desktop or unsupported mobile: download PDF and open WhatsApp directly
       downloadBlobToDevice(pdfBlob, `Invoice-${inv.InvoiceID}.pdf`)
-      
       const phone = formatPhoneForWhatsApp(customer.PhoneNumber)
       if (!phone) {
         alert('This customer does not have a valid phone number.')
         return
       }
-      const url = `https://wa.me/${phone}?text=${encodeURIComponent(bodyText)}`
-      window.open(url, '_blank')
+      const appUrl = `whatsapp://send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(bodyText)}`
+      const webUrl = `https://wa.me/${phone}?text=${encodeURIComponent(bodyText)}`
+      const opened = window.open(appUrl, '_blank')
+      if (!opened) window.open(webUrl, '_blank')
     }
   }
 
@@ -170,8 +188,8 @@ function InvoicesModal({ user, customer, onClose }) {
   const attemptShareWithPdf = async (blob, filename, text) => {
     try {
       const file = new File([blob], filename, { type: 'application/pdf' })
-      
-      // Check if Web Share API with files is supported
+
+      // Check if Web Share API with files is supported (assumed mobile)
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         // On mobile, this will show share sheet including WhatsApp
         await navigator.share({ 

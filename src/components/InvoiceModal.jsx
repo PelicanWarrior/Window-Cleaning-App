@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatCurrency, getCurrencyConfig, formatDateByCountry } from '../lib/format'
+import { sendInvoiceWhatsApp } from '../lib/whatsappCloud'
 // jsPDF loaded via CDN script; fallback avoids bundler import issues
 const jsPDFRef = typeof window !== 'undefined' && window.jspdf ? window.jspdf.jsPDF : null
 import './Invoice.css'
@@ -105,6 +106,7 @@ function InvoiceModal({ user, customer, onClose, onSaved }) {
 
     // If sending, generate and share the PDF first to preserve user gesture
     let shared = false
+    let apiSent = false
     if (sendMode === 'text' || sendMode === 'email') {
       const preItemsPayload = items.map((it) => ({
         InvoiceID: null,
@@ -266,8 +268,10 @@ function InvoiceModal({ user, customer, onClose, onSaved }) {
     try {
       const file = new File([blob], filename, { type: 'application/pdf' })
       
-      // Check if Web Share API with files is supported
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      // Prefer sharing only on mobile devices that support file sharing
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : ''
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(ua)
+      if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
         // On mobile, this will show share sheet including WhatsApp
         await navigator.share({ 
           files: [file], 

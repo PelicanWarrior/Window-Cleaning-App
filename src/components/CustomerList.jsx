@@ -1230,16 +1230,20 @@ function CustomerList({ user }) {
                                     >
                                       Mark as Paid
                                     </button>
-                                    <button
-                                      onClick={() => setInvoiceModal({ show: true, customer })}
-                                    >
-                                      Create Invoice
-                                    </button>
-                                    <button
-                                      onClick={() => setInvoicesListModal({ show: true, customer })}
-                                    >
-                                      Invoices
-                                    </button>
+                                    {user.admin && (
+                                      <>
+                                        <button
+                                          onClick={() => setInvoiceModal({ show: true, customer })}
+                                        >
+                                          Create Invoice
+                                        </button>
+                                        <button
+                                          onClick={() => setInvoicesListModal({ show: true, customer })}
+                                        >
+                                          Invoices
+                                        </button>
+                                      </>
+                                    )}
                                     <button
                                       className="delete-btn"
                                       onClick={() => deleteCustomer(customer.id)}
@@ -1554,7 +1558,7 @@ function CustomerList({ user }) {
         </div>
       )}
 
-      {invoiceModal.show && invoiceModal.customer && (
+      {user.admin && invoiceModal.show && invoiceModal.customer && (
         <InvoiceModal
           user={user}
           customer={invoiceModal.customer}
@@ -1565,7 +1569,7 @@ function CustomerList({ user }) {
         />
       )}
 
-      {invoicesListModal.show && invoicesListModal.customer && (
+      {user.admin && invoicesListModal.show && invoicesListModal.customer && (
         <InvoicesModal
           user={user}
           customer={invoicesListModal.customer}

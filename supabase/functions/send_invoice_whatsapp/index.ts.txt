@@ -1,0 +1,97 @@
+// Supabase Edge Function: send_invoice_whatsapp (Deno)
+// Save this file as index.ts in supabase/functions/send_invoice_whatsapp/ when deploying.
+// Requires secrets:
+//   WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID
+// Body: { phoneE164: string, filename: string, pdfBase64: string, messageText?: string }
+
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+
+interface RequestBody {
+  phoneE164: string;
+  filename: string;
+  pdfBase64: string;
+  messageText?: string;
+}
+
+function jsonResponse(status: number, data: unknown) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+serve(async (req: Request) => {
+  try {
+    if (req.method !== "POST") {
+      return jsonResponse(405, { error: "Method not allowed" });
+    }
+    const token = Deno.env.get("WHATSAPP_TOKEN");
+    const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
+    if (!token || !phoneNumberId) {
+      return jsonResponse(500, { error: "Missing WhatsApp API configuration" });
+    }
+
+    const body = (await req.json()) as RequestBody;
+    const { phoneE164, filename, pdfBase64, messageText } = body;
+    if (!phoneE164 || !filename || !pdfBase64) {
+      return jsonResponse(400, { error: "Missing required fields" });
+    }
+
+    const pdfBytes = Uint8Array.from(atob(pdfBase64), (c) => c.charCodeAt(0));
+    const blob = new Blob([pdfBytes], { type: "application/pdf" });
+
+    const mediaUploadUrl = `https://graph.facebook.com/v19.0/${phoneNumberId}/media`;
+    const form = new FormData();
+    form.append("messaging_product", "whatsapp");
+    form.append("type", "application/pdf");
+    form.append("file", blob, filename);
+
+    const mediaResp = await fetch(mediaUploadUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+
+    if (!mediaResp.ok) {
+      const err = await mediaResp.text();
+      return jsonResponse(500, { error: "Failed to upload media", details: err });
+    }
+    const mediaJson = await mediaResp.json();
+    const mediaId = mediaJson.id as string;
+    if (!mediaId) {
+      return jsonResponse(500, { error: "No media id returned" });
+    }
+
+    const messagesUrl = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
+    const payload: Record<string, unknown> = {
+      messaging_product: "whatsapp",
+      to: phoneE164,
+      type: "document",
+      document: {
+        id: mediaId,
+        filename,
+      },
+    };
+    if (messageText) {
+      payload["text"] = { body: messageText };
+    }
+
+    const msgResp = await fetch(messagesUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const msgJson = await msgResp.json();
+    if (!msgResp.ok) {
+      return jsonResponse(500, { error: "Failed to send message", details: msgJson });
+    }
+
+    return jsonResponse(200, { ok: true, result: msgJson });
+  } catch (e) {
+    return jsonResponse(500, { error: "Unexpected error", details: String(e) });
+  }
+});
