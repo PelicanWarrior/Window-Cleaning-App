@@ -9,7 +9,7 @@ function InvoiceModal({ user, customer, onClose, onSaved }) {
   const [invoiceIdText, setInvoiceIdText] = useState('')
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0])
   const [services, setServices] = useState([])
-  const [items, setItems] = useState([{ mode: 'select', Service: '', Price: 0 }])
+  const [items, setItems] = useState([{ mode: 'select', ServiceId: '', Service: '', Price: 0 }])
   const [messageFooter, setMessageFooter] = useState('')
   const currencySymbol = getCurrencyConfig(user.SettingsCountry || 'United Kingdom').symbol
 
@@ -90,7 +90,7 @@ function InvoiceModal({ user, customer, onClose, onSaved }) {
   }
 
   const addItemRow = () => {
-    setItems((prev) => [...prev, { mode: 'select', Service: '', Price: 0 }])
+    setItems((prev) => [...prev, { mode: 'select', ServiceId: '', Service: '', Price: 0 }])
   }
 
   const removeItemRow = (index) => {
@@ -103,7 +103,31 @@ function InvoiceModal({ user, customer, onClose, onSaved }) {
       return
     }
 
-    // Create invoice header
+    // If sending, generate and share the PDF first to preserve user gesture
+    let shared = false
+    if (sendMode === 'text' || sendMode === 'email') {
+      const preItemsPayload = items.map((it) => ({
+        InvoiceID: null,
+        Service: it.Service,
+        Price: parseInt(it.Price) || 0,
+      }))
+      const pdfBlob = await generateInvoicePdf(null, preItemsPayload)
+      const filename = `Invoice-${invoiceIdText}.pdf`
+      const bodyText = `Invoice ${invoiceIdText} for ${customer.CustomerName}\n${formatLines()}`
+
+      shared = await attemptShareWithPdf(pdfBlob, filename, bodyText, customer.PhoneNumber)
+      if (!shared) {
+        // Fallback: download PDF and open WhatsApp/email directly
+        downloadBlob(pdfBlob, filename)
+        if (sendMode === 'text') {
+          sendWhatsApp()
+        } else if (sendMode === 'email') {
+          sendEmail()
+        }
+      }
+    }
+
+    // Proceed to save after sharing attempt
     const { data: invData, error: invErr } = await supabase
       .from('CustomerInvoices')
       .insert({ CustomerID: customer.id, InvoiceID: invoiceIdText, InvoiceDate: invoiceDate })
@@ -117,7 +141,6 @@ function InvoiceModal({ user, customer, onClose, onSaved }) {
     const invoiceRow = Array.isArray(invData) ? invData[0] : invData
     const invoicePk = invoiceRow?.id
 
-    // Save items
     const itemsPayload = items.map((it) => ({
       InvoiceID: invoicePk,
       Service: it.Service,
@@ -132,21 +155,6 @@ function InvoiceModal({ user, customer, onClose, onSaved }) {
     }
 
     if (onSaved) onSaved({ invoice: invoiceRow, items: itemsPayload })
-
-    // Always generate and save PDF locally, then attempt share; fallback to link-only
-    const pdfBlob = await generateInvoicePdf(invoiceRow, itemsPayload)
-    const filename = `Invoice-${invoiceIdText}.pdf`
-    downloadBlob(pdfBlob, filename)
-
-    const bodyText = `Invoice ${invoiceIdText} for ${customer.CustomerName}\n${formatLines()}`
-    const shared = await attemptShareWithPdf(pdfBlob, filename, bodyText)
-    if (!shared) {
-      if (sendMode === 'text') {
-        sendWhatsApp(invoiceRow)
-      } else if (sendMode === 'email') {
-        sendEmail(invoiceRow)
-      }
-    }
 
     onClose()
   }
@@ -165,15 +173,22 @@ function InvoiceModal({ user, customer, onClose, onSaved }) {
     return digits
   }
 
-  const sendWhatsApp = (invoiceRow) => {
+  const sendWhatsApp = () => {
     const phone = formatPhoneForWhatsApp(customer.PhoneNumber)
     if (!phone) {
       alert('This customer does not have a valid phone number.')
       return
     }
     const body = `Invoice ${invoiceIdText} for ${customer.CustomerName}\n${formatLines()}`
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(body)}`
-    window.open(url, '_blank')
+    // Prefer opening WhatsApp app directly when available
+    const appUrl = `whatsapp://send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(body)}`
+    const webUrl = `https://wa.me/${phone}?text=${encodeURIComponent(body)}`
+    // Try app scheme first
+    const opened = window.open(appUrl, '_blank')
+    if (!opened) {
+      // Fallback to WhatsApp Web
+      window.open(webUrl, '_blank')
+    }
   }
 
   const sendEmail = (invoiceRow) => {
@@ -247,14 +262,24 @@ function InvoiceModal({ user, customer, onClose, onSaved }) {
     URL.revokeObjectURL(url)
   }
 
-  const attemptShareWithPdf = async (blob, filename, text) => {
+  const attemptShareWithPdf = async (blob, filename, text, phoneNumber) => {
     try {
       const file = new File([blob], filename, { type: 'application/pdf' })
+      
+      // Check if Web Share API with files is supported
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: filename, text })
+        // On mobile, this will show share sheet including WhatsApp
+        await navigator.share({ 
+          files: [file], 
+          title: `Invoice ${invoiceIdText}`,
+          text: text
+        })
         return true
       }
-    } catch {}
+    } catch (err) {
+      // User cancelled or share failed
+      console.log('Share cancelled or failed:', err)
+    }
     return false
   }
 
@@ -289,15 +314,19 @@ function InvoiceModal({ user, customer, onClose, onSaved }) {
                 <label>Service</label>
                 {it.mode === 'select' ? (
                   <select
-                    value={it.Service}
+                    value={it.ServiceId || ''}
                     onChange={(e) => {
                       const val = e.target.value
                       if (val === '__custom__') {
-                        updateItem(idx, { mode: 'custom', Service: '', Price: 0 })
+                        updateItem(idx, { mode: 'custom', ServiceId: '', Service: '', Price: 0 })
                         return
                       }
                       const svc = services.find((s) => String(s.id) === String(val))
-                      updateItem(idx, { Service: svc?.Service || '', Price: svc ? parseFloat(svc.Price) || 0 : 0 })
+                      updateItem(idx, {
+                        ServiceId: val,
+                        Service: svc?.Service || '',
+                        Price: svc ? parseFloat(svc.Price) || 0 : 0,
+                      })
                     }}
                   >
                     <option value="">Select service</option>

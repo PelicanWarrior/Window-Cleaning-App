@@ -53,42 +53,71 @@ function InvoicesModal({ user, customer, onClose }) {
   }
 
   const sendText = async (inv) => {
-    // Save PDF locally first
-    await downloadPdf(inv)
-    const phone = formatPhoneForWhatsApp(customer.PhoneNumber)
-    if (!phone) {
-      alert('This customer does not have a valid phone number.')
+    // Generate PDF
+    const pdfBlob = await generatePdfBlob(inv)
+    if (!pdfBlob) {
+      alert('Failed to generate PDF')
       return
     }
-    const body = await buildBody(inv)
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(body)}`
-    window.open(url, '_blank')
+    
+    const bodyText = await buildBody(inv)
+    
+    // Try Web Share API (works on mobile to attach to WhatsApp)
+    const shared = await attemptShareWithPdf(pdfBlob, `Invoice-${inv.InvoiceID}.pdf`, bodyText)
+    
+    if (!shared) {
+      // Fallback: download PDF and open WhatsApp
+      alert('PDF will be downloaded. Please attach it manually to your WhatsApp message.')
+      downloadBlobToDevice(pdfBlob, `Invoice-${inv.InvoiceID}.pdf`)
+      
+      const phone = formatPhoneForWhatsApp(customer.PhoneNumber)
+      if (!phone) {
+        alert('This customer does not have a valid phone number.')
+        return
+      }
+      const url = `https://wa.me/${phone}?text=${encodeURIComponent(bodyText)}`
+      window.open(url, '_blank')
+    }
   }
 
   const sendEmail = async (inv) => {
-    // Save PDF locally first
-    await downloadPdf(inv)
-    const email = customer.EmailAddress
-    if (!email) {
-      alert('This customer does not have an email address.')
+    // Generate PDF
+    const pdfBlob = await generatePdfBlob(inv)
+    if (!pdfBlob) {
+      alert('Failed to generate PDF')
       return
     }
-    const subject = `Invoice ${inv.InvoiceID}`
-    const body = await buildBody(inv)
-    const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
-    window.location.href = mailto
+    
+    const bodyText = await buildBody(inv)
+    
+    // Try Web Share API
+    const shared = await attemptShareWithPdf(pdfBlob, `Invoice-${inv.InvoiceID}.pdf`, bodyText)
+    
+    if (!shared) {
+      // Fallback: download PDF and open email
+      alert('PDF will be downloaded. Please attach it manually to your email.')
+      downloadBlobToDevice(pdfBlob, `Invoice-${inv.InvoiceID}.pdf`)
+      
+      const email = customer.EmailAddress
+      if (!email) {
+        alert('This customer does not have an email address.')
+        return
+      }
+      const subject = `Invoice ${inv.InvoiceID}`
+      const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`
+      window.location.href = mailto
+    }
   }
 
-  const downloadPdf = async (inv) => {
-    // Build items content
+  const generatePdfBlob = async (inv) => {
     const { data: items, error: itemsErr } = await supabase
       .from('CustomerInvoiceJobs')
       .select('*')
       .eq('InvoiceID', inv.id)
-    if (itemsErr) return
+    if (itemsErr) return null
     const total = (items || []).reduce((sum, it) => sum + (parseFloat(it.Price) || 0), 0)
 
-    if (!jsPDFRef) return
+    if (!jsPDFRef) return null
     const doc = new jsPDFRef()
     const lineHeight = 8
     let y = 15
@@ -124,7 +153,39 @@ function InvoicesModal({ user, customer, onClose }) {
       const lines = doc.splitTextToSize(messageFooter, 180)
       doc.text(lines, 15, y)
     }
-    doc.save(`Invoice-${inv.InvoiceID}.pdf`)
+    return doc.output('blob')
+  }
+
+  const downloadBlobToDevice = (blob, filename) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const attemptShareWithPdf = async (blob, filename, text) => {
+    try {
+      const file = new File([blob], filename, { type: 'application/pdf' })
+      
+      // Check if Web Share API with files is supported
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        // On mobile, this will show share sheet including WhatsApp
+        await navigator.share({ 
+          files: [file], 
+          title: filename,
+          text: text
+        })
+        return true
+      }
+    } catch (err) {
+      // User cancelled or share failed
+      console.log('Share cancelled or failed:', err)
+    }
+    return false
   }
 
   return (
@@ -155,7 +216,10 @@ function InvoicesModal({ user, customer, onClose }) {
                   <td>
                     <button onClick={() => sendText(inv)}>Send Text</button>
                     <button onClick={() => sendEmail(inv)} style={{ marginLeft: '8px' }}>Send Email</button>
-                    <button onClick={() => downloadPdf(inv)} style={{ marginLeft: '8px' }}>Download PDF</button>
+                    <button onClick={async () => {
+                      const blob = await generatePdfBlob(inv)
+                      if (blob) downloadBlobToDevice(blob, `Invoice-${inv.InvoiceID}.pdf`)
+                    }} style={{ marginLeft: '8px' }}>Download PDF</button>
                   </td>
                 </tr>
               ))}
