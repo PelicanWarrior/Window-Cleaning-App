@@ -1,0 +1,47 @@
+.invoice-modal {
+  max-width: 720px;
+}
+.invoice-customer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.invoice-header-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.invoice-items {
+  display: grid;
+  gap: 8px;
+}
+.invoice-item-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr auto;
+  gap: 8px;
+  align-items: end;
+}
+.invoice-field label {
+  font-weight: 600;
+  display: block;
+  margin-bottom: 4px;
+}
+.invoice-field input, .invoice-field select {
+  width: 100%;
+}
+.add-item-btn {
+  margin-top: 4px;
+}
+.remove-item-btn {
+  align-self: center;
+}
+.invoice-total-row {
+  margin-top: 12px;
+  font-size: 1.1rem;
+}
+.invoice-footer-note {
+  margin-top: 8px;
+  color: #555;
+}

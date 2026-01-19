@@ -19,19 +19,21 @@ function Settings({ user, onClose, onSaved }) {
   const [password, setPassword] = useState('')
   const [country, setCountry] = useState(user.SettingsCountry || 'United Kingdom')
   const [routeWeeks, setRouteWeeks] = useState(user.RouteWeeks || '')
+  const [vatRegistered, setVatRegistered] = useState(user.VAT || false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     setCountry(user.SettingsCountry || 'United Kingdom')
     setRouteWeeks(user.RouteWeeks || '')
+    setVatRegistered(user.VAT || false)
   }, [user])
 
   const handleSave = async () => {
     setError('')
     setSaving(true)
     try {
-      const updateFields = { SettingsCountry: country, RouteWeeks: routeWeeks || null }
+      const updateFields = { SettingsCountry: country, RouteWeeks: routeWeeks || null, VAT: vatRegistered }
       if (password) {
         updateFields.password = password
       }
@@ -45,7 +47,17 @@ function Settings({ user, onClose, onSaved }) {
 
       if (updateError) throw updateError
 
-      onSaved({ SettingsCountry: country, RouteWeeks: routeWeeks, ...(password ? { password } : {}) })
+      // If VAT is being toggled to true, update all customers
+      if (vatRegistered && !user.VAT) {
+        const { error: customerError } = await supabase
+          .from('Customers')
+          .update({ VAT: true })
+          .eq('UserId', user.id)
+        
+        if (customerError) throw customerError
+      }
+
+      onSaved({ SettingsCountry: country, RouteWeeks: routeWeeks, VAT: vatRegistered, ...(password ? { password } : {}) })
     } catch (err) {
       setError(err.message || 'Error saving settings')
     } finally {
@@ -92,6 +104,16 @@ function Settings({ user, onClose, onSaved }) {
               />
               <span className="weeks-label">Weeks</span>
             </div>
+          </div>
+          <div className="settings-field vat-field">
+            <label>
+              <input
+                type="checkbox"
+                checked={vatRegistered}
+                onChange={(e) => setVatRegistered(e.target.checked)}
+              />
+              VAT Registered
+            </label>
           </div>
         </div>
         <div className="settings-actions">

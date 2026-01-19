@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import './CustomerList.css'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
+import InvoicesModal from './InvoicesModal'
+import InvoiceModal from './InvoiceModal'
 
 function CustomerList({ user }) {
   const [customers, setCustomers] = useState([])
@@ -34,6 +36,8 @@ function CustomerList({ user }) {
   const [showHistory, setShowHistory] = useState(false)
   const [customerHistory, setCustomerHistory] = useState([])
   const [cancelServiceModal, setCancelServiceModal] = useState({ show: false, reason: '' })
+  const [invoiceModal, setInvoiceModal] = useState({ show: false, customer: null })
+  const [invoicesListModal, setInvoicesListModal] = useState({ show: false, customer: null })
   const [filters, setFilters] = useState({
     CustomerName: '',
     Address: '',
@@ -1227,6 +1231,16 @@ function CustomerList({ user }) {
                                       Mark as Paid
                                     </button>
                                     <button
+                                      onClick={() => setInvoiceModal({ show: true, customer })}
+                                    >
+                                      Create Invoice
+                                    </button>
+                                    <button
+                                      onClick={() => setInvoicesListModal({ show: true, customer })}
+                                    >
+                                      Invoices
+                                    </button>
+                                    <button
                                       className="delete-btn"
                                       onClick={() => deleteCustomer(customer.id)}
                                     >
@@ -1328,6 +1342,7 @@ function CustomerList({ user }) {
                   <div><strong>Next Clean:</strong> <input type="date" value={modalEditData.NextClean} onChange={(e) => setModalEditData({...modalEditData, NextClean: e.target.value})} className="modal-input" /></div>
                   <div><strong>Outstanding:</strong> <input type="number" value={modalEditData.Outstanding} onChange={(e) => setModalEditData({...modalEditData, Outstanding: e.target.value})} className="modal-input" /></div>
                   <div><strong>Route:</strong> <input type="text" value={modalEditData.Route} onChange={(e) => setModalEditData({...modalEditData, Route: e.target.value})} className="modal-input" /></div>
+                  <div><strong>VAT Registered:</strong> <input type="checkbox" checked={modalEditData.VAT || false} onChange={(e) => setModalEditData({...modalEditData, VAT: e.target.checked})} /></div>
                   <div style={{gridColumn: '1 / -1'}}><strong>Notes:</strong> <textarea value={modalEditData.Notes} onChange={(e) => setModalEditData({...modalEditData, Notes: e.target.value})} className="modal-input" rows="3" /></div>
                 </div>
               ) : (
@@ -1342,6 +1357,7 @@ function CustomerList({ user }) {
                   <div><strong>Next Clean:</strong> {formatDateByCountry(selectedCustomer.NextClean, user.SettingsCountry || 'United Kingdom')}</div>
                   <div><strong>Outstanding:</strong> {formatCurrency(selectedCustomer.Outstanding, user.SettingsCountry || 'United Kingdom')}</div>
                   <div><strong>Route:</strong> {selectedCustomer.Route || '—'}</div>
+                  <div><strong>VAT Registered:</strong> {selectedCustomer.VAT ? 'Yes' : 'No'}</div>
                   <div className="notes-cell"><strong>Notes:</strong> {selectedCustomer.Notes || '—'}</div>
                 </div>
                 <button 
@@ -1531,6 +1547,25 @@ function CustomerList({ user }) {
             </div>
           </div>
         </div>
+      )}
+
+      {invoiceModal.show && invoiceModal.customer && (
+        <InvoiceModal
+          user={user}
+          customer={invoiceModal.customer}
+          onClose={() => setInvoiceModal({ show: false, customer: null })}
+          onSaved={() => {
+            setInvoiceModal({ show: false, customer: null })
+          }}
+        />
+      )}
+
+      {invoicesListModal.show && invoicesListModal.customer && (
+        <InvoicesModal
+          user={user}
+          customer={invoicesListModal.customer}
+          onClose={() => setInvoicesListModal({ show: false, customer: null })}
+        />
       )}
     </div>
   )

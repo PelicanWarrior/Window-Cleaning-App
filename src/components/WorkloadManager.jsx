@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import './WorkloadManager.css'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
+import InvoiceModal from './InvoiceModal'
 
 function WorkloadManager({ user }) {
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -41,6 +42,7 @@ function WorkloadManager({ user }) {
   const [customerHistory, setCustomerHistory] = useState([])
   const [cancelServiceModal, setCancelServiceModal] = useState({ show: false, reason: '' })
   const [bookJobModal, setBookJobModal] = useState({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
+  const [invoiceModal, setInvoiceModal] = useState({ show: false, customer: null })
 
   const getFullAddress = (customer) => {
     const parts = [
@@ -1552,6 +1554,13 @@ function WorkloadManager({ user }) {
                         </div>
 
                         <div className="row-calendar-section">
+                          <button
+                            className="calendar-icon-btn"
+                            onClick={() => setInvoiceModal({ show: true, customer })}
+                            title="Create invoice"
+                          >
+                            🧾
+                          </button>
                           <span className="change-date-label">Change clean date</span>
                           <button
                             className="calendar-icon-btn"
@@ -1647,6 +1656,15 @@ function WorkloadManager({ user }) {
                             >
                               📅 Change Date
                             </button>
+                            <button
+                              className="mobile-menu-item"
+                              onClick={() => {
+                                setInvoiceModal({ show: true, customer })
+                                setMobileMenuOpenCustomerId(null)
+                              }}
+                            >
+                              🧾 Create Invoice
+                            </button>
                             {expandedDatePickers[customer.id] && (
                               <input
                                 type="date"
@@ -1669,6 +1687,17 @@ function WorkloadManager({ user }) {
             </div>
           )}
         </div>
+      )}
+
+      {invoiceModal.show && invoiceModal.customer && (
+        <InvoiceModal
+          user={user}
+          customer={invoiceModal.customer}
+          onClose={() => setInvoiceModal({ show: false, customer: null })}
+          onSaved={() => {
+            // No specific refresh required, just close
+          }}
+        />
       )}
 
       {showCustomerModal && selectedCustomer && (
@@ -1708,6 +1737,7 @@ function WorkloadManager({ user }) {
                   <div><strong>Next Clean:</strong> <input type="date" value={modalEditData.NextClean} onChange={(e) => setModalEditData({...modalEditData, NextClean: e.target.value})} className="modal-input" /></div>
                   <div><strong>Outstanding:</strong> <input type="number" value={modalEditData.Outstanding} onChange={(e) => setModalEditData({...modalEditData, Outstanding: e.target.value})} className="modal-input" /></div>
                   <div><strong>Route:</strong> <input type="text" value={modalEditData.Route} onChange={(e) => setModalEditData({...modalEditData, Route: e.target.value})} className="modal-input" /></div>
+                  <div><strong>VAT Registered:</strong> <input type="checkbox" checked={modalEditData.VAT || false} onChange={(e) => setModalEditData({...modalEditData, VAT: e.target.checked})} /></div>
                   <div style={{gridColumn: '1 / -1'}}><strong>Notes:</strong> <textarea value={modalEditData.Notes} onChange={(e) => setModalEditData({...modalEditData, Notes: e.target.value})} className="modal-input" rows="3" /></div>
                 </div>
               ) : (
@@ -1722,6 +1752,7 @@ function WorkloadManager({ user }) {
                   <div><strong>{isQuoteCustomer(selectedCustomer) ? 'Quotation Booked:' : 'Next Clean:'}</strong> {formatDateByCountry(selectedCustomer.NextClean, user.SettingsCountry || 'United Kingdom')}</div>
                   <div><strong>Outstanding:</strong> {formatCurrency(selectedCustomer.Outstanding, user.SettingsCountry || 'United Kingdom')}</div>
                   <div><strong>Route:</strong> {selectedCustomer.Route || '—'}</div>
+                  <div><strong>VAT Registered:</strong> {selectedCustomer.VAT ? 'Yes' : 'No'}</div>
                   <div className="notes-cell"><strong>Notes:</strong> {selectedCustomer.Notes || '—'}</div>
                 </div>
                 <button 
