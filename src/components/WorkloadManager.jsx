@@ -2239,6 +2239,37 @@ function InvoiceModalContent({ user, customer, onClose }) {
     onClose()
   }
 
+  const sendViaEmail = () => {
+    const email = customer.EmailAddress
+    if (!email) {
+      alert('No email address for this customer')
+      return
+    }
+    if (!savedInvoiceData) {
+      alert('Invoice data missing')
+      return
+    }
+
+    const total = savedInvoiceData.items.reduce((sum, it) => sum + (parseFloat(it.Price) || 0), 0)
+    const itemsLines = savedInvoiceData.items.map(
+      (it) => `${it.Service} - ${currencySymbol}${(parseFloat(it.Price) || 0).toFixed(2)}`
+    )
+    const bodyLines = [
+      `Invoice ${savedInvoiceData.invoiceId}`,
+      `Customer: ${customer.CustomerName}`,
+      `Invoice Date: ${formatDateByCountry(savedInvoiceData.invoiceDate, user.SettingsCountry || 'United Kingdom')}`,
+      '',
+      'Items:',
+      ...itemsLines,
+      `Total: ${currencySymbol}${total.toFixed(2)}`,
+    ]
+
+    const subject = `Invoice ${savedInvoiceData.invoiceId}`
+    const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyLines.join('\n'))}`
+    window.location.href = mailto
+    onClose()
+  }
+
   const handleSave = async () => {
     if (!invoiceIdText) {
       alert('Please enter an Invoice ID')
@@ -2312,9 +2343,7 @@ function InvoiceModalContent({ user, customer, onClose }) {
               <button className="modal-ok-btn" onClick={sendViaText}>Send via Text</button>
             )}
             {customer.EmailAddress && (
-              <button className="modal-ok-btn" onClick={() => {
-                // Send via email logic will go here
-              }}>Send via Email</button>
+              <button className="modal-ok-btn" onClick={sendViaEmail}>Send via Email</button>
             )}
             <button className="modal-cancel-btn" onClick={() => onClose()}>Do not Send</button>
           </div>
