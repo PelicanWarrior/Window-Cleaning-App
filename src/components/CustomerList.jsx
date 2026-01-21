@@ -1230,20 +1230,6 @@ function CustomerList({ user }) {
                                     >
                                       Mark as Paid
                                     </button>
-                                    {user.admin && (
-                                      <>
-                                        <button
-                                          onClick={() => setInvoiceModal({ show: true, customer })}
-                                        >
-                                          Create Invoice
-                                        </button>
-                                        <button
-                                          onClick={() => setInvoicesListModal({ show: true, customer })}
-                                        >
-                                          Invoices
-                                        </button>
-                                      </>
-                                    )}
                                     <button
                                       className="delete-btn"
                                       onClick={() => deleteCustomer(customer.id)}
@@ -1558,24 +1544,6 @@ function CustomerList({ user }) {
         </div>
       )}
 
-      {user.admin && invoiceModal.show && invoiceModal.customer && (
-        <InvoiceModal
-          user={user}
-          customer={invoiceModal.customer}
-          onClose={() => setInvoiceModal({ show: false, customer: null })}
-          onSaved={() => {
-            setInvoiceModal({ show: false, customer: null })
-          }}
-        />
-      )}
-
-      {user.admin && invoicesListModal.show && invoicesListModal.customer && (
-        <InvoicesModal
-          user={user}
-          customer={invoicesListModal.customer}
-          onClose={() => setInvoicesListModal({ show: false, customer: null })}
-        />
-      )}
     </div>
   )
 }
