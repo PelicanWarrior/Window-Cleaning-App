@@ -2266,8 +2266,10 @@ function InvoiceModalContent({ user, customer, onClose }) {
 
     const subject = `Invoice ${savedInvoiceData.invoiceId}`
     const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyLines.join('\n'))}`
-    window.location.href = mailto
-    onClose()
+    // Use same-tab navigation for better mobile handling
+    window.location.assign(mailto)
+    // Small delay before closing to avoid canceling navigation on some browsers
+    setTimeout(() => onClose(), 400)
   }
 
   const handleSave = async () => {
@@ -2343,7 +2345,29 @@ function InvoiceModalContent({ user, customer, onClose }) {
               <button className="modal-ok-btn" onClick={sendViaText}>Send via Text</button>
             )}
             {customer.EmailAddress && (
-              <button className="modal-ok-btn" onClick={sendViaEmail}>Send via Email</button>
+              <>
+                <button className="modal-ok-btn" onClick={sendViaEmail}>Send via Email</button>
+                <button className="modal-ok-btn" onClick={() => {
+                  const email = customer.EmailAddress
+                  const total = savedInvoiceData?.items?.reduce((sum, it) => sum + (parseFloat(it.Price) || 0), 0) || 0
+                  const itemsLines = (savedInvoiceData?.items || []).map(
+                    (it) => `${it.Service} - ${currencySymbol}${(parseFloat(it.Price) || 0).toFixed(2)}`
+                  )
+                  const bodyLines = [
+                    `Invoice ${savedInvoiceData?.invoiceId ?? ''}`,
+                    `Customer: ${customer.CustomerName}`,
+                    `Invoice Date: ${formatDateByCountry(savedInvoiceData?.invoiceDate ?? invoiceDate, user.SettingsCountry || 'United Kingdom')}`,
+                    '',
+                    'Items:',
+                    ...itemsLines,
+                    `Total: ${currencySymbol}${total.toFixed(2)}`,
+                  ]
+                  const subject = `Invoice ${savedInvoiceData?.invoiceId ?? invoiceIdText}`
+                  const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyLines.join('\n'))}`
+                  navigator.clipboard?.writeText(mailto)
+                  alert('Email link copied. If the app did not open, paste this into your browser.')
+                }}>Copy Email Link</button>
+              </>
             )}
             <button className="modal-cancel-btn" onClick={() => onClose()}>Do not Send</button>
           </div>
