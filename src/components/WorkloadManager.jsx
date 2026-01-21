@@ -2205,7 +2205,9 @@ function InvoiceModalContent({ user, customer, onClose }) {
       return
     }
 
-    // Try Web Share API first (mobile)
+    const message = `Invoice ${savedInvoiceData.invoiceId} for ${customer.CustomerName}`
+
+    // Try Web Share API first (mobile - can attach files)
     try {
       const file = new File([pdfBlob], filename, { type: 'application/pdf' })
       const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : ''
@@ -2215,7 +2217,7 @@ function InvoiceModalContent({ user, customer, onClose }) {
         await navigator.share({
           files: [file],
           title: filename,
-          text: `Invoice ${savedInvoiceData.invoiceId} for ${customer.CustomerName}`
+          text: message
         })
         onClose()
         return
@@ -2224,10 +2226,9 @@ function InvoiceModalContent({ user, customer, onClose }) {
       console.log('Share failed:', err)
     }
 
-    // Fallback: download PDF and open WhatsApp
+    // Desktop fallback: download PDF and open WhatsApp
     downloadBlob(pdfBlob, filename)
-    const message = `Invoice ${savedInvoiceData.invoiceId} for ${customer.CustomerName}`
-    const appUrl = `whatsapp://send?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(message)}`
+    const appUrl = `whatsapp://send?phone=${phone}&text=${encodeURIComponent(message)}`
     const webUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
     
     const opened = window.open(appUrl, '_blank')
