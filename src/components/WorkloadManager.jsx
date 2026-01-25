@@ -2239,7 +2239,7 @@ function InvoiceModalContent({ user, customer, onClose }) {
     onClose()
   }
 
-  const sendViaEmail = () => {
+  const sendViaEmail = async () => {
     const email = customer.EmailAddress
     if (!email) {
       alert('No email address for this customer')
@@ -2250,26 +2250,67 @@ function InvoiceModalContent({ user, customer, onClose }) {
       return
     }
 
-    const total = savedInvoiceData.items.reduce((sum, it) => sum + (parseFloat(it.Price) || 0), 0)
-    const itemsLines = savedInvoiceData.items.map(
-      (it) => `${it.Service} - ${currencySymbol}${(parseFloat(it.Price) || 0).toFixed(2)}`
-    )
-    const bodyLines = [
-      `Invoice ${savedInvoiceData.invoiceId}`,
-      `Customer: ${customer.CustomerName}`,
-      `Invoice Date: ${formatDateByCountry(savedInvoiceData.invoiceDate, user.SettingsCountry || 'United Kingdom')}`,
-      '',
-      'Items:',
-      ...itemsLines,
-      `Total: ${currencySymbol}${total.toFixed(2)}`,
-    ]
+    try {
+      // Generate PDF blob
+      const pdfBlob = generateInvoicePdf()
+      if (!pdfBlob) {
+        alert('Failed to generate PDF')
+        return
+      }
 
-    const subject = `Invoice ${savedInvoiceData.invoiceId}`
-    const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyLines.join('\n'))}`
-    // Use same-tab navigation for better mobile handling
-    window.location.assign(mailto)
-    // Small delay before closing to avoid canceling navigation on some browsers
-    setTimeout(() => onClose(), 400)
+      // Create a unique filename for the invoice
+      const timestamp = new Date().getTime()
+      const filename = `invoice_${savedInvoiceData.invoiceId}_${timestamp}.pdf`
+      const filepath = `invoices/${user.id}/${filename}`
+
+      // Upload PDF to Supabase Storage bucket
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('invoices')
+        .upload(filepath, pdfBlob, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) {
+        alert('Failed to upload PDF: ' + uploadError.message)
+        return
+      }
+
+      // Get public URL
+      const { data: publicUrlData } = supabase.storage
+        .from('invoices')
+        .getPublicUrl(filepath)
+      
+      const publicUrl = publicUrlData?.publicUrl
+
+      // Build email body with PDF download link
+      const total = savedInvoiceData.items.reduce((sum, it) => sum + (parseFloat(it.Price) || 0), 0)
+      const itemsLines = savedInvoiceData.items.map(
+        (it) => `${it.Service} - ${currencySymbol}${(parseFloat(it.Price) || 0).toFixed(2)}`
+      )
+      const bodyLines = [
+        `Invoice ${savedInvoiceData.invoiceId}`,
+        `Customer: ${customer.CustomerName}`,
+        `Invoice Date: ${formatDateByCountry(savedInvoiceData.invoiceDate, user.SettingsCountry || 'United Kingdom')}`,
+        '',
+        'Items:',
+        ...itemsLines,
+        `Total: ${currencySymbol}${total.toFixed(2)}`,
+        '',
+        '---',
+        'Download Invoice PDF:',
+        publicUrl || 'PDF link unavailable'
+      ]
+
+      const subject = `Invoice ${savedInvoiceData.invoiceId}`
+      const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyLines.join('\n'))}`
+      // Use same-tab navigation for better mobile handling
+      window.location.assign(mailto)
+      // Small delay before closing to avoid canceling navigation on some browsers
+      setTimeout(() => onClose(), 400)
+    } catch (err) {
+      alert('Error sending email: ' + err.message)
+    }
   }
 
   const handleSave = async () => {
@@ -2346,7 +2387,7 @@ function InvoiceModalContent({ user, customer, onClose }) {
             )}
             {customer.EmailAddress && (
               <>
-                <button className="modal-ok-btn" onClick={sendViaEmail}>Send via Email</button>
+                <button className="modal-ok-btn" onClick={sendViaEmail} disabled={false}>Send via Email</button>
                 <button className="modal-ok-btn" onClick={() => {
                   const email = customer.EmailAddress
                   const total = savedInvoiceData?.items?.reduce((sum, it) => sum + (parseFloat(it.Price) || 0), 0) || 0

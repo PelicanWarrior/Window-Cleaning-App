@@ -38,6 +38,7 @@ function CustomerList({ user }) {
   const [cancelServiceModal, setCancelServiceModal] = useState({ show: false, reason: '' })
   const [invoiceModal, setInvoiceModal] = useState({ show: false, customer: null })
   const [invoicesListModal, setInvoicesListModal] = useState({ show: false, customer: null })
+  const [changePriceModal, setChangePriceModal] = useState({ show: false, price: '' })
   const [filters, setFilters] = useState({
     CustomerName: '',
     Address: '',
@@ -520,6 +521,181 @@ function CustomerList({ user }) {
       setCustomerHistory(data || [])
     } catch (error) {
       console.error('Error fetching customer history:', error.message)
+    }
+  }
+
+  async function handleOpenChangePrice(customerId) {
+    try {
+      const { data, error } = await supabase
+        .from('CustomerPrices')
+        .select('Price')
+        .eq('CustomerID', customerId)
+        .eq('Service', 'Windows')
+        .single()
+      
+      if (error) {
+        // If no Windows service found, set price to empty
+        setChangePriceModal({ show: true, price: '' })
+      } else {
+        setChangePriceModal({ show: true, price: data?.Price || '' })
+      }
+    } catch (error) {
+      console.error('Error fetching Windows price:', error.message)
+      setChangePriceModal({ show: true, price: '' })
+    }
+  }
+
+  async function handleSaveChangePrice() {
+    try {
+      const newPrice = parseFloat(changePriceModal.price)
+      if (isNaN(newPrice)) {
+        alert('Please enter a valid price')
+        return
+      }
+
+      // Get the original price from CustomerPrices
+      const { data: originalData, error: fetchError } = await supabase
+        .from('CustomerPrices')
+        .select('Price')
+        .eq('CustomerID', selectedCustomer.id)
+        .eq('Service', 'Windows')
+        .single()
+
+      if (fetchError && fetchError.code !== 'PGRST116') throw fetchError
+
+      const originalPrice = originalData?.Price || 0
+      const currencySymbol = getCurrencyConfig(user.SettingsCountry || 'United Kingdom').symbol
+
+      // Update Customers table
+      const { error: customerError } = await supabase
+        .from('Customers')
+        .update({ Price: newPrice })
+        .eq('id', selectedCustomer.id)
+
+      if (customerError) throw customerError
+
+      // Update or insert CustomerPrices table
+      if (originalData) {
+        const { error: priceError } = await supabase
+          .from('CustomerPrices')
+          .update({ Price: newPrice })
+          .eq('CustomerID', selectedCustomer.id)
+          .eq('Service', 'Windows')
+
+        if (priceError) throw priceError
+      } else {
+        const { error: priceError } = await supabase
+          .from('CustomerPrices')
+          .insert({
+            CustomerID: selectedCustomer.id,
+            Service: 'Windows',
+            Price: newPrice
+          })
+
+        if (priceError) throw priceError
+      }
+
+      // Add history entry
+      let historyMessage = ''
+      if (newPrice > originalPrice) {
+        historyMessage = `Price increased to ${currencySymbol}${newPrice.toFixed(2)}`
+      } else if (newPrice < originalPrice) {
+        historyMessage = `Price decreased to ${currencySymbol}${newPrice.toFixed(2)}`
+      }
+
+      if (historyMessage) {
+        const { error: historyError } = await supabase
+          .from('CustomerHistory')
+          .insert({
+            CustomerID: selectedCustomer.id,
+            Message: historyMessage
+          })
+
+        if (historyError) throw historyError
+      }
+
+      setChangePriceModal({ show: false, price: '' })
+      
+      // Ask if user wants to notify customer
+      const notifyCustomer = window.confirm('Notify Customer of Price Change?')
+      
+      if (notifyCustomer) {
+        await handleNotifyPriceChange(selectedCustomer.id, newPrice)
+      }
+      
+      fetchCustomers() // Refresh the customer list
+    } catch (error) {
+      console.error('Error updating price:', error.message)
+      alert('Failed to update price. Please try again.')
+    }
+  }
+
+  async function handleNotifyPriceChange(customerId, newPrice) {
+    try {
+      // Get PayChangeLetter ID from Users table
+      const { data: userData, error: userError } = await supabase
+        .from('Users')
+        .select('PayChangeLetter')
+        .eq('id', user.id)
+        .single()
+
+      if (userError) throw userError
+
+      if (!userData?.PayChangeLetter) {
+        alert('No Pay Change Letter configured. Please set one in the Letters page.')
+        return
+      }
+
+      // Get the message text from Messages table
+      const { data: messageData, error: messageError } = await supabase
+        .from('Messages')
+        .select('Message')
+        .eq('id', userData.PayChangeLetter)
+        .single()
+
+      if (messageError) throw messageError
+
+      // Get customer details
+      const { data: customerData, error: customerError } = await supabase
+        .from('Customers')
+        .select('PhoneNumber, CustomerName')
+        .eq('id', customerId)
+        .single()
+
+      if (customerError) throw customerError
+
+      if (!customerData?.PhoneNumber) {
+        alert('Customer does not have a phone number.')
+        return
+      }
+
+      // Replace currency symbol with currency symbol + new price
+      const currencySymbol = getCurrencyConfig(user.SettingsCountry || 'United Kingdom').symbol
+      const currencyRegex = new RegExp(`[${currencySymbol}£$€¥]`, 'g')
+      
+      let messageText = messageData.Message
+      messageText = messageText.replace(currencyRegex, `${currencySymbol}${newPrice.toFixed(2)}`)
+      
+      // Add customer name greeting and footer
+      const greeting = `Hello ${customerData.CustomerName}\n\n`
+      const footer = messageFooter ? `\n\n${messageFooter}` : ''
+      const fullMessage = greeting + messageText + footer
+
+      // Format phone number for WhatsApp (same method as WorkloadManager)
+      const digits = (customerData.PhoneNumber || '').replace(/\D/g, '')
+      let phoneNumber = digits
+      // If UK local (starts with 0 and length 11), convert to +44
+      if (digits.length === 11 && digits.startsWith('0')) {
+        phoneNumber = `44${digits.slice(1)}`
+      }
+      
+      const encodedMessage = encodeURIComponent(fullMessage)
+      const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodedMessage}`
+      
+      window.open(whatsappUrl, '_blank')
+    } catch (error) {
+      console.error('Error sending price change notification:', error.message)
+      alert('Failed to send notification. Please try again.')
     }
   }
 
@@ -1231,6 +1407,16 @@ function CustomerList({ user }) {
                                       Mark as Paid
                                     </button>
                                     <button
+                                      className="change-price-btn"
+                                      onClick={() => {
+                                        setSelectedCustomer(customer)
+                                        handleOpenChangePrice(customer.id)
+                                        setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
+                                      }}
+                                    >
+                                      Change Price
+                                    </button>
+                                    <button
                                       className="delete-btn"
                                       onClick={() => deleteCustomer(customer.id)}
                                     >
@@ -1312,6 +1498,7 @@ function CustomerList({ user }) {
                   {!showServices && !showHistory && <button className="modal-edit-btn" onClick={() => { setIsEditingModal(true); setModalEditData({...selectedCustomer}); }}>Edit</button>}
                   <button className="modal-services-btn" onClick={() => { setShowServices(!showServices); setShowHistory(false); if (!showServices) fetchCustomerServices(selectedCustomer.id); }}>{showServices ? 'Customer Details' : 'Services'}</button>
                   <button className="modal-history-btn" onClick={() => { setShowHistory(!showHistory); setShowServices(false); if (!showHistory) fetchCustomerHistory(selectedCustomer.id); }}>{showHistory ? 'Customer Details' : 'History'}</button>
+                  {!showServices && !showHistory && <button className="modal-change-price-btn" onClick={() => handleOpenChangePrice(selectedCustomer.id)}>Change Price</button>}
                 </>
               )}
             </div>
@@ -1535,6 +1722,44 @@ function CustomerList({ user }) {
               </button>
               <button 
                 onClick={() => setCancelServiceModal({ show: false, reason: '' })}
+                className="modal-cancel-btn"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {changePriceModal.show && selectedCustomer && (
+        <div className="modal-overlay" onClick={() => setChangePriceModal({ show: false, price: '' })}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Change Price</h3>
+            <div className="modal-form">
+              <label htmlFor="newPrice">New Price:</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1.1rem', fontWeight: '600' }}>
+                  {getCurrencyConfig(user.SettingsCountry || 'United Kingdom').symbol}
+                </span>
+                <input
+                  id="newPrice"
+                  type="number"
+                  step="0.01"
+                  value={changePriceModal.price}
+                  onChange={(e) => setChangePriceModal(prev => ({ ...prev, price: e.target.value }))}
+                  placeholder="Enter new price"
+                />
+              </div>
+            </div>
+            <div className="modal-buttons">
+              <button 
+                onClick={handleSaveChangePrice}
+                className="modal-ok-btn"
+              >
+                Save
+              </button>
+              <button 
+                onClick={() => setChangePriceModal({ show: false, price: '' })}
                 className="modal-cancel-btn"
               >
                 Cancel

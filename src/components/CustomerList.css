@@ -260,6 +260,16 @@
   background-color: #d5f4e6;
 }
 
+.actions-dropdown-menu .change-price-btn,
+.actions-dropdown-menu-inline .change-price-btn {
+  color: #3498db;
+}
+
+.actions-dropdown-menu .change-price-btn:hover,
+.actions-dropdown-menu-inline .change-price-btn:hover {
+  background-color: #d5f4e6;
+}
+
 .actions-dropdown-menu .save-btn,
 .actions-dropdown-menu-inline .save-btn {
   color: #27ae60;

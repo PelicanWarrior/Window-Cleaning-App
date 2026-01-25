@@ -12,6 +12,7 @@ function Letters({ user }) {
   const [messageFooter, setMessageFooter] = useState(user.MessageFooter || '')
   const [selectedPayLetter, setSelectedPayLetter] = useState('')
   const [selectedReminderLetter, setSelectedReminderLetter] = useState('')
+  const [selectedPayChangeLetter, setSelectedPayChangeLetter] = useState('')
   const [activeTab, setActiveTab] = useState('Messages')
   const [formData, setFormData] = useState({
     MessageTitle: '',
@@ -23,6 +24,7 @@ function Letters({ user }) {
     fetchMessages()
     fetchCustomerPayLetter()
     fetchCustomerReminderLetter()
+    fetchCustomerPayChangeLetter()
   }, [])
 
   async function fetchMessages() {
@@ -72,6 +74,21 @@ function Letters({ user }) {
     }
   }
 
+  async function fetchCustomerPayChangeLetter() {
+    try {
+      const { data, error } = await supabase
+        .from('Users')
+        .select('PayChangeLetter')
+        .eq('id', user.id)
+        .single()
+      
+      if (error) throw error
+      setSelectedPayChangeLetter(data?.PayChangeLetter || '')
+    } catch (error) {
+      console.error('Error fetching pay change letter:', error.message)
+    }
+  }
+
   async function handlePayLetterChange(letterId) {
     setSelectedPayLetter(letterId)
     try {
@@ -97,6 +114,20 @@ function Letters({ user }) {
       if (error) throw error
     } catch (error) {
       console.error('Error updating customer reminder letter:', error.message)
+    }
+  }
+
+  async function handlePayChangeLetterChange(letterId) {
+    setSelectedPayChangeLetter(letterId)
+    try {
+      const { error } = await supabase
+        .from('Users')
+        .update({ PayChangeLetter: letterId })
+        .eq('id', user.id)
+      
+      if (error) throw error
+    } catch (error) {
+      console.error('Error updating pay change letter:', error.message)
     }
   }
 
@@ -243,6 +274,25 @@ function Letters({ user }) {
               value={selectedReminderLetter || ''}
               onChange={(e) => handleReminderLetterChange(e.target.value)}
               className="reminder-letter-select"
+            >
+              <option value="">Select a message...</option>
+              {messages.map((message) => (
+                <option key={message.id} value={message.id}>
+                  {message.MessageTitle}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="pay-change-letter-section">
+            <label htmlFor="payChangeLetterSelect" className="pay-change-letter-label">
+              This message will be sent when you change customer payment amount
+            </label>
+            <select
+              id="payChangeLetterSelect"
+              value={selectedPayChangeLetter || ''}
+              onChange={(e) => handlePayChangeLetterChange(e.target.value)}
+              className="pay-change-letter-select"
             >
               <option value="">Select a message...</option>
               {messages.map((message) => (

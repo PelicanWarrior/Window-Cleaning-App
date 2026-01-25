@@ -103,6 +103,38 @@
   outline: none;
 }
 
+.pay-change-letter-section {
+  background: #fff4e6;
+  border: 2px solid #e67e22;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.pay-change-letter-label {
+  display: block;
+  margin-bottom: 0.75rem;
+  color: #2c3e50;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.pay-change-letter-select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #e67e22;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+  background-color: white;
+}
+
+.pay-change-letter-select:hover,
+.pay-change-letter-select:focus {
+  border-color: #d35400;
+  outline: none;
+}
+
 .footer-section {
   background: #fff9e6;
   border: 2px solid #f39c12;
