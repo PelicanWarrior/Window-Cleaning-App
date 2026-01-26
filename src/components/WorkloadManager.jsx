@@ -43,6 +43,7 @@ function WorkloadManager({ user }) {
   const [cancelServiceModal, setCancelServiceModal] = useState({ show: false, reason: '' })
   const [bookJobModal, setBookJobModal] = useState({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
   const [invoiceModal, setInvoiceModal] = useState({ show: false, customer: null })
+  const [selectedRoutes, setSelectedRoutes] = useState([])
 
   const getFullAddress = (customer) => {
     const parts = [
@@ -729,6 +730,29 @@ function WorkloadManager({ user }) {
     )
   }
 
+  const handleSelectByRoute = (route) => {
+    // Get all customers for the selected date with the selected route
+    const customersForRoute = (orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs).filter(
+      customer => customer.Route === route
+    )
+    
+    // Toggle all customers with this route
+    const routeCustomerIds = customersForRoute.map(c => c.id)
+    const allSelected = routeCustomerIds.every(id => selectedCustomerIds.includes(id))
+    
+    if (allSelected) {
+      // Deselect all customers with this route
+      setSelectedCustomerIds(prev => 
+        prev.filter(id => !routeCustomerIds.includes(id))
+      )
+      setSelectedRoutes(prev => prev.filter(r => r !== route))
+    } else {
+      // Select all customers with this route
+      setSelectedCustomerIds(prev => [...new Set([...prev, ...routeCustomerIds])])
+      setSelectedRoutes(prev => [...new Set([...prev, route])])
+    }
+  }
+
   const toggleDatePicker = (customerId) => {
     setExpandedDatePickers((prev) => ({
       ...prev,
@@ -1371,6 +1395,25 @@ function WorkloadManager({ user }) {
           )}
 
           {selectedDayJobs.length > 0 && (
+            <div className="select-by-route-section">
+              <label className="select-by-route-label">Select by Route:</label>
+              <div className="route-buttons">
+                {[...new Set((orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs)
+                  .map(c => c.Route)
+                  .filter(r => r))].sort().map((route) => (
+                  <button
+                    key={route}
+                    className={`route-button ${selectedRoutes.includes(route) ? 'active' : ''}`}
+                    onClick={() => handleSelectByRoute(route)}
+                  >
+                    {route}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {selectedDayJobs.length > 0 && (
             <div className="message-all-section">
               <label className="message-all-label" htmlFor="messageAll">Message to {hasSelectedCustomers ? 'Selected' : 'All'}:</label>
               <select
@@ -1460,6 +1503,11 @@ function WorkloadManager({ user }) {
                       <div className="customer-address-main">{getFullAddress(customer)}</div>
                       <div className="customer-name-sub">{customer.CustomerName}</div>
                       <span className="route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
+                      {customer.Outstanding > 0 && (
+                        <div className="outstanding-mobile" style={{ marginTop: '0.25rem' }}>
+                          Outstanding: <span className="outstanding-amount">{formatCurrency(customer.Outstanding, user.SettingsCountry || 'United Kingdom')}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="customer-grid-col price-col">
