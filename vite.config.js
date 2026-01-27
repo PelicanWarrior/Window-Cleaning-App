@@ -7,29 +7,8 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon-192.svg', 'icon-512.svg'],
-      manifest: {
-        name: 'Window Cleaning App',
-        short_name: 'WinClean',
-        description: 'Window cleaning business management app for customer lists and workload tracking',
-        theme_color: '#3b82f6',
-        background_color: '#ffffff',
-        display: 'standalone',
-        icons: [
-          {
-            src: 'icon-192.svg',
-            sizes: '192x192',
-            type: 'image/svg+xml',
-            purpose: 'any maskable'
-          },
-          {
-            src: 'icon-512.svg',
-            sizes: '512x512',
-            type: 'image/svg+xml',
-            purpose: 'any maskable'
-          }
-        ]
-      },
+      includeAssets: ['icon-180.png', 'icon-192.png', 'icon-512.png', 'Logo.png'],
+      manifest: false, // Use the public/manifest.json instead
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         runtimeCaching: [
