@@ -37,6 +37,32 @@
   border-radius: 6px;
 }
 
+.address-section {
+  margin-top: 8px;
+  padding: 8px 0;
+}
+
+.address-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.address-fields {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.address-fields .settings-field {
+  margin: 0;
+}
+
+.address-fields .settings-field label {
+  display: none;
+}
+
 .settings-actions {
   display: flex;
   justify-content: flex-end;

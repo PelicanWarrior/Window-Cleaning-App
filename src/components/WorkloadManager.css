@@ -71,6 +71,51 @@
   background-color: #2980b9;
 }
 
+.calendar-view-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.view-btn {
+  padding: 0.75rem 1.5rem;
+  border: 2px solid #3498db;
+  background-color: white;
+  color: #3498db;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.view-btn:hover {
+  background-color: #ecf0f1;
+}
+
+.view-btn.active {
+  background-color: #3498db;
+  color: white;
+}
+
+.weekly-total-income {
+  text-align: center;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 1rem 0;
+  padding: 1rem;
+  background-color: #ecf0f1;
+  border-radius: 6px;
+}
+
+.weekly-total-income .income-amount {
+  color: #27ae60;
+  font-weight: 700;
+  font-size: 1.4rem;
+}
+
 .collapse-btn {
   background-color: #3498db;
   color: white;
@@ -115,6 +160,10 @@
   margin-bottom: 2rem;
 }
 
+.calendar-grid.weekly-view {
+  grid-template-columns: repeat(7, 1fr);
+}
+
 .calendar-day-header {
   text-align: center;
   font-weight: bold;
@@ -136,6 +185,84 @@
   transition: all 0.2s;
   position: relative;
   background-color: white;
+}
+
+.day-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #7f8c8d;
+  margin-bottom: 0.25rem;
+}
+
+.calendar-grid.weekly-view .calendar-day {
+  min-height: 100px;
+}
+
+.calendar-day.weekly-day {
+  aspect-ratio: auto;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 0.75rem;
+}
+
+.weather-icon {
+  font-size: 1.5rem;
+  text-align: center;
+  margin-bottom: 0.25rem;
+  cursor: help;
+  min-height: 1.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.weekly-bar-container {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  margin: 0.5rem 0;
+  min-height: 80px;
+}
+
+.weekly-bar {
+  width: 60%;
+  background: linear-gradient(180deg, #3498db 0%, #2980b9 100%);
+  border-radius: 4px 4px 0 0;
+  transition: all 0.3s ease;
+  min-height: 5px;
+}
+
+.calendar-day.selected .weekly-bar {
+  background: linear-gradient(180deg, #ffffff 0%, #ecf0f1 100%);
+}
+
+.day-earnings {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #27ae60;
+  margin-top: 0.5rem;
+}
+
+.calendar-day.selected .day-earnings {
+  color: white;
+}
+
+.weekly-chart-container {
+  width: 100%;
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+  background-color: #f9f9f9;
+  padding: 0 1.5rem 1.5rem 1.5rem;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.weekly-chart-container .recharts-wrapper {
+  margin: 0 auto;
 }
 
 .calendar-day:hover:not(.empty) {

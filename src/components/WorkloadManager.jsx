@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase'
 import './WorkloadManager.css'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
 import InvoiceModal from './InvoiceModal'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import axios from 'axios'
 
 function WorkloadManager({ user }) {
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -44,6 +46,8 @@ function WorkloadManager({ user }) {
   const [bookJobModal, setBookJobModal] = useState({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
   const [invoiceModal, setInvoiceModal] = useState({ show: false, customer: null })
   const [selectedRoutes, setSelectedRoutes] = useState([])
+  const [calendarView, setCalendarView] = useState('Monthly')
+  const [weeklyWeather, setWeeklyWeather] = useState({})
 
   const getFullAddress = (customer) => {
     const parts = [
@@ -70,6 +74,7 @@ function WorkloadManager({ user }) {
     fetchAndInitializeUserRouteOrder()
     fetchCalendarDate()
     fetchCalendarPosition()
+    fetchCalendarViewMode()
   }, [user])
 
   useEffect(() => {
@@ -79,6 +84,24 @@ function WorkloadManager({ user }) {
   useEffect(() => {
     setSelectedCustomerIds([])
   }, [selectedDate, currentDate])
+
+  // Fetch weather when calendar view is Weekly or when currentDate changes in weekly view
+  useEffect(() => {
+    console.log('useEffect triggered - calendarView:', calendarView, 'user.Postcode:', user?.Postcode, 'currentDate:', currentDate)
+    if (calendarView === 'Weekly') {
+      const postcode = user?.Postcode?.trim()
+      if (postcode) {
+        console.log('Calling fetchWeatherData with postcode:', postcode)
+        fetchWeatherData()
+      } else {
+        console.log('Postcode not available or empty, skipping weather fetch. user?.Postcode=', user?.Postcode)
+        setWeeklyWeather({})
+      }
+    } else {
+      setWeeklyWeather({})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarView, currentDate])
 
   // Fetch and initialize user route order from Users table
   async function fetchAndInitializeUserRouteOrder() {
@@ -267,10 +290,12 @@ function WorkloadManager({ user }) {
       
       if (data?.CalenderDate) {
         const savedDate = new Date(data.CalenderDate)
-        setCurrentDate(new Date(savedDate.getFullYear(), savedDate.getMonth(), 1))
+        // Set currentDate to the actual saved date (not just the 1st of month)
+        setCurrentDate(savedDate)
         setSelectedDate(savedDate.getDate())
       } else {
         // If no saved date, use today
+        setCurrentDate(new Date())
         setSelectedDate(new Date().getDate())
       }
     } catch (error) {
@@ -312,6 +337,128 @@ function WorkloadManager({ user }) {
     }
   }
 
+  async function fetchCalendarViewMode() {
+    try {
+      const { data, error } = await supabase
+        .from('Users')
+        .select('CalenderView')
+        .eq('id', user.id)
+        .single()
+
+      if (error) throw error
+      
+      if (data?.CalenderView) {
+        setCalendarView(data.CalenderView)
+      }
+    } catch (error) {
+      console.error('Error fetching calendar view mode:', error.message)
+    }
+  }
+
+  async function updateCalendarViewMode(view) {
+    setCalendarView(view)
+    try {
+      const { error } = await supabase
+        .from('Users')
+        .update({ CalenderView: view })
+        .eq('id', user.id)
+
+      if (error) throw error
+    } catch (error) {
+      console.error('Error updating calendar view mode:', error.message)
+    }
+  }
+
+  async function fetchWeatherData() {
+    try {
+      const postcode = user?.Postcode?.trim()
+      if (!postcode || calendarView !== 'Weekly') {
+        console.log('Weather fetch skipped - Postcode:', postcode, 'CalendarView:', calendarView)
+        return
+      }
+      
+      console.log('Fetching weather for postcode:', postcode)
+      
+      // Get week start and end dates
+      const weekStart = getWeekStart(currentDate)
+      const weekEnd = getWeekEnd(currentDate)
+      
+      // MetOffice DataPoint API requires a Latitude and Longitude
+      // First, we'll use a free geocoding service to convert postcode to coordinates
+      try {
+        const response = await axios.get(`https://api.postcodes.io/postcodes/${encodeURIComponent(postcode)}`)
+        
+        if (!response.data.result) {
+          console.warn('Could not find coordinates for postcode:', postcode, 'Response:', response.data)
+          setWeeklyWeather({})
+          return
+        }
+
+        const { latitude, longitude } = response.data.result
+        
+        console.log('Found coordinates:', { latitude, longitude })
+        
+        // Fetch weather from Open-Meteo API which is free and doesn't require authentication
+        // Simplified parameters to avoid parsing errors
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=weather_code,temperature_2m_max&timezone=auto`
+        console.log('Weather API URL:', weatherUrl)
+        
+        const weatherResponse = await axios.get(weatherUrl)
+
+        if (!weatherResponse.data.daily) {
+          console.warn('Could not fetch weather data from Open-Meteo')
+          setWeeklyWeather({})
+          return
+        }
+
+        const weatherData = {}
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+
+        // Map weather codes to emoji/description
+        const getWeatherIcon = (code) => {
+          if (code === 0) return '☀️' // Clear sky
+          if (code === 1 || code === 2) return '🌤️' // Mainly clear / Partly cloudy
+          if (code === 3) return '☁️' // Overcast
+          if (code === 45 || code === 48) return '🌫️' // Foggy
+          if (code === 51 || code === 53 || code === 55 || code === 61 || code === 63 || code === 65) return '🌧️' // Drizzle / Rain
+          if (code === 71 || code === 73 || code === 75 || code === 77 || code === 80 || code === 81 || code === 82) return '❄️' // Snow
+          if (code === 85 || code === 86) return '🌨️' // Showers
+          if (code === 95 || code === 96 || code === 99) return '⛈️' // Thunderstorm
+          return '🌤️' // Default
+        }
+
+        // Process each day in the week
+        weatherResponse.data.daily.time.forEach((dateStr, index) => {
+          const date = new Date(dateStr)
+          date.setHours(0, 0, 0, 0)
+          
+          // Only include current and future dates, within the week range
+          if (date >= today && date <= weekEnd) {
+            weatherData[dateStr] = {
+              icon: getWeatherIcon(weatherResponse.data.daily.weather_code[index]),
+              temp_max: Math.round(weatherResponse.data.daily.temperature_2m_max[index]),
+              weather_code: weatherResponse.data.daily.weather_code[index]
+            }
+          }
+        })
+
+        console.log('Weather data fetched and processed:', weatherData)
+        setWeeklyWeather(weatherData)
+      } catch (apiError) {
+        console.error('API error while fetching weather:', apiError.message)
+        if (apiError.response) {
+          console.error('API response status:', apiError.response.status)
+          console.error('API response data:', apiError.response.data)
+        }
+        setWeeklyWeather({})
+      }
+    } catch (error) {
+      console.error('Error in fetchWeatherData:', error.message)
+      setWeeklyWeather({})
+    }
+  }
+
   async function updateCalendarView(view) {
     setActiveView(view)
     try {
@@ -341,28 +488,77 @@ function WorkloadManager({ user }) {
     return getLastDayOfMonth(date).getDate()
   }
 
+  // Get the Monday start of the current week
+  const getWeekStart = (date) => {
+    const d = new Date(date)
+    const day = d.getDay()
+    const diff = d.getDate() - (day === 0 ? 6 : day - 1)
+    return new Date(d.getFullYear(), d.getMonth(), diff)
+  }
+
+  // Get the Sunday end of the current week (Monday to Sunday)
+  const getWeekEnd = (date) => {
+    const start = getWeekStart(date)
+    const end = new Date(start)
+    end.setDate(end.getDate() + 6)
+    return end
+  }
+
   // Get the day of week for the first day (0 = Sunday, 1 = Monday, etc.)
   const getFirstDayOfWeek = (date) => {
     return getFirstDayOfMonth(date).getDay()
   }
 
-  // Change to previous month
+  // Change to previous month or week
   const previousMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))
+    let newDate
+    if (calendarView === 'Weekly') {
+      newDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() - 7)
+    } else {
+      newDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1)
+    }
+    setCurrentDate(newDate)
     setSelectedDate(null)
+    // Save the new date to database
+    saveCalendarDate(newDate)
   }
 
-  // Change to next month
+  // Change to next month or week
   const nextMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))
+    let newDate
+    if (calendarView === 'Weekly') {
+      newDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() + 7)
+    } else {
+      newDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1)
+    }
+    setCurrentDate(newDate)
     setSelectedDate(null)
+    // Save the new date to database
+    saveCalendarDate(newDate)
+  }
+
+  // Helper function to save calendar date to database
+  const saveCalendarDate = async (dateToSave) => {
+    try {
+      const selectedDateStr = dateToSave.toISOString().split('T')[0]
+      const { error } = await supabase
+        .from('Users')
+        .update({ CalenderDate: selectedDateStr })
+        .eq('id', user.id)
+      
+      if (error) throw error
+    } catch (error) {
+      console.error('Error saving calendar date:', error.message)
+    }
   }
 
   const isQuoteCustomer = (customer) => customer.Quote === true
 
   // Check if a date has any jobs scheduled (non-quote)
-  const hasJobsOnDate = (day) => {
-    const dateStr = new Date(currentDate.getFullYear(), currentDate.getMonth(), day).toISOString().split('T')[0]
+  const hasJobsOnDate = (dayOrDate) => {
+    const dateStr = (dayOrDate instanceof Date) 
+      ? dayOrDate.toISOString().split('T')[0]
+      : new Date(currentDate.getFullYear(), currentDate.getMonth(), dayOrDate).toISOString().split('T')[0]
     return customers.some(customer => {
       if (!customer.NextClean || isQuoteCustomer(customer)) return false
       const nextCleanDate = new Date(customer.NextClean).toISOString().split('T')[0]
@@ -370,8 +566,10 @@ function WorkloadManager({ user }) {
     })
   }
 
-  const hasQuotesOnDate = (day) => {
-    const dateStr = new Date(currentDate.getFullYear(), currentDate.getMonth(), day).toISOString().split('T')[0]
+  const hasQuotesOnDate = (dayOrDate) => {
+    const dateStr = (dayOrDate instanceof Date) 
+      ? dayOrDate.toISOString().split('T')[0]
+      : new Date(currentDate.getFullYear(), currentDate.getMonth(), dayOrDate).toISOString().split('T')[0]
     return customers.some(customer => {
       if (!customer.NextClean || !isQuoteCustomer(customer)) return false
       const nextCleanDate = new Date(customer.NextClean).toISOString().split('T')[0]
@@ -380,8 +578,10 @@ function WorkloadManager({ user }) {
   }
 
   // Get customers for a specific date
-  const getCustomersForDate = (day) => {
-    const dateStr = new Date(currentDate.getFullYear(), currentDate.getMonth(), day).toISOString().split('T')[0]
+  const getCustomersForDate = (dayOrDate) => {
+    const dateStr = (dayOrDate instanceof Date) 
+      ? dayOrDate.toISOString().split('T')[0]
+      : new Date(currentDate.getFullYear(), currentDate.getMonth(), dayOrDate).toISOString().split('T')[0]
     return customers.filter(customer => {
       if (!customer.NextClean) return false
       const nextCleanDate = new Date(customer.NextClean).toISOString().split('T')[0]
@@ -389,8 +589,8 @@ function WorkloadManager({ user }) {
     })
   }
 
-  const getJobsForDate = (day) => getCustomersForDate(day).filter(c => !isQuoteCustomer(c))
-  const getQuotesForDate = (day) => getCustomersForDate(day).filter(c => isQuoteCustomer(c))
+  const getJobsForDate = (dayOrDate) => getCustomersForDate(dayOrDate).filter(c => !isQuoteCustomer(c))
+  const getQuotesForDate = (dayOrDate) => getCustomersForDate(dayOrDate).filter(c => isQuoteCustomer(c))
 
   // Handle day click
   const handleDayClick = async (day) => {
@@ -398,7 +598,9 @@ function WorkloadManager({ user }) {
     
     // Save the selected date to CalenderDate in Users table
     try {
-      const selectedDateStr = new Date(currentDate.getFullYear(), currentDate.getMonth(), day).toISOString().split('T')[0]
+      // Create the actual date object with proper year, month, and day
+      const actualDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
+      const selectedDateStr = actualDate.toISOString().split('T')[0]
       const { error } = await supabase
         .from('Users')
         .update({ CalenderDate: selectedDateStr })
@@ -1227,6 +1429,10 @@ function WorkloadManager({ user }) {
 
   // Generate calendar days
   const generateCalendar = () => {
+    if (calendarView === 'Weekly') {
+      return generateWeeklyCalendar()
+    }
+    
     const daysInMonth = getDaysInMonth(currentDate)
     const firstDayOfWeek = getFirstDayOfWeek(currentDate)
     const days = []
@@ -1261,6 +1467,95 @@ function WorkloadManager({ user }) {
     }
 
     return days
+  }
+
+  const generateWeeklyCalendar = () => {
+    const weekStart = getWeekStart(currentDate)
+    const days = []
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    
+    // Calculate max earnings for the week to scale bars
+    let maxEarnings = 0
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(weekStart)
+      day.setDate(day.getDate() + i)
+      const dayJobs = getJobsForDate(day)
+      const dailyEarnings = dayJobs.reduce((sum, customer) => sum + (parseFloat(customer.Price) || 0), 0)
+      if (dailyEarnings > maxEarnings) maxEarnings = dailyEarnings
+    }
+
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(weekStart)
+      day.setDate(day.getDate() + i)
+      const dayOfMonth = day.getDate()
+      const isSelected = selectedDate === dayOfMonth
+      
+      // Get weather data for this day
+      const dateStr = day.toISOString().split('T')[0]
+      const weatherInfo = weeklyWeather[dateStr]
+      
+      // Calculate daily earnings - pass full date object
+      const dayJobs = getJobsForDate(day)
+      const dailyEarnings = dayJobs.reduce((sum, customer) => sum + (parseFloat(customer.Price) || 0), 0)
+      const currencyConfig = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+      const formattedEarnings = formatCurrency(dailyEarnings, user.SettingsCountry || 'United Kingdom')
+      
+      // Calculate bar height percentage (max 80% of container)
+      const barHeightPercent = maxEarnings > 0 ? (dailyEarnings / maxEarnings) * 80 : 0
+      
+      days.push(
+        <div
+          key={i}
+          className={`calendar-day weekly-day ${isSelected ? 'selected' : ''}`}
+          onClick={() => handleDayClick(dayOfMonth)}
+          title={weatherInfo ? `${weatherInfo.icon} ${weatherInfo.temp_max}°C` : ''}
+        >
+          <div className="weather-icon" title={weatherInfo ? `${weatherInfo.temp_max}°C` : ''}>
+            {weatherInfo && weatherInfo.icon}
+          </div>
+          <div className="day-label">{dayNames[i]}</div>
+          <div className="day-number">{dayOfMonth}</div>
+          <div className="weekly-bar-container">
+            <div 
+              className="weekly-bar" 
+              style={{ height: `${barHeightPercent}%` }}
+            ></div>
+          </div>
+          <div className="day-earnings">{formattedEarnings}</div>
+        </div>
+      )
+    }
+
+    return days
+  }
+
+  const getWeeklyChartData = () => {
+    const weekStart = getWeekStart(currentDate)
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    const chartData = []
+
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(weekStart)
+      day.setDate(day.getDate() + i)
+      const dayOfMonth = day.getDate()
+      
+      // Pass full date object to get correct jobs
+      const dayJobs = getJobsForDate(day)
+      const dailyEarnings = dayJobs.reduce((sum, customer) => sum + (parseFloat(customer.Price) || 0), 0)
+      
+      chartData.push({
+        day: dayNames[i],
+        date: dayOfMonth,
+        earnings: dailyEarnings
+      })
+    }
+
+    return chartData
+  }
+
+  const getWeeklyTotalIncome = () => {
+    const chartData = getWeeklyChartData()
+    return chartData.reduce((sum, day) => sum + day.earnings, 0)
   }
 
   const monthNames = [
@@ -1339,18 +1634,50 @@ function WorkloadManager({ user }) {
     <div className={`workload-manager ${calendarCollapsed ? 'calendar-collapsed' : ''}`}>
       <div className="calendar-header">
         <button onClick={previousMonth} className="month-nav-btn">←</button>
-        <h2>{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</h2>
+        <h2>
+          {calendarView === 'Weekly' 
+            ? `W/C ${getWeekStart(currentDate).getDate()} ${monthNames[getWeekStart(currentDate).getMonth()]}`
+            : `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`
+          }
+        </h2>
         <button onClick={nextMonth} className="month-nav-btn">→</button>
       </div>
 
-      {!calendarCollapsed && <div className="calendar-grid">
-            <div className="calendar-day-header">Sun</div>
-            <div className="calendar-day-header">Mon</div>
-            <div className="calendar-day-header">Tue</div>
-            <div className="calendar-day-header">Wed</div>
-            <div className="calendar-day-header">Thu</div>
-            <div className="calendar-day-header">Fri</div>
-            <div className="calendar-day-header">Sat</div>
+      {!calendarCollapsed && (
+        <div className="calendar-view-buttons">
+          <button 
+            className={`view-btn monthly-btn ${calendarView === 'Monthly' ? 'active' : ''}`}
+            onClick={() => updateCalendarViewMode('Monthly')}
+          >
+            Monthly
+          </button>
+          <button 
+            className={`view-btn weekly-btn ${calendarView === 'Weekly' ? 'active' : ''}`}
+            onClick={() => updateCalendarViewMode('Weekly')}
+          >
+            Weekly
+          </button>
+        </div>
+      )}
+
+      {!calendarCollapsed && calendarView === 'Weekly' && (
+        <div className="weekly-total-income">
+          Total Income: <span className="income-amount">{formatCurrency(getWeeklyTotalIncome(), user.SettingsCountry || 'United Kingdom')}</span>
+        </div>
+      )}
+
+      {!calendarCollapsed && <div className={`calendar-grid ${calendarView === 'Weekly' ? 'weekly-view' : ''}`}>
+            {calendarView !== 'Weekly' && (
+              <>
+                <div className="calendar-day-header">Sun</div>
+                <div className="calendar-day-header">Mon</div>
+                <div className="calendar-day-header">Tue</div>
+                <div className="calendar-day-header">Wed</div>
+                <div className="calendar-day-header">Thu</div>
+                <div className="calendar-day-header">Fri</div>
+                <div className="calendar-day-header">Sat</div>
+              </>
+            )}
             {generateCalendar()}
           </div>}
 
