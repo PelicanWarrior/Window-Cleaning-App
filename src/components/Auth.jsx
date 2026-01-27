@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import './Auth.css'
 
@@ -13,6 +13,26 @@ function Auth({ onLogin }) {
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [deferredPrompt, setDeferredPrompt] = useState(null)
+  const [showInstallButton, setShowInstallButton] = useState(false)
+
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault()
+      setDeferredPrompt(e)
+      setShowInstallButton(true)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return
+    deferredPrompt.prompt()
+    const { outcome } = await deferredPrompt.userChoice
+    setDeferredPrompt(null)
+    setShowInstallButton(false)
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -303,6 +323,12 @@ function Auth({ onLogin }) {
             {loading ? 'Please wait...' : (isLogin ? 'Login' : 'Create Account')}
           </button>
         </form>
+
+        {showInstallButton && (
+          <button className="install-app-btn" onClick={handleInstallClick}>
+            Install App
+          </button>
+        )}
 
         <p className="toggle-text">
           {isLogin ? "Don't have an account? " : "Already have an account? "}

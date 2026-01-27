@@ -77,6 +77,24 @@
   transform: none;
 }
 
+.install-app-btn {
+  width: 100%;
+  padding: 1rem;
+  background: linear-gradient(135deg, #27ae60 0%, #229954 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s;
+  margin-top: 1rem;
+}
+
+.install-app-btn:hover {
+  transform: translateY(-2px);
+}
+
 .error-message {
   background-color: #fee;
   color: #c33;
