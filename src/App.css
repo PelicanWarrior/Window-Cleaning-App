@@ -8,6 +8,11 @@
   color: white;
   padding: 1.5rem 2rem;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
 }
 
 .header-content {
@@ -113,6 +118,7 @@
   max-width: 1200px;
   margin: 0 auto;
   padding: 2rem;
+  margin-top: 180px;
 }
 
 /* Tablet styles */

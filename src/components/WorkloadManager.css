@@ -785,6 +785,18 @@
   color: white;
 }
 
+/* Mobile layout for select by route */
+@media (max-width: 768px) {
+  .select-by-route-section {
+    align-items: flex-start;
+  }
+
+  .route-buttons {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+}
+
 .message-all-section {
   display: flex;
   align-items: center;

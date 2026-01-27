@@ -73,7 +73,7 @@ function App() {
             className={activeTab === 'letters' ? 'active' : ''}
             onClick={() => setActiveTab('letters')}
           >
-            Letters
+            Messages
           </button>
         </nav>
       </header>

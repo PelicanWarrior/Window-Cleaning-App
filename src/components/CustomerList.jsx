@@ -39,6 +39,8 @@ function CustomerList({ user }) {
   const [invoiceModal, setInvoiceModal] = useState({ show: false, customer: null })
   const [invoicesListModal, setInvoicesListModal] = useState({ show: false, customer: null })
   const [changePriceModal, setChangePriceModal] = useState({ show: false, price: '' })
+  const [showCSVImportModal, setShowCSVImportModal] = useState(false)
+  const csvFileInputRef = useRef(null)
   const [filters, setFilters] = useState({
     CustomerName: '',
     Address: '',
@@ -1090,15 +1092,20 @@ function CustomerList({ user }) {
         <form onSubmit={addCustomer} className="customer-form">
           <div className="form-header">
             <h3>Add New Customer</h3>
-            <label className="csv-import-btn">
+            <button
+              type="button"
+              className="csv-import-btn"
+              onClick={() => setShowCSVImportModal(true)}
+            >
               📄 Import via CSV
-              <input
-                type="file"
-                accept=".csv"
-                onChange={handleCSVImport}
-                style={{ display: 'none' }}
-              />
-            </label>
+            </button>
+            <input
+              ref={csvFileInputRef}
+              type="file"
+              accept=".csv"
+              onChange={handleCSVImport}
+              style={{ display: 'none' }}
+            />
           </div>
           <div className="form-grid">
             <input
@@ -1802,6 +1809,48 @@ function CustomerList({ user }) {
           customer={invoiceModal.customer}
           onClose={() => setInvoiceModal({ show: false, customer: null })}
         />
+      )}
+
+      {showCSVImportModal && (
+        <div className="modal-overlay" onClick={() => setShowCSVImportModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setShowCSVImportModal(false)}>×</button>
+            <h3>CSV Import Instructions</h3>
+            <div style={{ marginBottom: '1.5rem', lineHeight: '1.6' }}>
+              <p><strong>Please arrange your columns in the following order:</strong></p>
+              <ol style={{ marginLeft: '1.5rem' }}>
+                <li>Address</li>
+                <li>Customer Name</li>
+                <li>Phone Number</li>
+                <li>Weeks for clean (e.g., 4, 6, etc)</li>
+                <li>Next Clean date</li>
+                <li>Outstanding Amount</li>
+                <li>Route</li>
+                <li>Notes</li>
+                <li>Email Address</li>
+              </ol>
+            </div>
+            <div className="modal-buttons">
+              <button 
+                type="button"
+                className="modal-ok-btn" 
+                onClick={() => {
+                  setShowCSVImportModal(false)
+                  setTimeout(() => csvFileInputRef.current?.click(), 0)
+                }}
+              >
+                OK
+              </button>
+              <button 
+                type="button"
+                className="modal-cancel-btn" 
+                onClick={() => setShowCSVImportModal(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

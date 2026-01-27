@@ -381,7 +381,7 @@ function Letters({ user }) {
             )}
           </div>
         </>
-      )}}
+      )}
       
       {activeTab === 'Messages' && (
         <>

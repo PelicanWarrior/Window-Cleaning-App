@@ -7,7 +7,9 @@ function Auth({ onLogin }) {
   const [formData, setFormData] = useState({
     username: '',
     email: '',
-    password: ''
+    password: '',
+    companyName: '',
+    country: 'United Kingdom'
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -204,7 +206,8 @@ function Auth({ onLogin }) {
               password: formData.password,
               admin: false,
               CustomerSort: 'Route',
-              SettingsCountry: 'United Kingdom',
+              SettingsCountry: formData.country,
+              CompanyName: formData.companyName,
               MessageFooter: '',
               RouteWeeks: 4
             }
@@ -258,6 +261,35 @@ function Auth({ onLogin }) {
             disabled={loading}
           />
           
+          {!isLogin && (
+            <input
+              type="text"
+              placeholder="Company Name"
+              value={formData.companyName}
+              onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
+              disabled={loading}
+            />
+          )}
+          
+          {!isLogin && (
+            <select
+              value={formData.country}
+              onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+              disabled={loading}
+            >
+              <option value="United Kingdom">United Kingdom</option>
+              <option value="United States">United States</option>
+              <option value="Canada">Canada</option>
+              <option value="Australia">Australia</option>
+              <option value="New Zealand">New Zealand</option>
+              <option value="Ireland">Ireland</option>
+              <option value="France">France</option>
+              <option value="Germany">Germany</option>
+              <option value="Spain">Spain</option>
+              <option value="Italy">Italy</option>
+            </select>
+          )}
+          
           <input
             type="password"
             placeholder="Password"
@@ -280,7 +312,7 @@ function Auth({ onLogin }) {
             onClick={() => {
               setIsLogin(!isLogin)
               setError('')
-              setFormData({ username: '', email: '', password: '' })
+              setFormData({ username: '', email: '', password: '', companyName: '', country: 'United Kingdom' })
             }}
             disabled={loading}
           >
