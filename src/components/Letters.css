@@ -202,6 +202,19 @@
   background-color: #229954;
 }
 
+.footer-section:nth-of-type(2) {
+  background: #f3e6ff;
+  border: 2px solid #9b59b6;
+}
+
+.footer-section:nth-of-type(2) .edit-footer-btn {
+  background-color: #9b59b6;
+}
+
+.footer-section:nth-of-type(2) .edit-footer-btn:hover {
+  background-color: #8e44ad;
+}
+
 .footer-display {
   background: white;
   padding: 1rem;

@@ -10,6 +10,8 @@ function Letters({ user }) {
   const [editingMessage, setEditingMessage] = useState(null)
   const [showEditFooter, setShowEditFooter] = useState(false)
   const [messageFooter, setMessageFooter] = useState(user.MessageFooter || '')
+  const [invoiceFooter, setInvoiceFooter] = useState(user.InvoiceFooter || '')
+  const [showEditInvoiceFooter, setShowEditInvoiceFooter] = useState(false)
   const [selectedPayLetter, setSelectedPayLetter] = useState('')
   const [selectedReminderLetter, setSelectedReminderLetter] = useState('')
   const [selectedPayChangeLetter, setSelectedPayChangeLetter] = useState('')
@@ -217,6 +219,22 @@ function Letters({ user }) {
     }
   }
 
+  async function handleUpdateInvoiceFooter(e) {
+    e.preventDefault()
+    try {
+      const { error } = await supabase
+        .from('Users')
+        .update({ InvoiceFooter: invoiceFooter })
+        .eq('id', user.id)
+      
+      if (error) throw error
+      setShowEditInvoiceFooter(false)
+      alert('Invoice footer updated successfully!')
+    } catch (error) {
+      console.error('Error updating invoice footer:', error.message)
+    }
+  }
+
   if (loading) return <div className="loading">Loading messages...</div>
 
   return (
@@ -237,10 +255,10 @@ function Letters({ user }) {
           Default Messages
         </button>
         <button
-          className={`message-tab ${activeTab === 'Message Footer' ? 'active' : ''}`}
-          onClick={() => setActiveTab('Message Footer')}
+          className={`message-tab ${activeTab === 'Message Footers' ? 'active' : ''}`}
+          onClick={() => setActiveTab('Message Footers')}
         >
-          Message Footer
+          Message Footers
         </button>
       </div>
       
@@ -305,35 +323,65 @@ function Letters({ user }) {
         </>
       )}
       
-      {activeTab === 'Message Footer' && (
-        <div className="footer-section">
-          <div className="footer-header">
-            <h3>Message Footer</h3>
-            <button 
-              className="edit-footer-btn" 
-              onClick={() => setShowEditFooter(!showEditFooter)}
-            >
-              {showEditFooter ? 'Cancel' : 'Edit Footer'}
-            </button>
+      {activeTab === 'Message Footers' && (
+        <>
+          <div className="footer-section">
+            <div className="footer-header">
+              <h3>Text Message Footer</h3>
+              <button 
+                className="edit-footer-btn" 
+                onClick={() => setShowEditFooter(!showEditFooter)}
+              >
+                {showEditFooter ? 'Cancel' : 'Edit Footer'}
+              </button>
+            </div>
+            
+            {showEditFooter ? (
+              <form onSubmit={handleUpdateFooter} className="footer-form">
+                <textarea
+                  value={messageFooter}
+                  onChange={(e) => setMessageFooter(e.target.value)}
+                  rows="3"
+                  placeholder="Enter your message footer"
+                />
+                <button type="submit" className="save-footer-btn">Save Footer</button>
+              </form>
+            ) : (
+              <div className="footer-display">
+                {messageFooter || 'No footer set'}
+              </div>
+            )}
           </div>
           
-          {showEditFooter ? (
-            <form onSubmit={handleUpdateFooter} className="footer-form">
-              <textarea
-                value={messageFooter}
-                onChange={(e) => setMessageFooter(e.target.value)}
-                rows="3"
-                placeholder="Enter your message footer"
-              />
-              <button type="submit" className="save-footer-btn">Save Footer</button>
-            </form>
-          ) : (
-            <div className="footer-display">
-              {messageFooter || 'No footer set'}
+          <div className="footer-section">
+            <div className="footer-header">
+              <h3>Invoice Footer</h3>
+              <button 
+                className="edit-footer-btn" 
+                onClick={() => setShowEditInvoiceFooter(!showEditInvoiceFooter)}
+              >
+                {showEditInvoiceFooter ? 'Cancel' : 'Edit Footer'}
+              </button>
             </div>
-          )}
-        </div>
-      )}
+            
+            {showEditInvoiceFooter ? (
+              <form onSubmit={handleUpdateInvoiceFooter} className="footer-form">
+                <textarea
+                  value={invoiceFooter}
+                  onChange={(e) => setInvoiceFooter(e.target.value)}
+                  rows="3"
+                  placeholder="Enter your invoice footer"
+                />
+                <button type="submit" className="save-footer-btn">Save Footer</button>
+              </form>
+            ) : (
+              <div className="footer-display">
+                {invoiceFooter || 'No footer set'}
+              </div>
+            )}
+          </div>
+        </>
+      )}}
       
       {activeTab === 'Messages' && (
         <>

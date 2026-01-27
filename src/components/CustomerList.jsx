@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import './CustomerList.css'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
 import InvoicesModal from './InvoicesModal'
-import InvoiceModal from './InvoiceModal'
+import InvoiceModalContent from './InvoiceModalNew'
 
 function CustomerList({ user }) {
   const [customers, setCustomers] = useState([])
@@ -676,8 +676,25 @@ function CustomerList({ user }) {
       let messageText = messageData.Message
       messageText = messageText.replace(currencyRegex, `${currencySymbol}${newPrice.toFixed(2)}`)
       
-      // Add customer name greeting and footer
-      const greeting = `Hello ${customerData.CustomerName}\n\n`
+      // Create personalized greeting based on customer name
+      const createGreeting = (fullName) => {
+        const titles = ['Mr', 'Mrs', 'Ms', 'Miss', 'Dr', 'Prof', 'Sir', 'Madam']
+        const nameParts = fullName.trim().split(/\s+/)
+        
+        // Check if first part is a title
+        if (titles.includes(nameParts[0])) {
+          // Title present - use "Dear [Title] [Last Name]"
+          const title = nameParts[0]
+          const lastName = nameParts[nameParts.length - 1]
+          return `Dear ${title} ${lastName}`
+        } else {
+          // No title - use "Dear [First Name]"
+          const firstName = nameParts[0]
+          return `Dear ${firstName}`
+        }
+      }
+      
+      const greeting = `${createGreeting(customerData.CustomerName)}\n\n`
       const footer = messageFooter ? `\n\n${messageFooter}` : ''
       const fullMessage = greeting + messageText + footer
 
@@ -722,6 +739,8 @@ function CustomerList({ user }) {
       
       if (error) throw error
       
+      // Update the selectedCustomer immediately to show changes
+      setSelectedCustomer(modalEditData)
       setIsEditingModal(false)
       fetchCustomers() // Refresh the customer list
     } catch (error) {
@@ -1417,6 +1436,15 @@ function CustomerList({ user }) {
                                       Change Price
                                     </button>
                                     <button
+                                      className="invoice-btn"
+                                      onClick={() => {
+                                        setInvoiceModal({ show: true, customer })
+                                        setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
+                                      }}
+                                    >
+                                      Create Invoice
+                                    </button>
+                                    <button
                                       className="delete-btn"
                                       onClick={() => deleteCustomer(customer.id)}
                                     >
@@ -1498,7 +1526,6 @@ function CustomerList({ user }) {
                   {!showServices && !showHistory && <button className="modal-edit-btn" onClick={() => { setIsEditingModal(true); setModalEditData({...selectedCustomer}); }}>Edit</button>}
                   <button className="modal-services-btn" onClick={() => { setShowServices(!showServices); setShowHistory(false); if (!showServices) fetchCustomerServices(selectedCustomer.id); }}>{showServices ? 'Customer Details' : 'Services'}</button>
                   <button className="modal-history-btn" onClick={() => { setShowHistory(!showHistory); setShowServices(false); if (!showHistory) fetchCustomerHistory(selectedCustomer.id); }}>{showHistory ? 'Customer Details' : 'History'}</button>
-                  {!showServices && !showHistory && <button className="modal-change-price-btn" onClick={() => handleOpenChangePrice(selectedCustomer.id)}>Change Price</button>}
                 </>
               )}
             </div>
@@ -1767,6 +1794,14 @@ function CustomerList({ user }) {
             </div>
           </div>
         </div>
+      )}
+
+      {invoiceModal.show && invoiceModal.customer && (
+        <InvoiceModalContent 
+          user={user}
+          customer={invoiceModal.customer}
+          onClose={() => setInvoiceModal({ show: false, customer: null })}
+        />
       )}
 
     </div>

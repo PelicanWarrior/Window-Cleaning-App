@@ -929,6 +929,14 @@ function WorkloadManager({ user }) {
       
       if (error) throw error
       
+      // Update the selectedCustomer immediately to show changes
+      setSelectedCustomer(modalEditData)
+      
+      // Update orderedCustomers to reflect changes in the calendar
+      setOrderedCustomers(prev => 
+        prev.map(c => c.id === selectedCustomer.id ? modalEditData : c)
+      )
+      
       setIsEditingModal(false)
       fetchCustomers() // Refresh the customer list
     } catch (error) {
@@ -1415,41 +1423,42 @@ function WorkloadManager({ user }) {
 
           {selectedDayJobs.length > 0 && (
             <div className="message-all-section">
-              <label className="message-all-label" htmlFor="messageAll">Message to {hasSelectedCustomers ? 'Selected' : 'All'}:</label>
-              <select
-                id="messageAll"
-                value={selectedLetterAll || ''}
-                onChange={(e) => handleSelectLetterAll(e.target.value)}
-                disabled={!messages.length}
-              >
-                {!messages.length && <option value="">No letters available</option>}
-                {messages.length > 0 && <option value="">Select letter</option>}
-                {messages.map((msg) => (
-                  <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          {selectedDayJobs.length > 0 && (
-            <div className="bulk-move-section">
-              <span className="bulk-move-label">Move {hasSelectedCustomers ? 'selected' : 'all'} jobs:</span>
-              <div className="bulk-date-picker-wrapper">
-                <button 
-                  onClick={() => setBulkDatePickerOpen(!bulkDatePickerOpen)}
-                  className="calendar-icon-btn"
-                  title="Pick a date"
+              <div className="message-all-container">
+                <label className="message-all-label" htmlFor="messageAll">Message to {hasSelectedCustomers ? 'Selected' : 'All'}:</label>
+                <select
+                  id="messageAll"
+                  value={selectedLetterAll || ''}
+                  onChange={(e) => handleSelectLetterAll(e.target.value)}
+                  disabled={!messages.length}
                 >
-                  📅
-                </button>
-                {bulkDatePickerOpen && (
-                  <input
-                    type="date"
-                    value={new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate).toISOString().split('T')[0]}
-                    onChange={(e) => handleBulkMoveToDate(e.target.value)}
-                    className="date-picker-input"
-                    autoFocus
-                  />
-                )}
+                  {!messages.length && <option value="">No letters available</option>}
+                  {messages.length > 0 && <option value="">Select letter</option>}
+                  {messages.map((msg) => (
+                    <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="bulk-move-container">
+                <span className="bulk-move-label">Move {hasSelectedCustomers ? 'selected' : 'all'} jobs:</span>
+                <div className="bulk-date-picker-wrapper">
+                  <button 
+                    onClick={() => setBulkDatePickerOpen(!bulkDatePickerOpen)}
+                    className="calendar-icon-btn"
+                    title="Pick a date"
+                  >
+                    📅
+                  </button>
+                  {bulkDatePickerOpen && (
+                    <input
+                      type="date"
+                      value={new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate).toISOString().split('T')[0]}
+                      onChange={(e) => handleBulkMoveToDate(e.target.value)}
+                      className="date-picker-input"
+                      autoFocus
+                    />
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -2184,14 +2193,26 @@ function InvoiceModalContent({ user, customer, onClose }) {
 
     const addressLines = [customer.Address, customer.Address2, customer.Address3, customer.Postcode].filter(Boolean)
 
+    // Company name at the top, centered and larger
+    if (user.CompanyName) {
+      doc.setFontSize(18)
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const companyNameWidth = doc.getTextWidth(user.CompanyName)
+      const centerX = (pageWidth - companyNameWidth) / 2
+      doc.text(user.CompanyName, centerX, y)
+      y += lineHeight + 4
+    }
+
     // Customer name and address
     doc.setFontSize(14)
     doc.text(customer.CustomerName, 15, y)
     y += lineHeight
     doc.setFontSize(12)
     if (addressLines.length) {
-      doc.text(addressLines.join(', '), 15, y)
-      y += lineHeight
+      addressLines.forEach(line => {
+        doc.text(line, 15, y)
+        y += lineHeight
+      })
     }
 
     y += 4
@@ -2206,25 +2227,149 @@ function InvoiceModalContent({ user, customer, onClose }) {
     y += 4
     // Services list
     doc.setFontSize(14)
-    doc.text('Services', 15, y)
+    doc.text('For the following Services:', 15, y)
     y += lineHeight
     doc.setFontSize(12)
+    
+    // Calculate the width needed for the longest service name
+    let maxServiceWidth = 0
+    savedInvoiceData.items.forEach((it) => {
+      const serviceWidth = doc.getTextWidth(it.Service)
+      if (serviceWidth > maxServiceWidth) {
+        maxServiceWidth = serviceWidth
+      }
+    })
+    // Also check "Total Amount" width
+    const totalLabelWidth = doc.getTextWidth('Total Amount:')
+    if (totalLabelWidth > maxServiceWidth) {
+      maxServiceWidth = totalLabelWidth
+    }
+    
+    const leftX = 15
+    const rightX = leftX + maxServiceWidth + 10 // 10px gap between columns
     
     let total = 0
     savedInvoiceData.items.forEach((it) => {
       const price = parseFloat(it.Price) || 0
       total += price
-      const line = `${it.Service} - ${currencySymbol}${price.toFixed(2)}`
-      doc.text(line, 15, y)
+      doc.text(it.Service, leftX, y)
+      doc.text(`${currencySymbol}${price.toFixed(2)}`, rightX, y)
       y += lineHeight
     })
 
     y += 4
     // Total
     doc.setFontSize(14)
-    doc.text(`Total Amount: ${currencySymbol}${total.toFixed(2)}`, 15, y)
+    doc.text('Total Amount:', leftX, y)
+    doc.text(`${currencySymbol}${total.toFixed(2)}`, rightX, y)
+
+    // Invoice Footer
+    if (user.InvoiceFooter) {
+      y += lineHeight + 4
+      doc.setFontSize(11)
+      doc.setTextColor(100, 100, 100)
+      const footerLines = doc.splitTextToSize(user.InvoiceFooter, 170)
+      doc.text(footerLines, 15, y)
+      doc.setTextColor(0, 0, 0)
+    }
 
     return doc.output('blob')
+  }
+
+  const generateAndDownloadPDF = (invoiceData) => {
+    if (!jsPDFRef) {
+      alert('PDF generation library not loaded')
+      return
+    }
+    
+    const doc = new jsPDFRef()
+    const lineHeight = 8
+    let y = 15
+
+    const addressLines = [customer.Address, customer.Address2, customer.Address3, customer.Postcode].filter(Boolean)
+
+    // Company name at the top, centered and larger
+    if (user.CompanyName) {
+      doc.setFontSize(18)
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const companyNameWidth = doc.getTextWidth(user.CompanyName)
+      const centerX = (pageWidth - companyNameWidth) / 2
+      doc.text(user.CompanyName, centerX, y)
+      y += lineHeight + 4
+    }
+
+    // Customer name and address
+    doc.setFontSize(14)
+    doc.text(customer.CustomerName, 15, y)
+    y += lineHeight
+    doc.setFontSize(12)
+    if (addressLines.length) {
+      addressLines.forEach(line => {
+        doc.text(line, 15, y)
+        y += lineHeight
+      })
+    }
+
+    y += 4
+    // Invoice ID
+    doc.text(`Invoice Number: ${invoiceData.invoiceId}`, 15, y)
+    y += lineHeight
+    
+    // Invoice Date
+    doc.text(`Invoice Date: ${formatDateByCountry(invoiceData.invoiceDate, user.SettingsCountry || 'United Kingdom')}`, 15, y)
+    y += lineHeight
+
+    y += 4
+    // Services list
+    doc.setFontSize(14)
+    doc.text('For the following Services:', 15, y)
+    y += lineHeight
+    doc.setFontSize(12)
+    
+    // Calculate the width needed for the longest service name
+    let maxServiceWidth = 0
+    invoiceData.items.forEach((it) => {
+      const serviceWidth = doc.getTextWidth(it.Service)
+      if (serviceWidth > maxServiceWidth) {
+        maxServiceWidth = serviceWidth
+      }
+    })
+    // Also check "Total Amount" width
+    const totalLabelWidth = doc.getTextWidth('Total Amount:')
+    if (totalLabelWidth > maxServiceWidth) {
+      maxServiceWidth = totalLabelWidth
+    }
+    
+    const leftX = 15
+    const rightX = leftX + maxServiceWidth + 10 // 10px gap between columns
+    
+    let total = 0
+    invoiceData.items.forEach((it) => {
+      const price = parseFloat(it.Price) || 0
+      total += price
+      doc.text(it.Service, leftX, y)
+      doc.text(`${currencySymbol}${price.toFixed(2)}`, rightX, y)
+      y += lineHeight
+    })
+
+    y += 4
+    // Total
+    doc.setFontSize(14)
+    doc.text('Total Amount:', leftX, y)
+    doc.text(`${currencySymbol}${total.toFixed(2)}`, rightX, y)
+
+    // Invoice Footer
+    if (user.InvoiceFooter) {
+      y += lineHeight + 4
+      doc.setFontSize(11)
+      doc.setTextColor(100, 100, 100)
+      const footerLines = doc.splitTextToSize(user.InvoiceFooter, 170)
+      doc.text(footerLines, 15, y)
+      doc.setTextColor(0, 0, 0)
+    }
+
+    // Download the PDF
+    doc.save(`Invoice-${invoiceData.invoiceId}.pdf`)
   }
 
   const downloadBlob = (blob, filename) => {
@@ -2416,8 +2561,15 @@ function InvoiceModalContent({ user, customer, onClose }) {
       items: validItems
     })
 
-    // Show send options modal
-    setShowSendOptions(true)
+    // Generate and download PDF directly
+    setTimeout(() => {
+      generateAndDownloadPDF({
+        invoiceId: invoiceIdText,
+        invoiceDate: invoiceDate,
+        items: validItems
+      })
+      onClose()
+    }, 100)
   }
 
   const addressLines = [customer.Address, customer.Address2, customer.Address3, customer.Postcode].filter(Boolean)

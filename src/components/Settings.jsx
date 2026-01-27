@@ -17,6 +17,7 @@ const COUNTRY_OPTIONS = [
 
 function Settings({ user, onClose, onSaved }) {
   const [password, setPassword] = useState('')
+  const [companyName, setCompanyName] = useState(user.CompanyName || '')
   const [country, setCountry] = useState(user.SettingsCountry || 'United Kingdom')
   const [routeWeeks, setRouteWeeks] = useState(user.RouteWeeks || '')
   const [vatRegistered, setVatRegistered] = useState(user.VAT || false)
@@ -24,6 +25,7 @@ function Settings({ user, onClose, onSaved }) {
   const [error, setError] = useState('')
 
   useEffect(() => {
+    setCompanyName(user.CompanyName || '')
     setCountry(user.SettingsCountry || 'United Kingdom')
     setRouteWeeks(user.RouteWeeks || '')
     setVatRegistered(user.VAT || false)
@@ -33,7 +35,7 @@ function Settings({ user, onClose, onSaved }) {
     setError('')
     setSaving(true)
     try {
-      const updateFields = { SettingsCountry: country, RouteWeeks: routeWeeks || null, VAT: vatRegistered }
+      const updateFields = { CompanyName: companyName, SettingsCountry: country, RouteWeeks: routeWeeks || null, VAT: vatRegistered }
       if (password) {
         updateFields.password = password
       }
@@ -82,6 +84,15 @@ function Settings({ user, onClose, onSaved }) {
               placeholder="Enter new password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          <div className="settings-field">
+            <label>Company Name</label>
+            <input
+              type="text"
+              placeholder="Enter your company name"
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
             />
           </div>
           <div className="settings-field">

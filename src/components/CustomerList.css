@@ -270,6 +270,16 @@
   background-color: #d5f4e6;
 }
 
+.actions-dropdown-menu .invoice-btn,
+.actions-dropdown-menu-inline .invoice-btn {
+  color: #f39c12;
+}
+
+.actions-dropdown-menu .invoice-btn:hover,
+.actions-dropdown-menu-inline .invoice-btn:hover {
+  background-color: #fef5e7;
+}
+
 .actions-dropdown-menu .save-btn,
 .actions-dropdown-menu-inline .save-btn {
   color: #27ae60;
