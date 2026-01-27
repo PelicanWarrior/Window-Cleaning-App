@@ -1,6 +1,6 @@
 {
-  "name": "Window Cleaning App",
-  "short_name": "WinClean",
+  "name": "Pelican",
+  "short_name": "Pelican",
   "description": "Window cleaning business management app for customer lists and workload tracking",
   "start_url": "/",
   "display": "standalone",

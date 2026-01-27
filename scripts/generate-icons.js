@@ -7,6 +7,7 @@ const __dirname = path.dirname(__filename);
 
 async function generateIcons() {
   const candidatePublicIcon = path.resolve(__dirname, '../public/Icon.png');
+  const candidatePublicLogo = path.resolve(__dirname, '../public/Logo.png');
   const candidatePicturesVersion = path.resolve(__dirname, '../pictures/Version.png');
   const out180 = path.resolve(__dirname, '../public/icon-180.png');
   const out192 = path.resolve(__dirname, '../public/icon-192.png');
@@ -14,11 +15,16 @@ async function generateIcons() {
 
   try {
     let srcPath = candidatePublicIcon;
-    // Fallback to pictures/Version.png if public/Icon.png does not exist
+    // Fallback to Logo.png or Version.png if Icon.png does not exist
     try {
       await sharp(candidatePublicIcon).metadata();
     } catch (_) {
-      srcPath = candidatePicturesVersion;
+      try {
+        srcPath = candidatePublicLogo;
+        await sharp(candidatePublicLogo).metadata();
+      } catch (__) {
+        srcPath = candidatePicturesVersion;
+      }
     }
 
     console.log('Using source image:', srcPath);
