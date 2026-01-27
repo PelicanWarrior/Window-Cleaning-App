@@ -14,6 +14,104 @@
   border-radius: 8px;
   width: 420px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0;
+  border-bottom: 2px solid #ecf0f1;
+}
+
+.settings-tabs button {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  background: none;
+  color: #7f8c8d;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.2s;
+}
+
+.settings-tabs button:hover {
+  color: #3498db;
+}
+
+.settings-tabs button.active {
+  color: #3498db;
+  border-bottom-color: #3498db;
+}
+
+.my-round-content {
+  padding: 2rem;
+  text-align: center;
+  color: #7f8c8d;
+}
+
+.my-round-stat {
+  font-size: 1.2rem;
+  color: #2c3e50;
+  margin: 0 0 1rem 0;
+  font-weight: 600;
+}
+
+.route-breakdown {
+  margin-top: 2rem;
+  width: 100%;
+}
+
+.route-breakdown-title {
+  font-size: 1.1rem;
+  color: #2c3e50;
+  margin: 0 0 1rem 0;
+  font-weight: 600;
+  text-align: left;
+}
+
+.route-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+
+.route-table thead {
+  background-color: #34495e;
+  color: white;
+}
+
+.route-table th {
+  padding: 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  border: 1px solid #2c3e50;
+}
+
+.route-table td {
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  text-align: left;
+}
+
+.route-table tbody tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+.route-table tbody tr:hover {
+  background-color: #ecf0f1;
+}
+
+.route-table tfoot {
+  background-color: #ecf0f1;
+  font-weight: 700;
+}
+
+.route-table tfoot td {
+  border-top: 2px solid #2c3e50;
 }
 
 .settings-grid {

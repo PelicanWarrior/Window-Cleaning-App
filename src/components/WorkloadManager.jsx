@@ -1939,22 +1939,27 @@ function WorkloadManager({ user }) {
 
                         <div className="row-calendar-section">
                           {user.admin && (
+                            <div className="calendar-action-group">
+                              <span className="calendar-action-label">Create Invoice</span>
+                              <button
+                                className="calendar-icon-btn"
+                                onClick={() => setInvoiceModal({ show: true, customer })}
+                                title="Create invoice"
+                              >
+                                🧾
+                              </button>
+                            </div>
+                          )}
+                          <div className="calendar-action-group">
+                            <span className="calendar-action-label">Change clean date</span>
                             <button
                               className="calendar-icon-btn"
-                              onClick={() => setInvoiceModal({ show: true, customer })}
-                              title="Create invoice"
+                              onClick={() => toggleDatePicker(customer.id)}
+                              title="Pick a date to move to"
                             >
-                              🧾
+                              📅
                             </button>
-                          )}
-                          <span className="change-date-label">Change clean date</span>
-                          <button
-                            className="calendar-icon-btn"
-                            onClick={() => toggleDatePicker(customer.id)}
-                            title="Pick a date to move to"
-                          >
-                            📅
-                          </button>
+                          </div>
                           {expandedDatePickers[customer.id] && (
                             <input
                               type="date"

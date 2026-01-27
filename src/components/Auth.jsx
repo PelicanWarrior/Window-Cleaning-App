@@ -78,6 +78,17 @@ function Auth({ onLogin }) {
           userData = { ...userData, RouteWeeks: 4 }
         }
 
+        // If AccountLevel is empty, set it to 1
+        if (!userData.AccountLevel) {
+          const { error: updateError } = await supabase
+            .from('Users')
+            .update({ AccountLevel: 1 })
+            .eq('id', userData.id)
+          
+          if (updateError) throw updateError
+          userData = { ...userData, AccountLevel: 1 }
+        }
+
         // Smart arrange addresses: split comma-separated addresses and extract postcodes
         const { data: customers, error: customersError } = await supabase
           .from('Customers')
@@ -229,7 +240,8 @@ function Auth({ onLogin }) {
               SettingsCountry: formData.country,
               CompanyName: formData.companyName,
               MessageFooter: '',
-              RouteWeeks: 4
+              RouteWeeks: 4,
+              AccountLevel: 1
             }
           ])
           .select()

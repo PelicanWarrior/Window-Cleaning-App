@@ -6,6 +6,7 @@ import WorkloadManager from './components/WorkloadManager'
 import Quotes from './components/Quotes'
 import Letters from './components/Letters'
 import Settings from './components/Settings'
+import AdminPanel from './components/AdminPanel'
 import versionImage from '../pictures/Version.png'
 import logo1 from '../public/Logo1.png'
 
@@ -13,6 +14,7 @@ function App() {
   const [user, setUser] = useState(null)
   const [activeTab, setActiveTab] = useState('workload')
   const [showSettings, setShowSettings] = useState(false)
+  const [showAdminPanel, setShowAdminPanel] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState(null)
   const [showInstallButton, setShowInstallButton] = useState(false)
 
@@ -69,7 +71,7 @@ function App() {
               <button className="install-btn" onClick={handleInstallClick}>Install App</button>
             )}
             <button className="settings-btn" onClick={() => setShowSettings(true)}>Settings</button>
-            {user.admin && <span className="admin-badge">Admin</span>}
+            {user.admin && <span className="admin-badge" onClick={() => setShowAdminPanel(true)}>Admin</span>}
             <div className="logout-section">
               <button className="logout-btn" onClick={handleLogout}>Logout</button>
             </div>
@@ -113,6 +115,12 @@ function App() {
           user={user} 
           onClose={() => setShowSettings(false)} 
           onSaved={handleSettingsSaved}
+        />
+      )}
+      {showAdminPanel && (
+        <AdminPanel
+          user={user}
+          onClose={() => setShowAdminPanel(false)}
         />
       )}
     </div>
