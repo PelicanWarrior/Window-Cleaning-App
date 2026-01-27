@@ -28,6 +28,11 @@
   gap: 1.5rem;
 }
 
+.header-logo {
+  max-width: 60px;
+  height: auto;
+}
+
 .app-header h1 {
   margin: 0;
   font-size: 2rem;

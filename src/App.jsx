@@ -7,6 +7,7 @@ import Quotes from './components/Quotes'
 import Letters from './components/Letters'
 import Settings from './components/Settings'
 import versionImage from '../pictures/Version.png'
+import logo1 from '../public/Logo1.png'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -58,7 +59,8 @@ function App() {
       <header className="app-header">
         <div className="header-content">
           <div className="header-title">
-            <h1>Window Cleaning Manager</h1>
+            <img src={logo1} alt="Pelican Logo" className="header-logo" />
+            <h1>Pelican Window Cleaning Manager</h1>
             <img src={versionImage} alt="Version" className="version-image" />
           </div>
           <div className="user-info">

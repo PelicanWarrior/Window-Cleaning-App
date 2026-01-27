@@ -255,7 +255,8 @@ function Auth({ onLogin }) {
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <h1>Window Cleaning Manager</h1>
+        <img src="/Logo1.png" alt="Pelican Logo" className="auth-logo" />
+        <h1>Pelican Window Cleaning Manager</h1>
         <h2>{isLogin ? 'Login' : 'Create Account'}</h2>
 
         {error && <div className="error-message">{error}</div>}

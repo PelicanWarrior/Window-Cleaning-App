@@ -15,6 +15,13 @@
   max-width: 400px;
 }
 
+.auth-logo {
+  display: block;
+  margin: 0 auto 1.5rem auto;
+  max-width: 150px;
+  height: auto;
+}
+
 .auth-card h1 {
   margin: 0 0 0.5rem 0;
   color: #2c3e50;
