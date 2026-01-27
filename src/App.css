@@ -55,6 +55,22 @@
   background-color: #aeb5bb;
 }
 
+.install-btn {
+  padding: 0.5rem 0.9rem;
+  background-color: #27ae60;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.install-btn:hover {
+  background-color: #229954;
+}
+
 .admin-badge {
   background-color: #e74c3c;
   padding: 0.25rem 0.75rem;

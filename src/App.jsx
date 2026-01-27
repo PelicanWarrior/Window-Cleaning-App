@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
 import Auth from './components/Auth'
 import CustomerList from './components/CustomerList'
@@ -12,6 +12,26 @@ function App() {
   const [user, setUser] = useState(null)
   const [activeTab, setActiveTab] = useState('workload')
   const [showSettings, setShowSettings] = useState(false)
+  const [deferredPrompt, setDeferredPrompt] = useState(null)
+  const [showInstallButton, setShowInstallButton] = useState(false)
+
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault()
+      setDeferredPrompt(e)
+      setShowInstallButton(true)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return
+    deferredPrompt.prompt()
+    const { outcome } = await deferredPrompt.userChoice
+    setDeferredPrompt(null)
+    setShowInstallButton(false)
+  }
 
   const handleLogin = (userData) => {
     setUser(userData)
@@ -43,6 +63,9 @@ function App() {
           </div>
           <div className="user-info">
             <span>Welcome, {user.UserName}</span>
+            {showInstallButton && (
+              <button className="install-btn" onClick={handleInstallClick}>Install App</button>
+            )}
             <button className="settings-btn" onClick={() => setShowSettings(true)}>Settings</button>
             {user.admin && <span className="admin-badge">Admin</span>}
             <div className="logout-section">
