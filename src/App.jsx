@@ -17,6 +17,7 @@ function App() {
   const [showAdminPanel, setShowAdminPanel] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState(null)
   const [showInstallButton, setShowInstallButton] = useState(false)
+  const [showUserMenu, setShowUserMenu] = useState(false)
 
   useEffect(() => {
     const handler = (e) => {
@@ -59,24 +60,40 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div className="header-content">
+        <div className="header-top">
           <div className="header-title">
             <img src={logo1} alt="Pelican Logo" className="header-logo" />
             <h1>Pelican Window Cleaning Manager</h1>
             <img src={versionImage} alt="Version" className="version-image" />
           </div>
-          <div className="user-info">
-            <span>Welcome, {user.UserName}</span>
-            {showInstallButton && (
-              <button className="install-btn" onClick={handleInstallClick}>Install App</button>
+        </div>
+        
+        <div className="header-bottom">
+          <div className="welcome-section">
+            <span className="welcome-text">Welcome, {user.UserName}</span>
+          </div>
+          
+          <div className="user-menu-container">
+            <button 
+              className="user-menu-btn" 
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              title="Menu"
+            >
+              ⋯
+            </button>
+            {showUserMenu && (
+              <div className="user-menu-dropdown">
+                {showInstallButton && (
+                  <button className="menu-item install-btn" onClick={handleInstallClick}>Install App</button>
+                )}
+                <button className="menu-item settings-btn" onClick={() => { setShowSettings(true); setShowUserMenu(false); }}>Settings</button>
+                {user.admin && <button className="menu-item admin-btn" onClick={() => { setShowAdminPanel(true); setShowUserMenu(false); }}>Admin</button>}
+                <button className="menu-item logout-btn" onClick={() => { handleLogout(); setShowUserMenu(false); }}>Logout</button>
+              </div>
             )}
-            <button className="settings-btn" onClick={() => setShowSettings(true)}>Settings</button>
-            {user.admin && <span className="admin-badge" onClick={() => setShowAdminPanel(true)}>Admin</span>}
-            <div className="logout-section">
-              <button className="logout-btn" onClick={handleLogout}>Logout</button>
-            </div>
           </div>
         </div>
+
         <nav>
           <button 
             className={activeTab === 'workload' ? 'active' : ''}
