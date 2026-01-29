@@ -224,17 +224,3 @@
   width: auto;
   margin: 0;
 }
-
-.version-content {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 2rem 1rem;
-  min-height: 300px;
-}
-
-.version-display-image {
-  max-width: 100%;
-  height: auto;
-  max-height: 400px;
-}

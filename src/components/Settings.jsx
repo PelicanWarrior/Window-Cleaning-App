@@ -240,12 +240,6 @@ function Settings({ user, onClose, onSaved }) {
           >
             Account Level
           </button>
-          <button
-            className={activeTab === 'version' ? 'active' : ''}
-            onClick={() => setActiveTab('version')}
-          >
-            Version
-          </button>
         </div>
 
         {error && <div className="error-message">{error}</div>}
@@ -428,17 +422,6 @@ function Settings({ user, onClose, onSaved }) {
                   )}
                 </>
               )}
-            </div>
-            <div className="settings-actions">
-              <button className="cancel-btn" onClick={onClose}>Close</button>
-            </div>
-          </>
-        )}
-
-        {activeTab === 'version' && (
-          <>
-            <div className="version-content">
-              <img src="/pictures/Version.png" alt="Version" className="version-display-image" />
             </div>
             <div className="settings-actions">
               <button className="cancel-btn" onClick={onClose}>Close</button>
