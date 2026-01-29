@@ -40,6 +40,10 @@ function CustomerList({ user }) {
   const [invoicesListModal, setInvoicesListModal] = useState({ show: false, customer: null })
   const [changePriceModal, setChangePriceModal] = useState({ show: false, price: '' })
   const [showCSVImportModal, setShowCSVImportModal] = useState(false)
+  const [csvValidationError, setCSVValidationError] = useState('')
+  const [preferredDaysSelected, setPreferredDaysSelected] = useState({})
+  const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+  const dayShortcuts = ['Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat', 'Sun']
   const csvFileInputRef = useRef(null)
   const [filters, setFilters] = useState({
     CustomerName: '',
@@ -276,6 +280,21 @@ function CustomerList({ user }) {
       customer.Postcode || ''
     ].filter(Boolean)
     return parts.join(', ')
+  }
+
+  const parsePreferredDays = (preferredDaysString) => {
+    if (!preferredDaysString) return {}
+    const days = preferredDaysString.split(',').map(d => d.trim())
+    const parsed = {}
+    daysOfWeek.forEach(day => {
+      parsed[day] = days.includes(day)
+    })
+    return parsed
+  }
+
+  const formatPreferredDays = (daysObject) => {
+    const selected = daysOfWeek.filter(day => daysObject[day])
+    return selected.length > 0 ? selected.join(', ') : ''
   }
 
   const sendReminderMessage = async (customer) => {
@@ -735,6 +754,8 @@ function CustomerList({ user }) {
           NextClean: modalEditData.NextClean,
           Outstanding: modalEditData.Outstanding,
           Route: modalEditData.Route,
+          VAT: modalEditData.VAT,
+          PrefferedDays: formatPreferredDays(preferredDaysSelected),
           Notes: modalEditData.Notes
         })
         .eq('id', selectedCustomer.id)
@@ -1027,6 +1048,67 @@ function CustomerList({ user }) {
         return
       }
 
+      // Validate against account level limits
+      const { data: userLevelData, error: userLevelError } = await supabase
+        .from('UserLevel')
+        .select('Customers, RoundAmount')
+        .eq('id', user.AccountLevel)
+        .single()
+      
+      if (userLevelError) throw userLevelError
+
+      const { data: existingCustomers, error: existingError } = await supabase
+        .from('Customers')
+        .select('id, Quote, NextClean, Price, Weeks')
+        .eq('UserId', user.id)
+      
+      if (existingError) throw existingError
+
+      // Count existing customers (excluding quotes)
+      const activeExisting = existingCustomers.filter(c => {
+        if (c.Quote === true) return false
+        if (!c.NextClean) return false
+        const nextCleanDate = new Date(c.NextClean)
+        const cutoffDate = new Date('2024-01-01')
+        if (nextCleanDate < cutoffDate) return false
+        return true
+      })
+
+      // Calculate existing monthly round
+      const existingMonthly = activeExisting.reduce((sum, customer) => {
+        const price = parseFloat(customer.Price) || 0
+        const weeks = parseInt(customer.Weeks) || 1
+        const monthlyValue = (price / weeks) * 4
+        return sum + monthlyValue
+      }, 0)
+
+      // Calculate import totals
+      const importCount = customersToImport.length
+      const importMonthly = customersToImport.reduce((sum, customer) => {
+        const price = parseFloat(customer.Price) || 0
+        const weeks = parseInt(customer.Weeks) || 1
+        const monthlyValue = (price / weeks) * 4
+        return sum + monthlyValue
+      }, 0)
+
+      const totalCustomers = activeExisting.length + importCount
+      const totalMonthly = existingMonthly + importMonthly
+
+      // Check limits (only if not unlimited tiers with all 9's)
+      const customerLimit = userLevelData.Customers
+      const roundLimit = userLevelData.RoundAmount
+      const isUnlimitedCustomers = String(customerLimit).match(/^9+$/)
+      const isUnlimitedRound = String(roundLimit).match(/^9+$/)
+
+      if ((!isUnlimitedCustomers && totalCustomers > customerLimit) || 
+          (!isUnlimitedRound && totalMonthly > roundLimit)) {
+        setCSVValidationError('you are trying to import more than your Level will allow, upgrade your account if you wish to import your customers')
+        event.target.value = ''
+        return
+      }
+
+      setCSVValidationError('')
+
       const { data: insertedCustomers, error } = await supabase
         .from('Customers')
         .insert(customersToImport)
@@ -1107,6 +1189,11 @@ function CustomerList({ user }) {
               style={{ display: 'none' }}
             />
           </div>
+          {csvValidationError && (
+            <div style={{ color: 'red', fontWeight: 'bold', marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#ffebee', borderRadius: '4px' }}>
+              {csvValidationError}
+            </div>
+          )}
           <div className="form-grid">
             <input
               type="text"
@@ -1530,7 +1617,7 @@ function CustomerList({ user }) {
                 </>
               ) : (
                 <>
-                  {!showServices && !showHistory && <button className="modal-edit-btn" onClick={() => { setIsEditingModal(true); setModalEditData({...selectedCustomer}); }}>Edit</button>}
+                  {!showServices && !showHistory && <button className="modal-edit-btn" onClick={() => { setIsEditingModal(true); setModalEditData({...selectedCustomer}); setPreferredDaysSelected(parsePreferredDays(selectedCustomer.PrefferedDays)); }}>Edit</button>}
                   <button className="modal-services-btn" onClick={() => { setShowServices(!showServices); setShowHistory(false); if (!showServices) fetchCustomerServices(selectedCustomer.id); }}>{showServices ? 'Customer Details' : 'Services'}</button>
                   <button className="modal-history-btn" onClick={() => { setShowHistory(!showHistory); setShowServices(false); if (!showHistory) fetchCustomerHistory(selectedCustomer.id); }}>{showHistory ? 'Customer Details' : 'History'}</button>
                 </>
@@ -1559,7 +1646,23 @@ function CustomerList({ user }) {
                   <div><strong>Next Clean:</strong> <input type="date" value={modalEditData.NextClean} onChange={(e) => setModalEditData({...modalEditData, NextClean: e.target.value})} className="modal-input" /></div>
                   <div><strong>Outstanding:</strong> <input type="number" value={modalEditData.Outstanding} onChange={(e) => setModalEditData({...modalEditData, Outstanding: e.target.value})} className="modal-input" /></div>
                   <div><strong>VAT Registered:</strong> <input type="checkbox" checked={modalEditData.VAT || false} onChange={(e) => setModalEditData({...modalEditData, VAT: e.target.checked})} /></div>
-                  <div className="full-width"><strong>Notes:</strong> <textarea value={modalEditData.Notes} onChange={(e) => setModalEditData({...modalEditData, Notes: e.target.value})} className="modal-input" rows="2" /></div>
+                  <div className="full-width">
+                    <strong>Preferred Days:</strong>
+                    <div className="days-checkboxes">
+                      {daysOfWeek.map((day, index) => (
+                        <label key={day} style={{ marginRight: '1rem', display: 'inline-flex', alignItems: 'center' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={preferredDaysSelected[day] || false}
+                            onChange={(e) => setPreferredDaysSelected({...preferredDaysSelected, [day]: e.target.checked})}
+                            style={{ marginRight: '0.5rem', cursor: 'pointer' }}
+                          />
+                          {dayShortcuts[index]}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="full-width"><strong>Notes:</strong> <textarea value={modalEditData.Notes} onChange={(e) => { setModalEditData({...modalEditData, Notes: e.target.value}); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'; }} className="modal-input" style={{ minHeight: '40px', maxHeight: '200px', overflow: 'hidden', resize: 'none' }} /></div>
                 </div>
               ) : (
                 <>
@@ -1574,7 +1677,8 @@ function CustomerList({ user }) {
                   <div><strong>Outstanding:</strong> {formatCurrency(selectedCustomer.Outstanding, user.SettingsCountry || 'United Kingdom')}</div>
                   <div><strong>Route:</strong> {selectedCustomer.Route || '—'}</div>
                   <div><strong>VAT Registered:</strong> {selectedCustomer.VAT ? 'Yes' : 'No'}</div>
-                  <div className="notes-cell"><strong>Notes:</strong> {selectedCustomer.Notes || '—'}</div>
+                  <div className="full-width"><strong>Preferred Days:</strong> {selectedCustomer.PrefferedDays || '—'}</div>
+                  <div className="full-width"><strong>Notes:</strong> <div className="notes-display">{selectedCustomer.Notes || '—'}</div></div>
                 </div>
                 <button 
                   className="cancel-service-btn"

@@ -20,6 +20,7 @@ function WorkloadManager({ user }) {
   const [expandedDays, setExpandedDays] = useState({})
   const [expandedDatePickers, setExpandedDatePickers] = useState({})
   const [bulkDatePickerOpen, setBulkDatePickerOpen] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [customerPayLetter, setCustomerPayLetter] = useState(null)
   const [userRouteOrder, setUserRouteOrder] = useState('')
   const [orderedCustomers, setOrderedCustomers] = useState([])
@@ -33,6 +34,9 @@ function WorkloadManager({ user }) {
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [isEditingModal, setIsEditingModal] = useState(false)
   const [modalEditData, setModalEditData] = useState({})
+  const [preferredDaysSelected, setPreferredDaysSelected] = useState({})
+  const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+  const dayShortcuts = ['Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat', 'Sun']
   const [showServices, setShowServices] = useState(false)
   const [customerServices, setCustomerServices] = useState([])
   const [isAddingService, setIsAddingService] = useState(false)
@@ -59,11 +63,35 @@ function WorkloadManager({ user }) {
     return parts.join(', ')
   }
 
+  const parsePreferredDays = (preferredDaysString) => {
+    if (!preferredDaysString) return {}
+    const days = preferredDaysString.split(',').map(d => d.trim())
+    const parsed = {}
+    daysOfWeek.forEach(day => {
+      parsed[day] = days.includes(day)
+    })
+    return parsed
+  }
+
+  const formatPreferredDays = (daysObject) => {
+    const selected = daysOfWeek.filter(day => daysObject[day])
+    return selected.length > 0 ? selected.join(', ') : ''
+  }
+
   const getAdditionalServices = (customer) => {
     if (!customer.NextServices) return ''
     const services = customer.NextServices.split(',').map(s => s.trim())
     const additionalServices = services.filter(s => s !== 'Windows')
     return additionalServices.length > 0 ? ` (Inc ${additionalServices.join(', ')})` : ''
+  }
+
+  const isDayMatchingPreferredDays = (selectedDate, preferredDaysString) => {
+    if (!selectedDate || !preferredDaysString) return true
+    const date = new Date(selectedDate)
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    const currentDayName = dayNames[date.getDay()]
+    const preferredDays = preferredDaysString.split(',').map(d => d.trim())
+    return preferredDays.includes(currentDayName)
   }
 
   useEffect(() => {
@@ -1125,6 +1153,8 @@ function WorkloadManager({ user }) {
           NextClean: modalEditData.NextClean,
           Outstanding: modalEditData.Outstanding,
           Route: modalEditData.Route,
+          VAT: modalEditData.VAT,
+          PrefferedDays: formatPreferredDays(preferredDaysSelected),
           Notes: modalEditData.Notes
         })
         .eq('id', selectedCustomer.id)
@@ -1132,7 +1162,7 @@ function WorkloadManager({ user }) {
       if (error) throw error
       
       // Update the selectedCustomer immediately to show changes
-      setSelectedCustomer(modalEditData)
+      setSelectedCustomer({...modalEditData, PrefferedDays: formatPreferredDays(preferredDaysSelected)})
       
       // Update orderedCustomers to reflect changes in the calendar
       setOrderedCustomers(prev => 
@@ -1693,11 +1723,6 @@ function WorkloadManager({ user }) {
 
           {selectedDate && (
             <div className="selected-day-customers">
-              <h3>
-                Jobs for {monthNames[currentDate.getMonth()]} {selectedDate}, {currentDate.getFullYear()}
-              </h3>
-          <p className="income-total">Income: {formatCurrency(totalIncome, user.SettingsCountry || 'United Kingdom')}</p>
-
           {selectedDayQuotes.length > 0 && (
             <div className="quotes-list-card">
               <h4>Quotes for this day ({selectedDayQuotes.length})</h4>
@@ -1730,65 +1755,142 @@ function WorkloadManager({ user }) {
           )}
 
           {selectedDayJobs.length > 0 && (
-            <div className="select-by-route-section">
-              <label className="select-by-route-label">Select by Route:</label>
-              <div className="route-buttons">
-                {[...new Set((orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs)
-                  .map(c => c.Route)
-                  .filter(r => r))].sort().map((route) => (
-                  <button
-                    key={route}
-                    className={`route-button ${selectedRoutes.includes(route) ? 'active' : ''}`}
-                    onClick={() => handleSelectByRoute(route)}
-                  >
-                    {route}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {selectedDayJobs.length > 0 && (
-            <div className="message-all-section">
-              <div className="message-all-container">
-                <label className="message-all-label" htmlFor="messageAll">Message to {hasSelectedCustomers ? 'Selected' : 'All'}:</label>
-                <select
-                  id="messageAll"
-                  value={selectedLetterAll || ''}
-                  onChange={(e) => handleSelectLetterAll(e.target.value)}
-                  disabled={!messages.length}
-                >
-                  {!messages.length && <option value="">No letters available</option>}
-                  {messages.length > 0 && <option value="">Select letter</option>}
-                  {messages.map((msg) => (
-                    <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
-                  ))}
-                </select>
-              </div>
+            <>
+              <button 
+                className="mobile-menu-btn"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                title="Toggle menu"
+              >
+                Menu
+              </button>
               
-              <div className="bulk-move-container">
-                <span className="bulk-move-label">Move {hasSelectedCustomers ? 'selected' : 'all'} jobs:</span>
-                <div className="bulk-date-picker-wrapper">
-                  <button 
-                    onClick={() => setBulkDatePickerOpen(!bulkDatePickerOpen)}
-                    className="calendar-icon-btn"
-                    title="Pick a date"
-                  >
-                    📅
-                  </button>
-                  {bulkDatePickerOpen && (
-                    <input
-                      type="date"
-                      value={new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate).toISOString().split('T')[0]}
-                      onChange={(e) => handleBulkMoveToDate(e.target.value)}
-                      className="date-picker-input"
-                      autoFocus
-                    />
-                  )}
+              {mobileMenuOpen && (
+                <div className="mobile-menu-content active">
+                  <div className="select-by-route-section">
+                    <label className="select-by-route-label">Select by Route:</label>
+                    <div className="route-buttons">
+                      {[...new Set((orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs)
+                        .map(c => c.Route)
+                        .filter(r => r))].sort().map((route) => (
+                        <button
+                          key={route}
+                          className={`route-button ${selectedRoutes.includes(route) ? 'active' : ''}`}
+                          onClick={() => handleSelectByRoute(route)}
+                        >
+                          {route}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="message-all-section">
+                    <div className="message-all-container">
+                      <label className="message-all-label" htmlFor="messageAll">Message to {hasSelectedCustomers ? 'Selected' : 'All'}:</label>
+                      <select
+                        id="messageAll"
+                        value={selectedLetterAll || ''}
+                        onChange={(e) => handleSelectLetterAll(e.target.value)}
+                        disabled={!messages.length}
+                      >
+                        {!messages.length && <option value="">No letters available</option>}
+                        {messages.length > 0 && <option value="">Select letter</option>}
+                        {messages.map((msg) => (
+                          <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div className="bulk-move-container">
+                      <span className="bulk-move-label">Move {hasSelectedCustomers ? 'selected' : 'all'} jobs:</span>
+                      <div className="bulk-date-picker-wrapper">
+                        <button 
+                          onClick={() => setBulkDatePickerOpen(!bulkDatePickerOpen)}
+                          className="calendar-icon-btn"
+                          title="Pick a date"
+                        >
+                          📅
+                        </button>
+                        {bulkDatePickerOpen && (
+                          <input
+                            type="date"
+                            value={new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate).toISOString().split('T')[0]}
+                            onChange={(e) => handleBulkMoveToDate(e.target.value)}
+                            className="date-picker-input"
+                            autoFocus
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="desktop-only-sections">
+                <div className="select-by-route-section">
+                  <label className="select-by-route-label">Select by Route:</label>
+                  <div className="route-buttons">
+                    {[...new Set((orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs)
+                      .map(c => c.Route)
+                      .filter(r => r))].sort().map((route) => (
+                      <button
+                        key={route}
+                        className={`route-button ${selectedRoutes.includes(route) ? 'active' : ''}`}
+                        onClick={() => handleSelectByRoute(route)}
+                      >
+                        {route}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="message-all-section">
+                  <div className="message-all-container">
+                    <label className="message-all-label" htmlFor="messageAll">Message to {hasSelectedCustomers ? 'Selected' : 'All'}:</label>
+                    <select
+                      id="messageAll"
+                      value={selectedLetterAll || ''}
+                      onChange={(e) => handleSelectLetterAll(e.target.value)}
+                      disabled={!messages.length}
+                    >
+                      {!messages.length && <option value="">No letters available</option>}
+                      {messages.length > 0 && <option value="">Select letter</option>}
+                      {messages.map((msg) => (
+                        <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div className="bulk-move-container">
+                    <span className="bulk-move-label">Move {hasSelectedCustomers ? 'selected' : 'all'} jobs:</span>
+                    <div className="bulk-date-picker-wrapper">
+                      <button 
+                        onClick={() => setBulkDatePickerOpen(!bulkDatePickerOpen)}
+                        className="calendar-icon-btn"
+                        title="Pick a date"
+                      >
+                        📅
+                      </button>
+                      {bulkDatePickerOpen && (
+                        <input
+                          type="date"
+                          value={new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate).toISOString().split('T')[0]}
+                          onChange={(e) => handleBulkMoveToDate(e.target.value)}
+                          className="date-picker-input"
+                          autoFocus
+                        />
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            </>
           )}
+          
+          <h3>
+            Jobs for {monthNames[currentDate.getMonth()]} {selectedDate}, {currentDate.getFullYear()}
+          </h3>
+          <p className="income-total">Income: {formatCurrency(totalIncome, user.SettingsCountry || 'United Kingdom')}</p>
+
           {selectedDayJobs.length === 0 ? (
             <p className="empty-state">No jobs scheduled for this day.</p>
           ) : (
@@ -1836,6 +1938,9 @@ function WorkloadManager({ user }) {
                       setSelectedCustomer(customer)
                       setShowCustomerModal(true)
                     }}>
+                      {!isDayMatchingPreferredDays(new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate), customer.PrefferedDays) && customer.PrefferedDays && (
+                        <div style={{ color: '#e74c3c', fontWeight: '600', fontSize: '0.9rem', marginBottom: '0.25rem' }}>Preferred Days: {customer.PrefferedDays}</div>
+                      )}
                       <div className="customer-address-main">{getFullAddress(customer)}</div>
                       <div className="customer-name-sub">{customer.CustomerName}</div>
                       <span className="route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
@@ -2104,7 +2209,7 @@ function WorkloadManager({ user }) {
                 </>
               ) : (
                 <>
-                  {!showServices && !showHistory && <button className="modal-edit-btn" onClick={() => { setIsEditingModal(true); setModalEditData({...selectedCustomer}); }}>Edit</button>}
+                  {!showServices && !showHistory && <button className="modal-edit-btn" onClick={() => { setIsEditingModal(true); setModalEditData({...selectedCustomer}); setPreferredDaysSelected(parsePreferredDays(selectedCustomer.PrefferedDays)); }}>Edit</button>}
                   <button className="modal-services-btn" onClick={() => { setShowServices(!showServices); setShowHistory(false); if (!showServices) fetchCustomerServices(selectedCustomer.id); }}>{showServices ? 'Customer Details' : 'Services'}</button>
                   <button className="modal-history-btn" onClick={() => { setShowHistory(!showHistory); setShowServices(false); if (!showHistory) fetchCustomerHistory(selectedCustomer.id); }}>{showHistory ? 'Customer Details' : 'History'}</button>
                 </>
@@ -2131,9 +2236,25 @@ function WorkloadManager({ user }) {
                     <div className="inline-field"><strong>Weeks:</strong> <input type="number" value={modalEditData.Weeks} onChange={(e) => setModalEditData({...modalEditData, Weeks: e.target.value})} className="modal-input" /></div>
                   </div>
                   <div><strong>Next Clean:</strong> <input type="date" value={modalEditData.NextClean} onChange={(e) => setModalEditData({...modalEditData, NextClean: e.target.value})} className="modal-input" /></div>
-                  <div><strong>Outstanding:</strong> <input type="number" value={modalEditData.Outstanding} onChange={(e) => setModalEditData({...modalEditData, Outstanding: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Outstanding:</strong> {formatCurrency(selectedCustomer.Outstanding, user.SettingsCountry || 'United Kingdom')}</div>
                   <div><strong>VAT Registered:</strong> <input type="checkbox" checked={modalEditData.VAT || false} onChange={(e) => setModalEditData({...modalEditData, VAT: e.target.checked})} /></div>
-                  <div className="full-width"><strong>Notes:</strong> <textarea value={modalEditData.Notes} onChange={(e) => setModalEditData({...modalEditData, Notes: e.target.value})} className="modal-input" rows="2" /></div>
+                  <div className="full-width">
+                    <strong>Preferred Days:</strong>
+                    <div className="days-checkboxes">
+                      {daysOfWeek.map((day, index) => (
+                        <label key={day} style={{ marginRight: '1rem', display: 'inline-flex', alignItems: 'center' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={preferredDaysSelected[day] || false}
+                            onChange={(e) => setPreferredDaysSelected({...preferredDaysSelected, [day]: e.target.checked})}
+                            style={{ marginRight: '0.5rem', cursor: 'pointer' }}
+                          />
+                          {dayShortcuts[index]}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="full-width"><strong>Notes:</strong> <textarea value={modalEditData.Notes} onChange={(e) => { setModalEditData({...modalEditData, Notes: e.target.value}); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'; }} className="modal-input" style={{ minHeight: '40px', maxHeight: '200px', overflow: 'hidden', resize: 'none' }} /></div>
                 </div>
               ) : (
                 <>
@@ -2148,7 +2269,8 @@ function WorkloadManager({ user }) {
                   <div><strong>Outstanding:</strong> {formatCurrency(selectedCustomer.Outstanding, user.SettingsCountry || 'United Kingdom')}</div>
                   <div><strong>Route:</strong> {selectedCustomer.Route || '—'}</div>
                   <div><strong>VAT Registered:</strong> {selectedCustomer.VAT ? 'Yes' : 'No'}</div>
-                  <div className="notes-cell"><strong>Notes:</strong> {selectedCustomer.Notes || '—'}</div>
+                  <div className="full-width"><strong>Preferred Days:</strong> {selectedCustomer.PrefferedDays || '—'}</div>
+                  <div className="full-width"><strong>Notes:</strong> <div className="notes-display">{selectedCustomer.Notes || '—'}</div></div>
                 </div>
                 <button 
                   className="cancel-service-btn"

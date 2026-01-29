@@ -439,6 +439,11 @@
    grid-template-columns: 1fr 1fr;
    gap: 0.75rem 1rem;
  }
+
+ .details-grid .full-width {
+   grid-column: 1 / -1;
+ }
+
  @media (max-width: 480px) {
    .details-grid { grid-template-columns: 1fr; }
  }
@@ -498,11 +503,12 @@
    }
  }
 
-.notes-cell {
-  max-width: 150px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.notes-display {
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 0.5rem;
+  line-height: 1.4;
 }
 
 .outstanding {
