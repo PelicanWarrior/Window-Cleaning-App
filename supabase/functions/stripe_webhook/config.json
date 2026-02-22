@@ -1,0 +1,6 @@
+{
+  "verify_jwt": false,
+  "auth": {
+    "enabled": false
+  }
+}

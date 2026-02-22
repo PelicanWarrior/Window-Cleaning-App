@@ -194,6 +194,142 @@
   margin: 8px 0;
 }
 
+.account-level-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.account-level-plans {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.account-level-title {
+  margin: 0 0 8px 0;
+  font-size: 1.05rem;
+  color: #1f2937;
+}
+
+.account-level-error {
+  margin: 8px 0 0 0;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.account-level-status {
+  margin: 8px 0 0 0;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.plan-card {
+  border: 1px solid #dbe3ea;
+  border-radius: 10px;
+  background: #fff;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+}
+
+.plan-card.current {
+  border-color: #2563eb;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2);
+}
+
+.plan-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.plan-header h5 {
+  margin: 0;
+  font-size: 1rem;
+  color: #1f2937;
+}
+
+.plan-price {
+  font-weight: 700;
+  color: #2563eb;
+}
+
+.plan-card ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  color: #475569;
+  font-size: 0.95rem;
+}
+
+.plan-card li {
+  margin-bottom: 4px;
+}
+
+.plan-select-btn {
+  align-self: flex-start;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.plan-select-btn:disabled {
+  background: #cbd5f5;
+  cursor: not-allowed;
+}
+
+.plan-note {
+  margin: 12px 0 0 0;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.plan-portal-btn {
+  margin-top: 12px;
+  background: #0f172a;
+  color: #fff;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.plan-portal-btn:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.plan-test-btn {
+  margin-top: 8px;
+  background: #e2e8f0;
+  color: #1f2937;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.plan-test-btn:hover {
+  background: #cbd5f5;
+}
+
 .route-weeks-input-row {
   display: flex;
   align-items: center;

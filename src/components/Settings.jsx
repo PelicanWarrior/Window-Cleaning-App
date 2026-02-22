@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { formatCurrency } from '../lib/format'
 import './Settings.css'
 
 const COUNTRY_OPTIONS = [
@@ -15,8 +16,30 @@ const COUNTRY_OPTIONS = [
   'New Zealand'
 ]
 
-function Settings({ user, onClose, onSaved }) {
-  const [activeTab, setActiveTab] = useState('userSettings')
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+async function getFunctionErrorMessage(error, fallback) {
+  if (error?.context) {
+    try {
+      const json = await error.context.json()
+      if (json?.error) return json.error
+      if (json?.message) return json.message
+      return JSON.stringify(json)
+    } catch {
+      try {
+        const text = await error.context.text()
+        if (text) return text
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return error?.message || fallback
+}
+
+function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
+  const [activeTab, setActiveTab] = useState(initialTab)
   const [password, setPassword] = useState('')
   const [companyName, setCompanyName] = useState(user.CompanyName || '')
   const [address1, setAddress1] = useState(user['Address 1'] || '')
@@ -36,6 +59,18 @@ function Settings({ user, onClose, onSaved }) {
   const [accountLevelCustomers, setAccountLevelCustomers] = useState(null)
   const [accountLevelRoundAmount, setAccountLevelRoundAmount] = useState(null)
   const [loadingAccountLevel, setLoadingAccountLevel] = useState(false)
+  const [userLevels, setUserLevels] = useState([])
+  const [loadingUserLevels, setLoadingUserLevels] = useState(false)
+  const [checkoutLoading, setCheckoutLoading] = useState(null)
+  const [checkoutError, setCheckoutError] = useState('')
+  const [portalLoading, setPortalLoading] = useState(false)
+  const [portalError, setPortalError] = useState('')
+  const [connectionStatus, setConnectionStatus] = useState('')
+  const [currentAccountLevelId, setCurrentAccountLevelId] = useState(user.AccountLevel || null)
+
+  useEffect(() => {
+    setActiveTab(initialTab)
+  }, [initialTab])
 
   useEffect(() => {
     setCompanyName(user.CompanyName || '')
@@ -46,7 +81,13 @@ function Settings({ user, onClose, onSaved }) {
     setCountry(user.SettingsCountry || 'United Kingdom')
     setRouteWeeks(user.RouteWeeks || '')
     setVatRegistered(user.VAT || false)
-  }, [user])
+    setCurrentAccountLevelId(user.AccountLevel || null)
+    
+    // Re-fetch account level when user changes (e.g., after payment)
+    if (activeTab === 'accountLevel') {
+      fetchAccountLevel()
+    }
+  }, [user, activeTab])
 
   useEffect(() => {
     if (activeTab === 'myRound') {
@@ -54,6 +95,7 @@ function Settings({ user, onClose, onSaved }) {
     } else if (activeTab === 'accountLevel') {
       fetchAccountLevel()
       fetchCustomerCount()
+      fetchUserLevels()
     }
   }, [activeTab])
 
@@ -150,6 +192,131 @@ function Settings({ user, onClose, onSaved }) {
       setAccountLevelName('Error loading level')
     } finally {
       setLoadingAccountLevel(false)
+    }
+  }
+
+  async function fetchUserLevels() {
+    setLoadingUserLevels(true)
+    try {
+      const { data, error } = await supabase
+        .from('UserLevel')
+        .select('id, LevelName, MonthlyAmount, Customers, RoundAmount')
+        .in('LevelName', ['Bronze', 'Silver', 'Gold'])
+        .order('id', { ascending: true })
+
+      if (error) throw error
+      setUserLevels(data || [])
+    } catch (err) {
+      console.error('Error fetching user levels:', err)
+      setUserLevels([])
+    } finally {
+      setLoadingUserLevels(false)
+    }
+  }
+
+  const handleSelectLevel = async (level) => {
+    setCheckoutError('')
+    setPortalError('')
+    setConnectionStatus('')
+
+    if (!level || level.id === currentAccountLevelId) return
+
+    const monthlyAmount = parseFloat(level.MonthlyAmount) || 0
+    if (monthlyAmount <= 0) {
+      const proceed = confirm('Switch to the free plan? If you have an active subscription, cancel it in Stripe first.')
+      if (!proceed) return
+
+      try {
+        const { error } = await supabase
+          .from('Users')
+          .update({ AccountLevel: level.id })
+          .eq('id', user.id)
+
+        if (error) throw error
+
+        setCurrentAccountLevelId(level.id)
+        onSaved({ AccountLevel: level.id })
+        fetchAccountLevel()
+      } catch (err) {
+        setCheckoutError(err.message || 'Failed to update account level')
+      }
+      return
+    }
+
+    try {
+      setCheckoutLoading(level.id)
+      if (!user?.id) {
+        throw new Error('Missing user id')
+      }
+
+      const { data, error } = await supabase.functions.invoke('create_checkout_session', {
+        body: {
+          userId: user.id,
+          accountLevelId: level.id,
+          userEmail: user.email_address || user.email || null,
+          userName: user.UserName || null,
+          debug: user?.AccountLevel === 4
+        },
+        headers: SUPABASE_ANON_KEY ? { Authorization: `Bearer ${SUPABASE_ANON_KEY}` } : undefined
+      })
+
+      if (error) {
+        const message = await getFunctionErrorMessage(error, 'Unable to start checkout')
+        throw new Error(message)
+      }
+
+      if (!data?.url) {
+        throw new Error('Stripe checkout session did not return a URL')
+      }
+
+      window.location.assign(data.url)
+    } catch (err) {
+      setCheckoutError(err.message || 'Unable to start checkout')
+    } finally {
+      setCheckoutLoading(null)
+    }
+  }
+
+  const handleManageBilling = async () => {
+    setPortalError('')
+    setConnectionStatus('')
+    try {
+      setPortalLoading(true)
+      const { data, error } = await supabase.functions.invoke('create_portal_session', {
+        body: { userId: user.id },
+        headers: SUPABASE_ANON_KEY ? { Authorization: `Bearer ${SUPABASE_ANON_KEY}` } : undefined
+      })
+
+      if (error) {
+        const message = await getFunctionErrorMessage(error, 'Unable to open billing portal')
+        throw new Error(message)
+      }
+      if (!data?.url) throw new Error('No billing portal URL returned')
+
+      window.location.assign(data.url)
+    } catch (err) {
+      setPortalError(err.message || 'Unable to open billing portal')
+    } finally {
+      setPortalLoading(false)
+    }
+  }
+
+  const handleTestConnection = async () => {
+    setConnectionStatus('')
+    setCheckoutError('')
+    setPortalError('')
+    try {
+      const { data, error } = await supabase.functions.invoke('health_check', {
+        headers: SUPABASE_ANON_KEY ? { Authorization: `Bearer ${SUPABASE_ANON_KEY}` } : undefined
+      })
+      if (error) {
+        const message = await getFunctionErrorMessage(error, 'Billing connection failed')
+        throw new Error(message)
+      }
+      if (!data?.ok) throw new Error('Health check did not return ok')
+      setConnectionStatus('Billing connection OK')
+    } catch (err) {
+      setConnectionStatus(err.message || 'Billing connection failed')
     }
   }
 
@@ -400,6 +567,66 @@ function Settings({ user, onClose, onSaved }) {
         {activeTab === 'accountLevel' && (
           <>
             <div className="account-level-content">
+              <div className="account-level-plans">
+                <h4 className="account-level-title">Choose Your Plan</h4>
+                {checkoutError && <p className="account-level-error">{checkoutError}</p>}
+                {portalError && <p className="account-level-error">{portalError}</p>}
+                {connectionStatus && <p className="account-level-status">{connectionStatus}</p>}
+                {loadingUserLevels ? (
+                  <p>Loading plans...</p>
+                ) : (
+                  <div className="plan-grid">
+                    {userLevels.map((level) => {
+                      const monthlyAmount = parseFloat(level.MonthlyAmount) || 0
+                      const isCurrent = level.id === currentAccountLevelId
+                      const isUnlimitedCustomers = String(level.Customers).match(/^9+$/)
+                      const isUnlimitedRound = String(level.RoundAmount).match(/^9+$/)
+                      return (
+                        <div key={level.id} className={`plan-card ${isCurrent ? 'current' : ''}`}>
+                          <div className="plan-header">
+                            <h5>{level.LevelName}</h5>
+                            <span className="plan-price">
+                              {monthlyAmount <= 0 ? 'Free' : `${formatCurrency(monthlyAmount, country)}/month`}
+                            </span>
+                          </div>
+                          <ul>
+                            <li>
+                              Customers: {isUnlimitedCustomers ? 'Unlimited' : level.Customers}
+                            </li>
+                            <li>
+                              Monthly round: {isUnlimitedRound ? 'Unlimited' : formatCurrency(level.RoundAmount, country)}
+                            </li>
+                          </ul>
+                          <button
+                            className="plan-select-btn"
+                            disabled={checkoutLoading === level.id || isCurrent}
+                            onClick={() => handleSelectLevel(level)}
+                          >
+                            {isCurrent ? 'Current Plan' : checkoutLoading === level.id ? 'Redirecting...' : 'Select Plan'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                <p className="plan-note">
+                  Paid plans are billed monthly via Stripe. You will be redirected to secure checkout.
+                </p>
+                {user?.admin && (
+                  <button className="plan-test-btn" onClick={handleTestConnection}>
+                    Test billing connection
+                  </button>
+                )}
+                {user?.StripeCustomerId && (
+                  <button
+                    className="plan-portal-btn"
+                    onClick={handleManageBilling}
+                    disabled={portalLoading}
+                  >
+                    {portalLoading ? 'Opening billing...' : 'Manage billing'}
+                  </button>
+                )}
+              </div>
               {loadingAccountLevel ? (
                 <p>Loading...</p>
               ) : (
