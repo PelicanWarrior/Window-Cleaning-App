@@ -5,6 +5,7 @@ import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/f
 import InvoiceModal from './InvoiceModal'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import axios from 'axios'
+import Tesseract from 'tesseract.js'
 
 function WorkloadManager({ user }) {
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -52,6 +53,19 @@ function WorkloadManager({ user }) {
   const [selectedRoutes, setSelectedRoutes] = useState([])
   const [calendarView, setCalendarView] = useState('Monthly')
   const [weeklyWeather, setWeeklyWeather] = useState({})
+  const isAdmin = Boolean(user?.admin)
+  const [personalCalendarItems, setPersonalCalendarItems] = useState([])
+  const [showPersonalItemModal, setShowPersonalItemModal] = useState(false)
+  const [savingPersonalItem, setSavingPersonalItem] = useState(false)
+  const [personalItemForm, setPersonalItemForm] = useState({ Date: '', Item: '', Description: '' })
+  const [showPersonalImportModal, setShowPersonalImportModal] = useState(false)
+  const [processingPersonalImport, setProcessingPersonalImport] = useState(false)
+  const [importPersonalItemsPreview, setImportPersonalItemsPreview] = useState([])
+  const [importPersonalItemsAll, setImportPersonalItemsAll] = useState([])
+  const [importPersonalFileName, setImportPersonalFileName] = useState('')
+  const [importPersonalError, setImportPersonalError] = useState('')
+  const [importPersonalDuplicateCount, setImportPersonalDuplicateCount] = useState(0)
+  const [importPersonalAssumedYearCount, setImportPersonalAssumedYearCount] = useState(0)
 
   const getFullAddress = (customer) => {
     const parts = [
@@ -94,9 +108,477 @@ function WorkloadManager({ user }) {
     return preferredDays.includes(currentDayName)
   }
 
+  const toLocalDateKey = (dateObj) => {
+    if (!(dateObj instanceof Date)) return ''
+    const year = dateObj.getFullYear()
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0')
+    const day = String(dateObj.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const normalizeDateKey = (value) => {
+    if (!value && value !== 0) return ''
+    if (value instanceof Date) return toLocalDateKey(value)
+    if (typeof value === 'number') {
+      return toLocalDateKey(new Date(currentDate.getFullYear(), currentDate.getMonth(), value))
+    }
+    if (typeof value === 'string') {
+      return value.includes('T') ? value.split('T')[0] : value
+    }
+    return ''
+  }
+
+  const getPersonalItemsForDate = (dayOrDate) => {
+    if (!isAdmin || !personalCalendarItems.length) return []
+    const dateKey = normalizeDateKey(dayOrDate)
+    return personalCalendarItems.filter((item) => normalizeDateKey(item.Date) === dateKey)
+  }
+
+  const getSelectedCalendarDateString = () => {
+    if (selectedDate) {
+      return toLocalDateKey(new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate))
+    }
+    return toLocalDateKey(currentDate)
+  }
+
+  const openPersonalItemModal = () => {
+    if (!isAdmin) return
+    setPersonalItemForm({
+      Date: getSelectedCalendarDateString(),
+      Item: '',
+      Description: ''
+    })
+    setShowPersonalItemModal(true)
+  }
+
+  const closePersonalItemModal = () => {
+    setShowPersonalItemModal(false)
+    setSavingPersonalItem(false)
+    setPersonalItemForm({ Date: '', Item: '', Description: '' })
+  }
+
+  const openPersonalImportModal = () => {
+    if (!isAdmin) return
+    setShowPersonalImportModal(true)
+    setImportPersonalItemsPreview([])
+    setImportPersonalItemsAll([])
+    setImportPersonalFileName('')
+    setImportPersonalError('')
+    setImportPersonalDuplicateCount(0)
+    setImportPersonalAssumedYearCount(0)
+    setProcessingPersonalImport(false)
+  }
+
+  const closePersonalImportModal = () => {
+    setShowPersonalImportModal(false)
+    setImportPersonalItemsPreview([])
+    setImportPersonalItemsAll([])
+    setImportPersonalFileName('')
+    setImportPersonalError('')
+    setImportPersonalDuplicateCount(0)
+    setImportPersonalAssumedYearCount(0)
+    setProcessingPersonalImport(false)
+  }
+
+  const cleanPersonalItemLabel = (label) => {
+    return (label || '')
+      .replace(/\b\d{4}\b/g, '')
+      .replace(/\bdays?\b/gi, '')
+      .replace(/\bdates?\b/gi, '')
+      .replace(/[()]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/[:\-–]+$/g, '')
+      .trim()
+  }
+
+  const parseHumanDate = (rawDate, fallbackYear = new Date().getFullYear()) => {
+    if (!rawDate) return null
+
+    const value = String(rawDate).trim()
+    if (!value) return null
+
+    const iso = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+    if (iso) {
+      return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]))
+    }
+
+    const slash = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
+    if (slash) {
+      const year = slash[3].length === 2 ? Number(`20${slash[3]}`) : Number(slash[3])
+      return new Date(year, Number(slash[2]) - 1, Number(slash[1]))
+    }
+
+    const slashNoYear = value.match(/^(\d{1,2})\/(\d{1,2})$/)
+    if (slashNoYear) {
+      return new Date(Number(fallbackYear), Number(slashNoYear[2]) - 1, Number(slashNoYear[1]))
+    }
+
+    const normalized = value
+      .replace(/,/g, ' ')
+      .replace(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/ig, '')
+      .replace(/(\d{1,2})(st|nd|rd|th)\b/ig, '$1')
+      .replace(/(\d)([A-Za-z])/g, '$1 $2')
+      .replace(/([A-Za-z])(\d)/g, '$1 $2')
+      .replace(/sep\s*tember|sept\s*ember/ig, 'september')
+      .replace(/oct\s*ober/ig, 'october')
+      .replace(/nov\s*ember/ig, 'november')
+      .replace(/dec\s*ember/ig, 'december')
+      .replace(/jan\s*uary/ig, 'january')
+      .replace(/feb\s*ruary/ig, 'february')
+      .replace(/mar\s*ch/ig, 'march')
+      .replace(/apr\s*il/ig, 'april')
+      .replace(/ju\s*ne/ig, 'june')
+      .replace(/ju\s*ly/ig, 'july')
+      .replace(/aug\s*ust/ig, 'august')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    const textMatch = normalized.match(/(\d{1,2})\s+([A-Za-z]+)(?:\s+(\d{4}))?$/)
+    if (!textMatch) return null
+
+    const monthLookup = {
+      january: 0, jan: 0,
+      february: 1, feb: 1,
+      march: 2, mar: 2,
+      april: 3, apr: 3,
+      may: 4,
+      june: 5, jun: 5,
+      july: 6, jul: 6,
+      august: 7, aug: 7,
+      september: 8, sept: 8, sep: 8,
+      october: 9, oct: 9,
+      november: 10, nov: 10,
+      december: 11, dec: 11
+    }
+
+    const day = Number(textMatch[1])
+    const month = monthLookup[textMatch[2].toLowerCase()]
+    const year = textMatch[3] ? Number(textMatch[3]) : Number(fallbackYear)
+
+    if (month === undefined || Number.isNaN(day) || Number.isNaN(year)) return null
+    return new Date(year, month, day)
+  }
+
+  const listDatesInRange = (startDate, endDate) => {
+    if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return []
+    if (!(endDate instanceof Date) || Number.isNaN(endDate.getTime())) return []
+    if (endDate < startDate) return []
+
+    const days = []
+    const cursor = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
+    while (cursor <= endDate) {
+      days.push(new Date(cursor))
+      cursor.setDate(cursor.getDate() + 1)
+    }
+    return days
+  }
+
+  const buildPersonalImportEntry = (dateObj, item, description = '') => {
+    const dateValue = normalizeDateKey(dateObj)
+    const itemValue = cleanPersonalItemLabel(item)
+    if (!dateValue || !itemValue) return null
+
+    return {
+      Date: dateValue,
+      Item: itemValue,
+      Description: (description || '').trim()
+    }
+  }
+
+  const dedupePersonalImportEntries = (entries) => {
+    const seen = new Set()
+    const deduped = []
+
+    entries.forEach((entry) => {
+      if (!entry?.Date || !entry?.Item) return
+      const key = `${entry.Date}|${entry.Item.toLowerCase()}`
+      if (seen.has(key)) return
+      seen.add(key)
+      deduped.push(entry)
+    })
+
+    return deduped
+  }
+
+  const extractPersonalItemsFromText = (rawText) => {
+    if (!rawText) return []
+
+    const lines = String(rawText)
+      .split(/\r?\n/)
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+
+    const entries = []
+    let currentHeading = ''
+    let currentYear = currentDate.getFullYear()
+
+    const headingRegex = /(.+?\bterm)\s+dates?\s+(\d{4})/i
+    const rangeRegex = /((?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+)?\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+(?:\s+\d{4})?)\s*(?:to|\-|–|—)\s*((?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+)?\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+(?:\s+\d{4})?)(.*)$/i
+    const singleRegex = /((?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+)?\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+(?:\s+\d{4})?)(.*)$/i
+
+    lines.forEach((rawLine) => {
+      let line = rawLine
+        .replace(/\|/g, ' ')
+        .replace(/\(\s*\d+\s*days?\s*\)/ig, '')
+        .replace(/(\d)([A-Za-z])/g, '$1 $2')
+        .replace(/([A-Za-z])(\d)/g, '$1 $2')
+        .trim()
+
+      if (!line) return
+
+      const headingMatch = line.match(headingRegex)
+      if (headingMatch) {
+        currentHeading = cleanPersonalItemLabel(headingMatch[1])
+        currentYear = Number(headingMatch[2])
+        line = line.replace(headingMatch[0], '').trim()
+        if (!line) return
+      }
+
+      if (!/\d/.test(line)) return
+
+      let label = ''
+      let dateText = line
+
+      if (line.includes(':')) {
+        const [left, ...rest] = line.split(':')
+        label = cleanPersonalItemLabel(left)
+        dateText = rest.join(':').trim()
+      }
+
+      const rangeMatch = dateText.match(rangeRegex)
+      if (rangeMatch) {
+        const startFragment = rangeMatch[1]
+        const endFragment = rangeMatch[2]
+        const trailingLabel = cleanPersonalItemLabel(rangeMatch[3])
+
+        const endDate = parseHumanDate(endFragment, currentYear)
+        const startDate = parseHumanDate(startFragment, endDate ? endDate.getFullYear() : currentYear)
+        if (!startDate || !endDate) return
+
+        const itemLabel = label || trailingLabel || currentHeading || 'Personal Item'
+        listDatesInRange(startDate, endDate).forEach((dateObj) => {
+          const entry = buildPersonalImportEntry(dateObj, itemLabel, rawLine)
+          if (entry) entries.push(entry)
+        })
+        return
+      }
+
+      const singleMatch = dateText.match(singleRegex)
+      if (!singleMatch) return
+
+      const singleDate = parseHumanDate(singleMatch[1], currentYear)
+      if (!singleDate) return
+
+      const trailingLabel = cleanPersonalItemLabel(singleMatch[2])
+      const itemLabel = label || trailingLabel || currentHeading || 'Personal Item'
+      const entry = buildPersonalImportEntry(singleDate, itemLabel, rawLine)
+      if (entry) entries.push(entry)
+    })
+
+    return dedupePersonalImportEntries(entries)
+  }
+
+  const parseCsvLine = (line, delimiter) => {
+    const result = []
+    let current = ''
+    let inQuotes = false
+
+    for (let index = 0; index < line.length; index += 1) {
+      const char = line[index]
+      const nextChar = line[index + 1]
+
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          current += '"'
+          index += 1
+        } else {
+          inQuotes = !inQuotes
+        }
+      } else if (char === delimiter && !inQuotes) {
+        result.push(current.trim())
+        current = ''
+      } else {
+        current += char
+      }
+    }
+
+    result.push(current.trim())
+    return result
+  }
+
+  const extractPersonalItemsFromCsv = (rawCsv) => {
+    if (!rawCsv) return { entries: [], assumedYearCount: 0 }
+
+    const lines = String(rawCsv)
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+
+    if (!lines.length) return { entries: [], assumedYearCount: 0 }
+
+    const delimiter = (lines[0].match(/;/g) || []).length > (lines[0].match(/,/g) || []).length ? ';' : ','
+    const rows = lines.map((line) => parseCsvLine(line, delimiter))
+
+    if (!rows.length) return { entries: [], assumedYearCount: 0 }
+
+    const firstRow = rows[0].map((cell) => cell.toLowerCase())
+    const hasHeader = firstRow.some((cell) => /date|item|header|title|description|start|end|from|to|term|event/.test(cell))
+
+    const entries = []
+    let assumedYearCount = 0
+
+    if (hasHeader) {
+      const header = rows[0].map((cell) => cell.toLowerCase().replace(/\s+/g, ''))
+      const dataRows = rows.slice(1)
+
+      dataRows.forEach((row) => {
+        const getValue = (...keys) => {
+          const idx = header.findIndex((column) => keys.includes(column))
+          return idx >= 0 ? (row[idx] || '').trim() : ''
+        }
+
+        const item = cleanPersonalItemLabel(getValue('item', 'header', 'title', 'name', 'term', 'event'))
+        const description = getValue('description', 'notes', 'note', 'details')
+        const dateValue = getValue('date', 'day')
+        const startValue = getValue('start', 'startdate', 'from')
+        const endValue = getValue('end', 'enddate', 'to')
+
+        if (/^\d{1,2}\/\d{1,2}$/.test(startValue)) assumedYearCount += 1
+        if (/^\d{1,2}\/\d{1,2}$/.test(endValue)) assumedYearCount += 1
+        if (/^\d{1,2}\/\d{1,2}$/.test(dateValue)) assumedYearCount += 1
+
+        if (startValue && endValue) {
+          const endDate = parseHumanDate(endValue, currentDate.getFullYear())
+          const startDate = parseHumanDate(startValue, endDate ? endDate.getFullYear() : currentDate.getFullYear())
+          if (!startDate || !endDate) return
+
+          listDatesInRange(startDate, endDate).forEach((dateObj) => {
+            const entry = buildPersonalImportEntry(dateObj, item || 'Personal Item', description)
+            if (entry) entries.push(entry)
+          })
+          return
+        }
+
+        if (dateValue) {
+          const dateObj = parseHumanDate(dateValue, currentDate.getFullYear())
+          if (!dateObj) return
+          const entry = buildPersonalImportEntry(dateObj, item || 'Personal Item', description)
+          if (entry) entries.push(entry)
+        }
+      })
+    } else {
+      const text = rows.map((row) => row.filter(Boolean).join(' ')).join('\n')
+      return { entries: extractPersonalItemsFromText(text), assumedYearCount: 0 }
+    }
+
+    return { entries: dedupePersonalImportEntries(entries), assumedYearCount }
+  }
+
+  const handlePersonalImportFileChange = async (event) => {
+    if (!isAdmin) return
+
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setImportPersonalError('')
+    setImportPersonalDuplicateCount(0)
+    setImportPersonalAssumedYearCount(0)
+    setImportPersonalFileName(file.name)
+    setProcessingPersonalImport(true)
+
+    try {
+      let parsedEntries = []
+      const lowerFileName = file.name.toLowerCase()
+
+      if (lowerFileName.endsWith('.csv') || file.type.includes('csv')) {
+        const csvText = await file.text()
+        const csvResult = extractPersonalItemsFromCsv(csvText)
+        parsedEntries = csvResult.entries
+        setImportPersonalAssumedYearCount(csvResult.assumedYearCount)
+      } else if (file.type.startsWith('image/')) {
+        const ocrResult = await Tesseract.recognize(file, 'eng')
+        parsedEntries = extractPersonalItemsFromText(ocrResult?.data?.text || '')
+      } else {
+        setImportPersonalError('Unsupported file type. Please upload an image or CSV file.')
+      }
+
+      const existingKeys = new Set(
+        personalCalendarItems.map((item) => `${normalizeDateKey(item.Date)}|${(item.Item || '').trim().toLowerCase()}`)
+      )
+
+      const filteredEntries = parsedEntries.filter(
+        (entry) => !existingKeys.has(`${entry.Date}|${(entry.Item || '').toLowerCase()}`)
+      )
+
+      const duplicateCount = parsedEntries.length - filteredEntries.length
+      setImportPersonalDuplicateCount(duplicateCount)
+
+      if (parsedEntries.length === 0) {
+        setImportPersonalError('No dates were detected. Try a clearer image or a CSV with date columns.')
+      } else if (filteredEntries.length === 0) {
+        setImportPersonalError('All detected items already exist (same date + header).')
+      }
+
+      setImportPersonalItemsAll(filteredEntries)
+      setImportPersonalItemsPreview(filteredEntries.slice(0, 25))
+    } catch (error) {
+      console.error('Error parsing personal import file:', error.message)
+      setImportPersonalError('Could not parse this file. Please check the format and try again.')
+      setImportPersonalDuplicateCount(0)
+      setImportPersonalAssumedYearCount(0)
+      setImportPersonalItemsAll([])
+      setImportPersonalItemsPreview([])
+    } finally {
+      setProcessingPersonalImport(false)
+      event.target.value = ''
+    }
+  }
+
+  const handleImportPersonalItems = async () => {
+    if (!isAdmin || importPersonalItemsAll.length === 0) return
+
+    try {
+      setProcessingPersonalImport(true)
+
+      const existingKeys = new Set(
+        personalCalendarItems.map((item) => `${normalizeDateKey(item.Date)}|${(item.Item || '').trim().toLowerCase()}`)
+      )
+
+      const rowsToInsert = importPersonalItemsAll
+        .filter((entry) => !existingKeys.has(`${entry.Date}|${entry.Item.toLowerCase()}`))
+        .map((entry) => ({
+          Date: entry.Date,
+          Item: entry.Item,
+          Description: entry.Description || null,
+          UserID: user.id
+        }))
+
+      if (rowsToInsert.length === 0) {
+        setImportPersonalError('All detected items already exist.')
+        setProcessingPersonalImport(false)
+        return
+      }
+
+      const chunkSize = 500
+      for (let index = 0; index < rowsToInsert.length; index += chunkSize) {
+        const chunk = rowsToInsert.slice(index, index + chunkSize)
+        const { error } = await supabase.from('Calender').insert(chunk)
+        if (error) throw error
+      }
+
+      await fetchPersonalCalendarItems()
+      closePersonalImportModal()
+    } catch (error) {
+      console.error('Error importing personal items:', error.message)
+      setImportPersonalError('Import failed while saving to Supabase. Please try again.')
+      setProcessingPersonalImport(false)
+    }
+  }
+
   useEffect(() => {
     fetchCustomers()
     fetchMessagesAndFooter()
+    fetchPersonalCalendarItems()
     fetchCalendarView()
     fetchCustomerPayLetter()
     fetchAndInitializeUserRouteOrder()
@@ -247,6 +729,81 @@ function WorkloadManager({ user }) {
       console.error('Error fetching customers:', error.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function fetchPersonalCalendarItems() {
+    if (!isAdmin || !user?.id) {
+      setPersonalCalendarItems([])
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('Calender')
+        .select('id, Date, Item, Description, UserID')
+        .eq('UserID', user.id)
+        .order('Date', { ascending: true })
+        .order('id', { ascending: true })
+
+      if (error) throw error
+      setPersonalCalendarItems(data || [])
+    } catch (error) {
+      console.error('Error fetching personal calender items:', error.message)
+      setPersonalCalendarItems([])
+    }
+  }
+
+  async function handleSavePersonalItem() {
+    if (!isAdmin) return
+
+    const itemTitle = (personalItemForm.Item || '').trim()
+    const itemDescription = (personalItemForm.Description || '').trim()
+
+    if (!personalItemForm.Date || !itemTitle) {
+      alert('Please add both a date and header for your personal item.')
+      return
+    }
+
+    try {
+      setSavingPersonalItem(true)
+
+      const { error } = await supabase
+        .from('Calender')
+        .insert({
+          Date: personalItemForm.Date,
+          Item: itemTitle,
+          Description: itemDescription || null,
+          UserID: user.id
+        })
+
+      if (error) throw error
+
+      await fetchPersonalCalendarItems()
+      closePersonalItemModal()
+    } catch (error) {
+      console.error('Error creating personal calender item:', error.message)
+      alert('Failed to save personal item. Please try again.')
+      setSavingPersonalItem(false)
+    }
+  }
+
+  async function handleDeletePersonalItem(itemId) {
+    if (!isAdmin || !itemId) return
+
+    try {
+      const { error } = await supabase
+        .from('Calender')
+        .delete()
+        .eq('id', itemId)
+        .eq('UserID', user.id)
+
+      if (error) throw error
+
+      setPersonalCalendarItems((prev) => prev.filter((item) => item.id !== itemId))
+    } catch (error) {
+      console.error('Error deleting personal calender item:', error.message)
+      alert('Failed to delete personal item. Please try again.')
     }
   }
 
@@ -1478,6 +2035,7 @@ function WorkloadManager({ user }) {
       const hasQuotes = hasQuotesOnDate(day)
       const hasAnyWork = hasJobs || hasQuotes
       const isSelected = selectedDate === day
+      const personalItemsForDay = getPersonalItemsForDate(day)
       
       days.push(
         <div
@@ -1486,6 +2044,22 @@ function WorkloadManager({ user }) {
           onClick={() => handleDayClick(day)}
         >
           <div className="day-number">{day}</div>
+          {isAdmin && personalItemsForDay.length > 0 && (
+            <div className="personal-headers-list">
+              {personalItemsForDay.slice(0, 2).map((item) => (
+                <div
+                  key={item.id}
+                  className="personal-header-chip"
+                  title={item.Description || item.Item}
+                >
+                  {item.Item}
+                </div>
+              ))}
+              {personalItemsForDay.length > 2 && (
+                <div className="personal-header-more">+{personalItemsForDay.length - 2} more</div>
+              )}
+            </div>
+          )}
           {(hasJobs || hasQuotes) && (
             <div className="day-indicators">
               {hasJobs && <div className="work-indicator"></div>}
@@ -1519,6 +2093,7 @@ function WorkloadManager({ user }) {
       day.setDate(day.getDate() + i)
       const dayOfMonth = day.getDate()
       const isSelected = selectedDate === dayOfMonth
+      const personalItemsForDay = getPersonalItemsForDate(day)
       
       // Get weather data for this day
       const dateStr = day.toISOString().split('T')[0]
@@ -1545,6 +2120,22 @@ function WorkloadManager({ user }) {
           </div>
           <div className="day-label">{dayNames[i]}</div>
           <div className="day-number">{dayOfMonth}</div>
+          {isAdmin && personalItemsForDay.length > 0 && (
+            <div className="personal-headers-list weekly-personal-headers">
+              {personalItemsForDay.slice(0, 2).map((item) => (
+                <div
+                  key={item.id}
+                  className="personal-header-chip"
+                  title={item.Description || item.Item}
+                >
+                  {item.Item}
+                </div>
+              ))}
+              {personalItemsForDay.length > 2 && (
+                <div className="personal-header-more">+{personalItemsForDay.length - 2} more</div>
+              )}
+            </div>
+          )}
           <div className="weekly-bar-container">
             <div 
               className="weekly-bar" 
@@ -1597,9 +2188,11 @@ function WorkloadManager({ user }) {
 
   const selectedDayJobs = selectedDate ? getJobsForDate(selectedDate) : []
   const selectedDayQuotes = selectedDate ? getQuotesForDate(selectedDate) : []
+  const selectedDayPersonalItems = selectedDate ? getPersonalItemsForDate(selectedDate) : []
   const selectedCustomersForDay = selectedDayJobs.filter((customer) => selectedCustomerIds.includes(customer.id))
   const hasSelectedCustomers = selectedCustomersForDay.length > 0
   const totalIncome = selectedDayJobs.reduce((sum, customer) => sum + (parseFloat(customer.Price) || 0), 0)
+  const showWorkloadMenu = selectedDayJobs.length > 0 || isAdmin
 
   // Route color helper
   const routeColors = [
@@ -1754,7 +2347,7 @@ function WorkloadManager({ user }) {
             </div>
           )}
 
-          {selectedDayJobs.length > 0 && (
+          {showWorkloadMenu && (
             <>
               <button 
                 className="mobile-menu-btn"
@@ -1766,124 +2359,174 @@ function WorkloadManager({ user }) {
               
               {mobileMenuOpen && (
                 <div className="mobile-menu-content active">
-                  <div className="select-by-route-section">
-                    <label className="select-by-route-label">Select by Route:</label>
-                    <div className="route-buttons">
-                      {[...new Set((orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs)
-                        .map(c => c.Route)
-                        .filter(r => r))].sort().map((route) => (
-                        <button
-                          key={route}
-                          className={`route-button ${selectedRoutes.includes(route) ? 'active' : ''}`}
-                          onClick={() => handleSelectByRoute(route)}
-                        >
-                          {route}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="message-all-section">
-                    <div className="message-all-container">
-                      <label className="message-all-label" htmlFor="messageAll">Message to {hasSelectedCustomers ? 'Selected' : 'All'}:</label>
-                      <select
-                        id="messageAll"
-                        value={selectedLetterAll || ''}
-                        onChange={(e) => handleSelectLetterAll(e.target.value)}
-                        disabled={!messages.length}
-                      >
-                        {!messages.length && <option value="">No letters available</option>}
-                        {messages.length > 0 && <option value="">Select letter</option>}
-                        {messages.map((msg) => (
-                          <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    <div className="bulk-move-container">
-                      <span className="bulk-move-label">Move {hasSelectedCustomers ? 'selected' : 'all'} jobs:</span>
-                      <div className="bulk-date-picker-wrapper">
-                        <button 
-                          onClick={() => setBulkDatePickerOpen(!bulkDatePickerOpen)}
-                          className="calendar-icon-btn"
-                          title="Pick a date"
-                        >
-                          📅
-                        </button>
-                        {bulkDatePickerOpen && (
-                          <input
-                            type="date"
-                            value={new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate).toISOString().split('T')[0]}
-                            onChange={(e) => handleBulkMoveToDate(e.target.value)}
-                            className="date-picker-input"
-                            autoFocus
-                          />
-                        )}
+                  {selectedDayJobs.length > 0 && (
+                    <>
+                      <div className="select-by-route-section">
+                        <label className="select-by-route-label">Select by Route:</label>
+                        <div className="route-buttons">
+                          {[...new Set((orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs)
+                            .map(c => c.Route)
+                            .filter(r => r))].sort().map((route) => (
+                            <button
+                              key={route}
+                              className={`route-button ${selectedRoutes.includes(route) ? 'active' : ''}`}
+                              onClick={() => handleSelectByRoute(route)}
+                            >
+                              {route}
+                            </button>
+                          ))}
+                        </div>
                       </div>
+
+                      <div className="message-all-section">
+                        <div className="message-all-container">
+                          <label className="message-all-label" htmlFor="messageAll">Message to {hasSelectedCustomers ? 'Selected' : 'All'}:</label>
+                          <select
+                            id="messageAll"
+                            value={selectedLetterAll || ''}
+                            onChange={(e) => handleSelectLetterAll(e.target.value)}
+                            disabled={!messages.length}
+                          >
+                            {!messages.length && <option value="">No letters available</option>}
+                            {messages.length > 0 && <option value="">Select letter</option>}
+                            {messages.map((msg) => (
+                              <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
+                            ))}
+                          </select>
+                        </div>
+                        
+                        <div className="bulk-move-container">
+                          <span className="bulk-move-label">Move {hasSelectedCustomers ? 'selected' : 'all'} jobs:</span>
+                          <div className="bulk-date-picker-wrapper">
+                            <button 
+                              onClick={() => setBulkDatePickerOpen(!bulkDatePickerOpen)}
+                              className="calendar-icon-btn"
+                              title="Pick a date"
+                            >
+                              📅
+                            </button>
+                            {bulkDatePickerOpen && (
+                              <input
+                                type="date"
+                                value={new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate).toISOString().split('T')[0]}
+                                onChange={(e) => handleBulkMoveToDate(e.target.value)}
+                                className="date-picker-input"
+                                autoFocus
+                              />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {isAdmin && (
+                    <div className="personal-item-action-row">
+                      <button className="personal-item-btn" onClick={openPersonalItemModal}>
+                        + Personal Item
+                      </button>
+                      <button className="personal-item-btn" onClick={openPersonalImportModal}>
+                        Import File
+                      </button>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
 
               <div className="desktop-only-sections">
-                <div className="select-by-route-section">
-                  <label className="select-by-route-label">Select by Route:</label>
-                  <div className="route-buttons">
-                    {[...new Set((orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs)
-                      .map(c => c.Route)
-                      .filter(r => r))].sort().map((route) => (
-                      <button
-                        key={route}
-                        className={`route-button ${selectedRoutes.includes(route) ? 'active' : ''}`}
-                        onClick={() => handleSelectByRoute(route)}
-                      >
-                        {route}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="message-all-section">
-                  <div className="message-all-container">
-                    <label className="message-all-label" htmlFor="messageAll">Message to {hasSelectedCustomers ? 'Selected' : 'All'}:</label>
-                    <select
-                      id="messageAll"
-                      value={selectedLetterAll || ''}
-                      onChange={(e) => handleSelectLetterAll(e.target.value)}
-                      disabled={!messages.length}
-                    >
-                      {!messages.length && <option value="">No letters available</option>}
-                      {messages.length > 0 && <option value="">Select letter</option>}
-                      {messages.map((msg) => (
-                        <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  <div className="bulk-move-container">
-                    <span className="bulk-move-label">Move {hasSelectedCustomers ? 'selected' : 'all'} jobs:</span>
-                    <div className="bulk-date-picker-wrapper">
-                      <button 
-                        onClick={() => setBulkDatePickerOpen(!bulkDatePickerOpen)}
-                        className="calendar-icon-btn"
-                        title="Pick a date"
-                      >
-                        📅
-                      </button>
-                      {bulkDatePickerOpen && (
-                        <input
-                          type="date"
-                          value={new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate).toISOString().split('T')[0]}
-                          onChange={(e) => handleBulkMoveToDate(e.target.value)}
-                          className="date-picker-input"
-                          autoFocus
-                        />
-                      )}
+                {selectedDayJobs.length > 0 && (
+                  <>
+                    <div className="select-by-route-section">
+                      <label className="select-by-route-label">Select by Route:</label>
+                      <div className="route-buttons">
+                        {[...new Set((orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs)
+                          .map(c => c.Route)
+                          .filter(r => r))].sort().map((route) => (
+                          <button
+                            key={route}
+                            className={`route-button ${selectedRoutes.includes(route) ? 'active' : ''}`}
+                            onClick={() => handleSelectByRoute(route)}
+                          >
+                            {route}
+                          </button>
+                        ))}
+                      </div>
                     </div>
+
+                    <div className="message-all-section">
+                      <div className="message-all-container">
+                        <label className="message-all-label" htmlFor="messageAll">Message to {hasSelectedCustomers ? 'Selected' : 'All'}:</label>
+                        <select
+                          id="messageAll"
+                          value={selectedLetterAll || ''}
+                          onChange={(e) => handleSelectLetterAll(e.target.value)}
+                          disabled={!messages.length}
+                        >
+                          {!messages.length && <option value="">No letters available</option>}
+                          {messages.length > 0 && <option value="">Select letter</option>}
+                          {messages.map((msg) => (
+                            <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      <div className="bulk-move-container">
+                        <span className="bulk-move-label">Move {hasSelectedCustomers ? 'selected' : 'all'} jobs:</span>
+                        <div className="bulk-date-picker-wrapper">
+                          <button 
+                            onClick={() => setBulkDatePickerOpen(!bulkDatePickerOpen)}
+                            className="calendar-icon-btn"
+                            title="Pick a date"
+                          >
+                            📅
+                          </button>
+                          {bulkDatePickerOpen && (
+                            <input
+                              type="date"
+                              value={new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate).toISOString().split('T')[0]}
+                              onChange={(e) => handleBulkMoveToDate(e.target.value)}
+                              className="date-picker-input"
+                              autoFocus
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {isAdmin && (
+                  <div className="personal-item-action-row">
+                    <button className="personal-item-btn" onClick={openPersonalItemModal}>
+                      + Personal Item
+                    </button>
+                    <button className="personal-item-btn" onClick={openPersonalImportModal}>
+                      Import File
+                    </button>
                   </div>
-                </div>
+                )}
               </div>
             </>
+          )}
+
+          {isAdmin && selectedDayPersonalItems.length > 0 && (
+            <div className="personal-day-strip">
+              <h4>Personal Calender</h4>
+              <div className="personal-day-strip-items">
+                {selectedDayPersonalItems.map((item) => (
+                  <div key={item.id} className="personal-day-strip-item" title={item.Description || item.Item}>
+                    <span className="personal-day-strip-text">{item.Item}</span>
+                    <button
+                      className="personal-day-delete-btn"
+                      onClick={() => handleDeletePersonalItem(item.id)}
+                      title="Delete personal item"
+                    >
+                      −
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
           
           <h3>
@@ -2193,6 +2836,122 @@ function WorkloadManager({ user }) {
           customer={invoiceModal.customer}
           onClose={() => setInvoiceModal({ show: false, customer: null })}
         />
+      )}
+
+      {showPersonalItemModal && isAdmin && (
+        <div className="modal-overlay" onClick={closePersonalItemModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={closePersonalItemModal}>×</button>
+            <h3>Add Personal Calender Item</h3>
+            <div className="modal-form personal-item-form">
+              <label htmlFor="personalItemDate">Date</label>
+              <input
+                id="personalItemDate"
+                type="date"
+                className="modal-input"
+                value={personalItemForm.Date}
+                onChange={(e) => setPersonalItemForm((prev) => ({ ...prev, Date: e.target.value }))}
+              />
+
+              <label htmlFor="personalItemHeader">Header</label>
+              <input
+                id="personalItemHeader"
+                type="text"
+                className="modal-input"
+                placeholder="e.g. Dentist appointment"
+                value={personalItemForm.Item}
+                onChange={(e) => setPersonalItemForm((prev) => ({ ...prev, Item: e.target.value }))}
+              />
+
+              <label htmlFor="personalItemDescription">Description</label>
+              <textarea
+                id="personalItemDescription"
+                className="modal-input"
+                rows="4"
+                placeholder="Optional notes"
+                value={personalItemForm.Description}
+                onChange={(e) => setPersonalItemForm((prev) => ({ ...prev, Description: e.target.value }))}
+              />
+            </div>
+            <div className="modal-buttons">
+              <button className="modal-ok-btn" onClick={handleSavePersonalItem} disabled={savingPersonalItem}>
+                {savingPersonalItem ? 'Saving...' : 'Save'}
+              </button>
+              <button className="modal-cancel-btn" onClick={closePersonalItemModal}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPersonalImportModal && isAdmin && (
+        <div className="modal-overlay" onClick={closePersonalImportModal}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={closePersonalImportModal}>×</button>
+            <h3>Import Personal Calender File</h3>
+
+            <div className="modal-form personal-item-form">
+              <label htmlFor="personalImportFile">Upload image or CSV</label>
+              <input
+                id="personalImportFile"
+                type="file"
+                accept=".csv,image/*"
+                className="modal-input"
+                onChange={handlePersonalImportFileChange}
+                disabled={processingPersonalImport}
+              />
+              {importPersonalFileName && (
+                <div className="import-file-name">Selected: {importPersonalFileName}</div>
+              )}
+              {processingPersonalImport && (
+                <div className="import-status">Scanning and parsing file...</div>
+              )}
+              {importPersonalError && (
+                <div className="import-status import-error">{importPersonalError}</div>
+              )}
+              {importPersonalItemsAll.length > 0 && (
+                <div className="import-status import-success">
+                  Detected {importPersonalItemsAll.length} item{importPersonalItemsAll.length === 1 ? '' : 's'}.
+                </div>
+              )}
+              {importPersonalDuplicateCount > 0 && (
+                <div className="import-status">
+                  Skipped {importPersonalDuplicateCount} duplicate item{importPersonalDuplicateCount === 1 ? '' : 's'} (same date + header).
+                </div>
+              )}
+              {importPersonalAssumedYearCount > 0 && (
+                <div className="import-status">
+                  Assumed current year ({new Date().getFullYear()}) for {importPersonalAssumedYearCount} CSV date value{importPersonalAssumedYearCount === 1 ? '' : 's'} in DD/MM format.
+                </div>
+              )}
+            </div>
+
+            {importPersonalItemsPreview.length > 0 && (
+              <div className="import-preview-list">
+                {importPersonalItemsPreview.map((entry, index) => (
+                  <div key={`${entry.Date}-${entry.Item}-${index}`} className="import-preview-item">
+                    <strong>{entry.Date}</strong> — {entry.Item}
+                  </div>
+                ))}
+                {importPersonalItemsAll.length > importPersonalItemsPreview.length && (
+                  <div className="import-preview-more">
+                    +{importPersonalItemsAll.length - importPersonalItemsPreview.length} more
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="modal-buttons">
+              <button
+                className="modal-ok-btn"
+                onClick={handleImportPersonalItems}
+                disabled={processingPersonalImport || importPersonalItemsAll.length === 0}
+              >
+                {processingPersonalImport ? 'Working...' : 'Import Dates'}
+              </button>
+              <button className="modal-cancel-btn" onClick={closePersonalImportModal}>Cancel</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showCustomerModal && selectedCustomer && (
