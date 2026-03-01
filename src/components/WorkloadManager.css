@@ -953,10 +953,14 @@
   background-color: white;
   color: #3498db;
   border-radius: 20px;
-  cursor: pointer;
+  cursor: grab;
   font-weight: 600;
   transition: all 0.2s;
   font-size: 0.9rem;
+}
+
+.route-button:active {
+  cursor: grabbing;
 }
 
 .route-button:hover {
@@ -966,6 +970,14 @@
 .route-button.active {
   background-color: #3498db;
   color: white;
+}
+
+.route-button.route-dragging {
+  opacity: 0.75;
+}
+
+.route-button.route-drag-over {
+  box-shadow: inset 0 0 0 2px #2c3e50;
 }
 
 /* Mobile layout for select by route */
@@ -1140,6 +1152,11 @@
   gap: 0.5rem;
   flex: 1;
   min-width: 250px;
+}
+
+.smart-route-container {
+  display: flex;
+  align-items: center;
 }
 
 .message-all-label {

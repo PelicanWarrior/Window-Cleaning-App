@@ -27,6 +27,8 @@ function WorkloadManager({ user }) {
   const [orderedCustomers, setOrderedCustomers] = useState([])
   const [draggedCustomerId, setDraggedCustomerId] = useState(null)
   const [dragOverIndex, setDragOverIndex] = useState(null)
+  const [draggedRoute, setDraggedRoute] = useState('')
+  const [routeDragOver, setRouteDragOver] = useState('')
   const [calendarCollapsed, setCalendarCollapsed] = useState(false)
   const [editingPriceCustomerId, setEditingPriceCustomerId] = useState(null)
   const [editingPriceValue, setEditingPriceValue] = useState('')
@@ -1540,6 +1542,74 @@ function WorkloadManager({ user }) {
     }
   }
 
+  const getRouteOrderForDay = () => {
+    const dayCustomers = orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs
+    return [...new Set(dayCustomers.map((customer) => (customer.Route || '').trim()).filter(Boolean))]
+  }
+
+  const handleRouteDragStart = (route) => {
+    setDraggedRoute(route)
+    setRouteDragOver(route)
+  }
+
+  const handleRouteDragOver = (event, route) => {
+    event.preventDefault()
+    if (!draggedRoute) return
+    if (routeDragOver !== route) setRouteDragOver(route)
+  }
+
+  const handleRouteDragEnd = () => {
+    setDraggedRoute('')
+    setRouteDragOver('')
+  }
+
+  const handleRouteDrop = async (targetRoute) => {
+    const sourceRoute = draggedRoute
+    setDraggedRoute('')
+    setRouteDragOver('')
+
+    if (!sourceRoute || !targetRoute || sourceRoute === targetRoute) return
+
+    const dayCustomers = orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs
+    if (!dayCustomers.length) return
+
+    const routeOrder = getRouteOrderForDay()
+    const sourceIndex = routeOrder.indexOf(sourceRoute)
+    const targetIndex = routeOrder.indexOf(targetRoute)
+
+    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return
+
+    const nextRouteOrder = [...routeOrder]
+    nextRouteOrder.splice(sourceIndex, 1)
+    nextRouteOrder.splice(targetIndex, 0, sourceRoute)
+
+    const routeGroups = new Map()
+    const noRouteCustomers = []
+
+    dayCustomers.forEach((customer) => {
+      const routeValue = (customer.Route || '').trim()
+      if (!routeValue) {
+        noRouteCustomers.push(customer)
+        return
+      }
+
+      if (!routeGroups.has(routeValue)) {
+        routeGroups.set(routeValue, [])
+      }
+
+      routeGroups.get(routeValue).push(customer)
+    })
+
+    const reorderedCustomers = nextRouteOrder.flatMap((route) => routeGroups.get(route) || [])
+    reorderedCustomers.push(...noRouteCustomers)
+
+    const hasChangedOrder = reorderedCustomers.some((customer, index) => customer.id !== dayCustomers[index]?.id)
+    if (!hasChangedOrder) return
+
+    setOrderedCustomers(reorderedCustomers)
+    await saveUserRouteOrder(reorderedCustomers)
+  }
+
   const toggleDatePicker = (customerId) => {
     setExpandedDatePickers((prev) => ({
       ...prev,
@@ -1589,6 +1659,49 @@ function WorkloadManager({ user }) {
     await saveUserRouteOrder(newList)
 
     setDraggedCustomerId(null)
+  }
+
+  const handleSmartRouteOrder = async () => {
+    const displayListBase = orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs
+    if (!displayListBase || displayListBase.length < 2) return
+
+    const getRouteKey = (customer) => {
+      const routeValue = (customer?.Route || '').trim()
+      return routeValue ? routeValue.toLowerCase() : '__no_route__'
+    }
+
+    const groupFirstIndex = new Map()
+    const originalIndexById = new Map()
+
+    displayListBase.forEach((customer, index) => {
+      const routeKey = getRouteKey(customer)
+      if (!groupFirstIndex.has(routeKey)) {
+        groupFirstIndex.set(routeKey, index)
+      }
+      originalIndexById.set(customer.id, index)
+    })
+
+    const smartOrderedList = [...displayListBase].sort((firstCustomer, secondCustomer) => {
+      const firstRouteKey = getRouteKey(firstCustomer)
+      const secondRouteKey = getRouteKey(secondCustomer)
+
+      const firstGroupIndex = groupFirstIndex.get(firstRouteKey) ?? Number.MAX_SAFE_INTEGER
+      const secondGroupIndex = groupFirstIndex.get(secondRouteKey) ?? Number.MAX_SAFE_INTEGER
+
+      if (firstGroupIndex !== secondGroupIndex) {
+        return firstGroupIndex - secondGroupIndex
+      }
+
+      const firstOriginalIndex = originalIndexById.get(firstCustomer.id) ?? 0
+      const secondOriginalIndex = originalIndexById.get(secondCustomer.id) ?? 0
+      return firstOriginalIndex - secondOriginalIndex
+    })
+
+    const hasChangedOrder = smartOrderedList.some((customer, index) => customer.id !== displayListBase[index]?.id)
+    if (!hasChangedOrder) return
+
+    setOrderedCustomers(smartOrderedList)
+    await saveUserRouteOrder(smartOrderedList)
   }
 
   const saveUserRouteOrder = async (customerList) => {
@@ -2189,6 +2302,8 @@ function WorkloadManager({ user }) {
   const selectedDayJobs = selectedDate ? getJobsForDate(selectedDate) : []
   const selectedDayQuotes = selectedDate ? getQuotesForDate(selectedDate) : []
   const selectedDayPersonalItems = selectedDate ? getPersonalItemsForDate(selectedDate) : []
+  const displayedDayJobs = orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs
+  const routeOrderForSelectedDay = [...new Set(displayedDayJobs.map((customer) => (customer.Route || '').trim()).filter(Boolean))]
   const selectedCustomersForDay = selectedDayJobs.filter((customer) => selectedCustomerIds.includes(customer.id))
   const hasSelectedCustomers = selectedCustomersForDay.length > 0
   const totalIncome = selectedDayJobs.reduce((sum, customer) => sum + (parseFloat(customer.Price) || 0), 0)
@@ -2362,20 +2477,30 @@ function WorkloadManager({ user }) {
                   {selectedDayJobs.length > 0 && (
                     <>
                       <div className="select-by-route-section">
-                        <label className="select-by-route-label">Select by Route:</label>
+                        <label className="select-by-route-label">Select / Move by Route:</label>
                         <div className="route-buttons">
-                          {[...new Set((orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs)
-                            .map(c => c.Route)
-                            .filter(r => r))].sort().map((route) => (
+                          {routeOrderForSelectedDay.map((route) => (
                             <button
                               key={route}
-                              className={`route-button ${selectedRoutes.includes(route) ? 'active' : ''}`}
+                              className={`route-button ${selectedRoutes.includes(route) ? 'active' : ''} ${draggedRoute === route ? 'route-dragging' : ''} ${routeDragOver === route ? 'route-drag-over' : ''}`}
                               onClick={() => handleSelectByRoute(route)}
+                              draggable
+                              onDragStart={() => handleRouteDragStart(route)}
+                              onDragOver={(event) => handleRouteDragOver(event, route)}
+                              onDrop={() => handleRouteDrop(route)}
+                              onDragEnd={handleRouteDragEnd}
+                              title="Tap to select by route. Drag to move this route group."
                             >
                               {route}
                             </button>
                           ))}
                         </div>
+                      </div>
+
+                      <div className="personal-item-action-row">
+                        <button className="personal-item-btn" onClick={handleSmartRouteOrder}>
+                          Smart Route Order
+                        </button>
                       </div>
 
                       <div className="message-all-section">
@@ -2437,15 +2562,19 @@ function WorkloadManager({ user }) {
                 {selectedDayJobs.length > 0 && (
                   <>
                     <div className="select-by-route-section">
-                      <label className="select-by-route-label">Select by Route:</label>
+                      <label className="select-by-route-label">Select / Move by Route:</label>
                       <div className="route-buttons">
-                        {[...new Set((orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs)
-                          .map(c => c.Route)
-                          .filter(r => r))].sort().map((route) => (
+                        {routeOrderForSelectedDay.map((route) => (
                           <button
                             key={route}
-                            className={`route-button ${selectedRoutes.includes(route) ? 'active' : ''}`}
+                            className={`route-button ${selectedRoutes.includes(route) ? 'active' : ''} ${draggedRoute === route ? 'route-dragging' : ''} ${routeDragOver === route ? 'route-drag-over' : ''}`}
                             onClick={() => handleSelectByRoute(route)}
+                            draggable
+                            onDragStart={() => handleRouteDragStart(route)}
+                            onDragOver={(event) => handleRouteDragOver(event, route)}
+                            onDrop={() => handleRouteDrop(route)}
+                            onDragEnd={handleRouteDragEnd}
+                            title="Click to select by route. Drag to move this route group."
                           >
                             {route}
                           </button>
@@ -2490,6 +2619,12 @@ function WorkloadManager({ user }) {
                             />
                           )}
                         </div>
+                      </div>
+
+                      <div className="smart-route-container">
+                        <button className="bulk-move-btn" onClick={handleSmartRouteOrder}>
+                          Smart Route Order
+                        </button>
                       </div>
                     </div>
                   </>
@@ -2538,7 +2673,7 @@ function WorkloadManager({ user }) {
             <p className="empty-state">No jobs scheduled for this day.</p>
           ) : (
             <div className="customer-list">
-              {(orderedCustomers.length > 0 ? orderedCustomers : selectedDayJobs).map((customer, index) => {
+              {displayedDayJobs.map((customer, index) => {
                 const isSelected = selectedCustomerIds.includes(customer.id)
 
                 return (
