@@ -7,7 +7,6 @@ import Quotes from './components/Quotes'
 import Letters from './components/Letters'
 import Settings from './components/Settings'
 import AdminPanel from './components/AdminPanel'
-import versionImage from '../pictures/Version.png'
 import logo1 from '../public/Logo1.png'
 import { supabase } from './lib/supabase'
 
@@ -202,7 +201,6 @@ function App() {
           <div className="header-title">
             <img src={logo1} alt="Pelican Logo" className="header-logo" />
             <h1>Pelican Window Cleaning Manager</h1>
-            <img src={versionImage} alt="Version" className="version-image" />
           </div>
           <div className="user-info">
             <span>Welcome, {user.UserName}</span>

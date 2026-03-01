@@ -17,6 +17,7 @@ const COUNTRY_OPTIONS = [
 ]
 
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'V1.2'
 
 async function getFunctionErrorMessage(error, fallback) {
   if (error?.context) {
@@ -67,6 +68,9 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
   const [portalError, setPortalError] = useState('')
   const [connectionStatus, setConnectionStatus] = useState('')
   const [currentAccountLevelId, setCurrentAccountLevelId] = useState(user.AccountLevel || null)
+  const [systemSubject, setSystemSubject] = useState('')
+  const [systemMessage, setSystemMessage] = useState('')
+  const [systemMessageStatus, setSystemMessageStatus] = useState('')
 
   useEffect(() => {
     setActiveTab(initialTab)
@@ -265,6 +269,18 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
         throw new Error(message)
       }
 
+      if (data?.updated) {
+        setCurrentAccountLevelId(level.id)
+        onSaved({ AccountLevel: level.id })
+        fetchAccountLevel()
+        return
+      }
+
+      if (data?.alreadyOnPlan) {
+        setCheckoutError(data?.message || 'You are already on this plan')
+        return
+      }
+
       if (!data?.url) {
         throw new Error('Stripe checkout session did not return a URL')
       }
@@ -383,6 +399,29 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
     }
   }
 
+  const handleSendSystemMessage = () => {
+    setSystemMessageStatus('')
+
+    const trimmedMessage = (systemMessage || '').trim()
+    if (!trimmedMessage) {
+      setSystemMessageStatus('Please write a message before sending.')
+      return
+    }
+
+    const emailSubject = (systemSubject || '').trim() || `Pelican App message from ${user?.UserName || 'User'}`
+    const bodyLines = [
+      `From user: ${user?.UserName || ''}`,
+      `User ID: ${user?.id || ''}`,
+      `Email: ${user?.email_address || user?.email || ''}`,
+      '',
+      trimmedMessage
+    ]
+
+    const mailtoUrl = `mailto:pelicanwindowcleaning19@gmail.com?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(bodyLines.join('\n'))}`
+    window.location.href = mailtoUrl
+    setSystemMessageStatus('Opening your email app...')
+  }
+
   return (
     <div className="settings-modal-backdrop" onClick={onClose}>
       <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
@@ -406,6 +445,12 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
             onClick={() => setActiveTab('accountLevel')}
           >
             Account Level
+          </button>
+          <button
+            className={activeTab === 'system' ? 'active' : ''}
+            onClick={() => setActiveTab('system')}
+          >
+            System
           </button>
         </div>
 
@@ -649,6 +694,47 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
                   )}
                 </>
               )}
+            </div>
+            <div className="settings-actions">
+              <button className="cancel-btn" onClick={onClose}>Close</button>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'system' && (
+          <>
+            <div className="system-content">
+              <div className="system-card">
+                <h4 className="system-title">Application Version</h4>
+                <p className="system-version">{APP_VERSION}</p>
+              </div>
+
+              <div className="system-card">
+                <h4 className="system-title">Contact Support</h4>
+                <p className="system-note">Send a message to pelicanwindowcleaning19@gmail.com</p>
+                <div className="settings-grid">
+                  <div className="settings-field">
+                    <label>Subject</label>
+                    <input
+                      type="text"
+                      placeholder="Type a subject"
+                      value={systemSubject}
+                      onChange={(e) => setSystemSubject(e.target.value)}
+                    />
+                  </div>
+                  <div className="settings-field">
+                    <label>Message</label>
+                    <textarea
+                      className="system-textarea"
+                      placeholder="Type your message"
+                      value={systemMessage}
+                      onChange={(e) => setSystemMessage(e.target.value)}
+                    />
+                  </div>
+                </div>
+                {systemMessageStatus && <p className="system-status">{systemMessageStatus}</p>}
+                <button className="save-btn" onClick={handleSendSystemMessage}>Send Message</button>
+              </div>
             </div>
             <div className="settings-actions">
               <button className="cancel-btn" onClick={onClose}>Close</button>

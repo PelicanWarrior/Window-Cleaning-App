@@ -144,11 +144,6 @@
   gap: 0.5rem;
 }
 
-.version-image {
-  max-width: 80px;
-  height: auto;
-}
-
 .app-header nav {
   display: flex;
   gap: 1rem;

@@ -330,6 +330,54 @@
   background: #cbd5f5;
 }
 
+.system-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.system-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.system-title {
+  margin: 0 0 8px 0;
+  font-size: 1rem;
+  color: #1f2937;
+}
+
+.system-version {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #2563eb;
+}
+
+.system-note {
+  margin: 0 0 10px 0;
+  color: #475569;
+  font-size: 0.92rem;
+}
+
+.system-textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.system-status {
+  margin: 10px 0;
+  color: #1f2937;
+  font-weight: 600;
+}
+
 .route-weeks-input-row {
   display: flex;
   align-items: center;
