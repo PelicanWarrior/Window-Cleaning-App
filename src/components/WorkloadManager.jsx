@@ -2350,7 +2350,7 @@ function WorkloadManager({ user }) {
           {showWorkloadMenu && (
             <>
               <button 
-                className="mobile-menu-btn"
+                className={`mobile-menu-btn workload-mobile-menu-btn ${mobileMenuOpen ? 'active' : ''}`}
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 title="Toggle menu"
               >
@@ -2358,7 +2358,7 @@ function WorkloadManager({ user }) {
               </button>
               
               {mobileMenuOpen && (
-                <div className="mobile-menu-content active">
+                <div className="mobile-menu-content workload-mobile-menu-panel active">
                   {selectedDayJobs.length > 0 && (
                     <>
                       <div className="select-by-route-section">
