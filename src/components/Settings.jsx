@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatCurrency } from '../lib/format'
+import { APP_VERSION } from '../config/appVersion'
 import './Settings.css'
 
 const COUNTRY_OPTIONS = [
@@ -17,7 +18,6 @@ const COUNTRY_OPTIONS = [
 ]
 
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
-const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'V1.2'
 
 async function getFunctionErrorMessage(error, fallback) {
   if (error?.context) {
