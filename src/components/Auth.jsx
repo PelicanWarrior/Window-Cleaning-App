@@ -12,9 +12,17 @@ function Auth({ onLogin }) {
     country: 'United Kingdom'
   })
   const [error, setError] = useState('')
+  const [confirmationMessage, setConfirmationMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [deferredPrompt, setDeferredPrompt] = useState(null)
   const [showInstallButton, setShowInstallButton] = useState(false)
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
+  const [recoveryPassword, setRecoveryPassword] = useState('')
+  const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState('')
+  const [recoveryError, setRecoveryError] = useState('')
+  const [recoveryLoading, setRecoveryLoading] = useState(false)
+  const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState('')
+  const [resendLoading, setResendLoading] = useState(false)
 
   useEffect(() => {
     const handler = (e) => {
@@ -34,22 +42,253 @@ function Auth({ onLogin }) {
     setShowInstallButton(false)
   }
 
+  const urlIndicatesRecovery = () => {
+    const search = window.location.search || ''
+    const hash = window.location.hash || ''
+    const combined = `${search}&${hash}`.toLowerCase()
+    return combined.includes('type=recovery')
+  }
+
+  const getEmailRedirectUrl = () => {
+    const configuredRedirect = (import.meta.env.VITE_AUTH_REDIRECT_URL || '').trim()
+    if (configuredRedirect) {
+      return configuredRedirect
+    }
+
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return `${window.location.origin}${window.location.pathname}`
+    }
+
+    return undefined
+  }
+
+  const findUniqueUsername = async (requestedUsername, fallbackEmail) => {
+    const baseFromInput = (requestedUsername || '').trim()
+    const baseFromEmail = (fallbackEmail || '').split('@')[0]
+    const safeBase = (baseFromInput || baseFromEmail || 'user').replace(/\s+/g, '')
+
+    let candidate = safeBase
+    let suffix = 1
+
+    while (suffix <= 50) {
+      const { data, error } = await supabase
+        .from('Users')
+        .select('id')
+        .eq('UserName', candidate)
+        .limit(1)
+
+      if (error) throw error
+      if (!data || data.length === 0) return candidate
+
+      suffix += 1
+      candidate = `${safeBase}${suffix}`
+    }
+
+    return `${safeBase}${Date.now()}`
+  }
+
+  async function ensureUserRecordFromAuth(authUser, signupDefaults = {}) {
+    if (!authUser?.email) {
+      throw new Error('Confirmed auth user email was not found')
+    }
+
+    const authEmail = authUser.email.trim().toLowerCase()
+
+    const { data: existingUser, error: existingError } = await supabase
+      .from('Users')
+      .select('*')
+      .eq('email_address', authEmail)
+      .maybeSingle()
+
+    if (existingError) throw existingError
+    if (existingUser) return existingUser
+
+    const metadata = authUser.user_metadata || {}
+    const requestedUsername = signupDefaults.username || metadata.username || authEmail.split('@')[0]
+    const uniqueUsername = await findUniqueUsername(requestedUsername, authEmail)
+
+    const newUserPayload = {
+      UserName: uniqueUsername,
+      email_address: authEmail,
+      admin: false,
+      CustomerSort: 'Route',
+      SettingsCountry: signupDefaults.country || metadata.country || 'United Kingdom',
+      CompanyName: signupDefaults.companyName || metadata.companyName || '',
+      MessageFooter: '',
+      RouteWeeks: 4,
+      AccountLevel: 1
+    }
+
+    const { data: newUser, error: insertError } = await supabase
+      .from('Users')
+      .insert([newUserPayload])
+      .select()
+      .single()
+
+    if (insertError) throw insertError
+    return newUser
+  }
+
+  useEffect(() => {
+    let isMounted = true
+
+    const hydrateFromAuthSession = async () => {
+      try {
+        if (urlIndicatesRecovery()) {
+          setIsPasswordRecovery(true)
+          return
+        }
+
+        const { data } = await supabase.auth.getSession()
+        const authUser = data?.session?.user
+        if (!authUser || !isMounted) return
+
+        const userProfile = await ensureUserRecordFromAuth(authUser)
+        if (isMounted && userProfile) {
+          onLogin(userProfile)
+        }
+      } catch (err) {
+        console.error('Error hydrating auth session:', err)
+      }
+    }
+
+    hydrateFromAuthSession()
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true)
+        setRecoveryError('')
+      }
+    })
+
+    return () => {
+      isMounted = false
+      listener?.subscription?.unsubscribe()
+    }
+  }, [onLogin])
+
+  const handleRecoverySubmit = async (e) => {
+    e.preventDefault()
+    setRecoveryError('')
+
+    const newPassword = (recoveryPassword || '').trim()
+    const confirmPassword = (recoveryConfirmPassword || '').trim()
+
+    if (!newPassword || !confirmPassword) {
+      setRecoveryError('Please enter and confirm your new password.')
+      return
+    }
+
+    if (newPassword.length < 8) {
+      setRecoveryError('Password must be at least 8 characters.')
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      setRecoveryError('Passwords do not match.')
+      return
+    }
+
+    try {
+      setRecoveryLoading(true)
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword })
+      if (updateError) throw updateError
+
+      await supabase.auth.signOut()
+      setIsPasswordRecovery(false)
+      setRecoveryPassword('')
+      setRecoveryConfirmPassword('')
+      setConfirmationMessage('Password updated successfully. Please log in with your new password.')
+      setIsLogin(true)
+      window.history.replaceState({}, document.title, window.location.pathname)
+    } catch (err) {
+      setRecoveryError(err.message || 'Unable to update password. Please request a new reset email and try again.')
+    } finally {
+      setRecoveryLoading(false)
+    }
+  }
+
+  const handleResendConfirmation = async () => {
+    const emailToResend = (pendingConfirmationEmail || formData.email || '').trim().toLowerCase()
+    if (!emailToResend) {
+      setError('Enter your email address first, then try again.')
+      return
+    }
+
+    setError('')
+    setConfirmationMessage('')
+
+    try {
+      setResendLoading(true)
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'signup',
+        email: emailToResend,
+        options: {
+          emailRedirectTo: getEmailRedirectUrl()
+        }
+      })
+
+      if (resendError) throw resendError
+
+      setConfirmationMessage('Confirmation email resent. Please check your inbox and spam folder.')
+      setPendingConfirmationEmail(emailToResend)
+    } catch (err) {
+      setError(err?.message || 'Unable to resend confirmation email right now. Please try again shortly.')
+    } finally {
+      setResendLoading(false)
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    setConfirmationMessage('')
     setLoading(true)
 
     try {
       if (isLogin) {
-        // Login - check with either username or email
-        const { data, error } = await supabase
-          .from('Users')
-          .select('*')
-          .or(`UserName.eq.${formData.username},email_address.eq.${formData.username}`)
-          .eq('password', formData.password)
-          .single()
+        const credentialInput = (formData.username || '').trim()
 
-        if (error || !data) {
+        let authLoginEmail = credentialInput.includes('@') ? credentialInput.toLowerCase() : ''
+        if (!authLoginEmail && credentialInput) {
+          const { data: userByName, error: userByNameError } = await supabase
+            .from('Users')
+            .select('email_address')
+            .eq('UserName', credentialInput)
+            .maybeSingle()
+
+          if (!userByNameError && userByName?.email_address) {
+            authLoginEmail = String(userByName.email_address).toLowerCase()
+          }
+        }
+
+        if (!authLoginEmail) {
+          setError('Invalid username/email or password')
+          setLoading(false)
+          return
+        }
+
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: authLoginEmail,
+          password: formData.password
+        })
+
+        if (authError || !authData?.user) {
+          const authMessage = (authError?.message || '').toLowerCase()
+          if (authMessage.includes('email not confirmed')) {
+            setError('Please confirm your email before logging in. Check your inbox and spam folder.')
+          } else {
+            setError('Invalid username/email or password')
+          }
+          setLoading(false)
+          return
+        }
+
+        const data = await ensureUserRecordFromAuth(authData.user, {
+          username: credentialInput
+        })
+
+        if (!data) {
           setError('Invalid username/email or password')
           setLoading(false)
           return
@@ -192,69 +431,67 @@ function Auth({ onLogin }) {
         }
 
         // Successful login
+        setPendingConfirmationEmail('')
         onLogin(userData)
       } else {
-        // Sign up - create new account
+        // Sign up - create new account with email confirmation
         if (!formData.email || !formData.username || !formData.password) {
           setError('Please fill in all fields')
           setLoading(false)
           return
         }
 
-        // Check if username or email already exists
-        const { data: existingUsers, error: existingError } = await supabase
-          .from('Users')
-          .select('UserName, email_address')
-          .or(`UserName.eq.${formData.username},email_address.eq.${formData.email}`)
-          .limit(1)
+        const signupEmail = formData.email.trim().toLowerCase()
+        const signupUsername = formData.username.trim()
+        const emailRedirectTo = getEmailRedirectUrl()
 
-        if (existingError) throw existingError
-
-        if (existingUsers && existingUsers.length > 0) {
-          const match = existingUsers[0]
-          const usernameTaken = match.UserName?.toLowerCase() === formData.username.toLowerCase()
-          const emailTaken = match.email_address?.toLowerCase() === formData.email.toLowerCase()
-
-          if (usernameTaken && emailTaken) {
-            setError('Username has been taken and email address is being used')
-          } else if (usernameTaken) {
-            setError('Username has been taken')
-          } else {
-            setError('Email address is being used')
-          }
-
-          setLoading(false)
-          return
-        }
-
-        // Create new user
-        const { data, error } = await supabase
-          .from('Users')
-          .insert([
-            {
-              UserName: formData.username,
-              email_address: formData.email,
-              password: formData.password,
-              admin: false,
-              CustomerSort: 'Route',
-              SettingsCountry: formData.country,
-              CompanyName: formData.companyName,
-              MessageFooter: '',
-              RouteWeeks: 4,
-              AccountLevel: 1
+        const { data: signupData, error: signupError } = await supabase.auth.signUp({
+          email: signupEmail,
+          password: formData.password,
+          options: {
+            emailRedirectTo,
+            data: {
+              username: signupUsername,
+              companyName: formData.companyName || '',
+              country: formData.country || 'United Kingdom'
             }
-          ])
-          .select()
-          .single()
+          }
+        })
 
-        if (error) {
-          setError('Error creating account: ' + error.message)
+        if (signupError) {
+          const signupMessage = String(signupError.message || '')
+          if (signupMessage.toLowerCase().includes('already registered')) {
+            setPendingConfirmationEmail(signupEmail)
+            setConfirmationMessage('This email is already registered. If it is not confirmed yet, use the resend button below.')
+          } else {
+            setError('Error creating account: ' + signupMessage)
+          }
           setLoading(false)
           return
         }
 
-        // Auto-login after signup
-        onLogin(data)
+        if (signupData?.session && signupData?.user) {
+          await supabase.auth.signOut()
+          setPendingConfirmationEmail('')
+          setError('Your account was created and signed in immediately, which means email confirmation is disabled in Supabase Auth settings. Enable Confirm email if you want verification emails sent.')
+          setLoading(false)
+          return
+        }
+
+        const noIdentityCreated = Array.isArray(signupData?.user?.identities) && signupData.user.identities.length === 0
+        if (noIdentityCreated) {
+          setPendingConfirmationEmail(signupEmail)
+          setConfirmationMessage('This email is already registered. If it is not confirmed yet, use the resend button below.')
+          setIsLogin(true)
+          setFormData({ username: '', email: '', password: '', companyName: '', country: 'United Kingdom' })
+          setLoading(false)
+          return
+        }
+
+        setPendingConfirmationEmail(signupEmail)
+        setConfirmationMessage('Account created. Please check your email and click the confirmation link to finish creating your account.')
+        setIsLogin(true)
+        setFormData({ username: '', email: '', password: '', companyName: '', country: 'United Kingdom' })
       }
     } catch (err) {
       setError('An error occurred. Please try again.')
@@ -269,9 +506,36 @@ function Auth({ onLogin }) {
       <div className="auth-card">
         <img src="/Logo1.png" alt="Pelican Logo" className="auth-logo" />
         <h1>Pelican Window Cleaning Manager</h1>
-        <h2>{isLogin ? 'Login' : 'Create Account'}</h2>
+        <h2>{isPasswordRecovery ? 'Set New Password' : (isLogin ? 'Login' : 'Create Account')}</h2>
 
         {error && <div className="error-message">{error}</div>}
+        {confirmationMessage && <div className="success-message">{confirmationMessage}</div>}
+        {recoveryError && <div className="error-message">{recoveryError}</div>}
+
+        {isPasswordRecovery ? (
+          <form onSubmit={handleRecoverySubmit}>
+            <input
+              type="password"
+              placeholder="New Password"
+              value={recoveryPassword}
+              onChange={(e) => setRecoveryPassword(e.target.value)}
+              required
+              disabled={recoveryLoading}
+            />
+            <input
+              type="password"
+              placeholder="Confirm New Password"
+              value={recoveryConfirmPassword}
+              onChange={(e) => setRecoveryConfirmPassword(e.target.value)}
+              required
+              disabled={recoveryLoading}
+            />
+            <button type="submit" disabled={recoveryLoading}>
+              {recoveryLoading ? 'Updating...' : 'Update Password'}
+            </button>
+          </form>
+        ) : (
+        <>
 
         <form onSubmit={handleSubmit}>
           {!isLogin && (
@@ -343,6 +607,17 @@ function Auth({ onLogin }) {
           </button>
         )}
 
+        {pendingConfirmationEmail && (
+          <button
+            type="button"
+            className="toggle-button"
+            onClick={handleResendConfirmation}
+            disabled={loading || resendLoading}
+          >
+            {resendLoading ? 'Resending...' : 'Resend confirmation email'}
+          </button>
+        )}
+
         <p className="toggle-text">
           {isLogin ? "Don't have an account? " : "Already have an account? "}
           <button 
@@ -351,6 +626,7 @@ function Auth({ onLogin }) {
             onClick={() => {
               setIsLogin(!isLogin)
               setError('')
+              setConfirmationMessage('')
               setFormData({ username: '', email: '', password: '', companyName: '', country: 'United Kingdom' })
             }}
             disabled={loading}
@@ -358,6 +634,8 @@ function Auth({ onLogin }) {
             {isLogin ? 'Create one' : 'Login'}
           </button>
         </p>
+        </>
+        )}
       </div>
     </div>
   )

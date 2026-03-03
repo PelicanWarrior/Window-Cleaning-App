@@ -112,6 +112,16 @@
   margin-bottom: 1rem;
 }
 
+.success-message {
+  background-color: #e8f7ec;
+  color: #1f7a38;
+  padding: 0.875rem;
+  border-radius: 6px;
+  border: 1px solid #bfe6cb;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
 .toggle-text {
   text-align: center;
   margin-top: 1.5rem;

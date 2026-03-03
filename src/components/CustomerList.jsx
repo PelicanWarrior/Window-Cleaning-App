@@ -62,6 +62,7 @@ function CustomerList({ user }) {
     Price: '',
     Weeks: '',
     Route: '',
+    NextClean: '',
     Notes: ''
   })
 
@@ -246,6 +247,11 @@ function CustomerList({ user }) {
   }
 
   const columnOrder = getColumnOrder()
+  const routeOptions = [...new Set(
+    customers
+      .map(customer => (customer.Route || '').trim())
+      .filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
 
   const formatPhoneForWhatsApp = (raw) => {
     const digits = (raw || '').replace(/\D/g, '')
@@ -375,13 +381,17 @@ function CustomerList({ user }) {
   async function addCustomer(e) {
     e.preventDefault()
     try {
+      const defaultNextCleanDate = new Date(Date.now() + (parseInt(newCustomer.Weeks) || 4) * 7 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split('T')[0]
+
       const customerData = {
         ...newCustomer,
         UserId: user.id,
         Price: parseInt(newCustomer.Price) || 0,
         Weeks: parseInt(newCustomer.Weeks) || 4,
         Outstanding: 0,
-        NextClean: new Date(Date.now() + (parseInt(newCustomer.Weeks) || 4) * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        NextClean: (newCustomer.NextClean || '').trim() || defaultNextCleanDate
       }
 
       const { data: insertData, error } = await supabase
@@ -436,6 +446,7 @@ function CustomerList({ user }) {
         Price: '', 
         Weeks: '', 
         Route: '', 
+        NextClean: '',
         Notes: '' 
       })
       setShowAddForm(false)
@@ -1265,9 +1276,21 @@ function CustomerList({ user }) {
             />
             <input
               type="text"
-              placeholder="Route"
+              list="route-options"
+              placeholder="Route (pick existing or type new)"
               value={newCustomer.Route}
               onChange={(e) => setNewCustomer({...newCustomer, Route: e.target.value})}
+            />
+            <datalist id="route-options">
+              {routeOptions.map((route) => (
+                <option key={route} value={route} />
+              ))}
+            </datalist>
+            <input
+              type="date"
+              placeholder="Next Clean Date"
+              value={newCustomer.NextClean}
+              onChange={(e) => setNewCustomer({...newCustomer, NextClean: e.target.value})}
             />
             <textarea
               placeholder="Notes (optional)"

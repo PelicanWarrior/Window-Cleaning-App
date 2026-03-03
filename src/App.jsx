@@ -11,7 +11,6 @@ import logo1 from '../public/Logo1.png'
 import { supabase } from './lib/supabase'
 
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
-const USER_STORAGE_KEY = 'wc_user_id'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -23,37 +22,6 @@ function App() {
   const [showInstallButton, setShowInstallButton] = useState(false)
   const [checkoutStatus, setCheckoutStatus] = useState(null) // 'success', 'cancelled', or null
   const [statusMessage, setStatusMessage] = useState('')
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const urlUserId = params.get('user_id')
-    const storedUserId = localStorage.getItem(USER_STORAGE_KEY)
-    const candidateUserId = urlUserId || storedUserId
-
-    if (!candidateUserId || user) return
-
-    const loadUser = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('Users')
-          .select('*')
-          .eq('id', candidateUserId)
-          .single()
-
-        if (error || !data) {
-          localStorage.removeItem(USER_STORAGE_KEY)
-          return
-        }
-
-        setUser(data)
-        localStorage.setItem(USER_STORAGE_KEY, String(data.id))
-      } catch (err) {
-        console.error('Error restoring user session:', err)
-      }
-    }
-
-    loadUser()
-  }, [])
 
   useEffect(() => {
     const handler = (e) => {
@@ -141,7 +109,6 @@ function App() {
       
       // Update user state with fresh data
       setUser(data)
-      localStorage.setItem(USER_STORAGE_KEY, String(data.id))
     } catch (err) {
       console.error('Error refreshing user data:', err)
     }
@@ -157,14 +124,15 @@ function App() {
 
   const handleLogin = (userData) => {
     setUser(userData)
-    if (userData?.id) {
-      localStorage.setItem(USER_STORAGE_KEY, String(userData.id))
-    }
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut()
+    } catch (err) {
+      console.error('Error signing out auth session:', err)
+    }
     setUser(null)
-    localStorage.removeItem(USER_STORAGE_KEY)
     setActiveTab('workload')
   }
 

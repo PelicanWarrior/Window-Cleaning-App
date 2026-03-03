@@ -352,9 +352,10 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
       if (address2) updateFields['Address 2'] = address2
       if (town) updateFields.Town = town
       if (postcode) updateFields.Postcode = postcode
-      
+
       if (password) {
-        updateFields.password = password
+        const { error: authPasswordError } = await supabase.auth.updateUser({ password })
+        if (authPasswordError) throw authPasswordError
       }
 
       const { error: updateError, data } = await supabase
@@ -382,7 +383,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
           if (customerError) throw customerError
         }
 
-        const updatedFields = { SettingsCountry: country, RouteWeeks: routeWeeks, VAT: vatRegistered, ...(password ? { password } : {}) }
+        const updatedFields = { SettingsCountry: country, RouteWeeks: routeWeeks, VAT: vatRegistered }
         
         // Add address fields to the callback
         if (address1) updatedFields['Address 1'] = address1
@@ -391,6 +392,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
         if (postcode) updatedFields.Postcode = postcode
         
         onSaved(updatedFields)
+        setPassword('')
       }
     } catch (err) {
       setError(err.message || 'Error saving settings')
