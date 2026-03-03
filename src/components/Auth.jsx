@@ -233,7 +233,14 @@ function Auth({ onLogin }) {
       setConfirmationMessage('Confirmation email resent. Please check your inbox and spam folder.')
       setPendingConfirmationEmail(emailToResend)
     } catch (err) {
-      setError(err?.message || 'Unable to resend confirmation email right now. Please try again shortly.')
+      const resendMessage = String(err?.message || '')
+      const normalizedResendMessage = resendMessage.toLowerCase()
+
+      if (normalizedResendMessage.includes('email rate limit exceeded') || normalizedResendMessage.includes('rate limit')) {
+        setError('Resend limit reached. Please wait a few minutes before trying again. For live apps, set up custom SMTP in Supabase to avoid shared sending limits.')
+      } else {
+        setError(resendMessage || 'Unable to resend confirmation email right now. Please try again shortly.')
+      }
     } finally {
       setResendLoading(false)
     }
@@ -460,7 +467,11 @@ function Auth({ onLogin }) {
 
         if (signupError) {
           const signupMessage = String(signupError.message || '')
-          if (signupMessage.toLowerCase().includes('already registered')) {
+          const normalizedSignupMessage = signupMessage.toLowerCase()
+
+          if (normalizedSignupMessage.includes('email rate limit exceeded') || normalizedSignupMessage.includes('rate limit')) {
+            setError('Signup email limit reached. Please wait a few minutes and try again, or use Resend confirmation email. If this keeps happening, configure custom SMTP in Supabase for production.')
+          } else if (normalizedSignupMessage.includes('already registered')) {
             setPendingConfirmationEmail(signupEmail)
             setConfirmationMessage('This email is already registered. If it is not confirmed yet, use the resend button below.')
           } else {
