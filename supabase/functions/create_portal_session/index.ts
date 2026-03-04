@@ -88,10 +88,12 @@ serve(async (req) => {
     }
 
     const origin = req.headers.get("origin") || req.headers.get("referer") || "http://localhost:5173";
+    const querySeparator = origin.includes("?") ? "&" : "?";
+    const returnUrl = `${origin}${querySeparator}billing=return`;
 
     const params = new URLSearchParams();
     params.append("customer", user.StripeCustomerId);
-    params.append("return_url", origin);
+    params.append("return_url", returnUrl);
 
     const portalSession = await stripeRequest("billing_portal/sessions", params);
 

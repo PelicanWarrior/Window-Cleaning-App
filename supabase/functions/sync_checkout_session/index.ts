@@ -30,6 +30,24 @@ const stripe = new Stripe(stripeSecretKey, {
   httpClient: Stripe.createFetchHttpClient(),
 });
 
+async function stripeGet(path: string, params?: URLSearchParams) {
+  const query = params && params.toString() ? `?${params.toString()}` : "";
+  const response = await fetch(`https://api.stripe.com/v1/${path}${query}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${stripeSecretKey}`,
+    },
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    const message = data?.error?.message || "Stripe request failed";
+    throw new Error(message);
+  }
+
+  return data;
+}
+
 async function findAccountLevelIdByStripeRefs(
   stripePriceId: string | null,
   stripeProductId: string | null,
@@ -101,35 +119,62 @@ async function resolveAccountLevelIdFromSubscription(
 async function updateUserByIdOrCustomerId(
   userId: string | undefined,
   customerId: string | undefined,
+  subscriptionId: string | undefined,
   updates: Record<string, unknown>,
 ) {
-  if (userId) {
-    const response = await fetch(`${supabaseUrl}/rest/v1/Users?id=eq.${userId}`, {
+  async function patchUser(filterQuery: string) {
+    const response = await fetch(`${supabaseUrl}/rest/v1/Users?${filterQuery}`, {
       method: "PATCH",
       headers: {
         apikey: serviceRoleKey,
         Authorization: `Bearer ${serviceRoleKey}`,
         "Content-Type": "application/json",
-        Prefer: "return=minimal",
+        Prefer: "return=representation",
       },
       body: JSON.stringify(updates),
     });
-    return { error: response.ok ? null : await response.json() };
+
+    let payload: unknown = null;
+    if (response.status !== 204) {
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+    }
+
+    if (!response.ok) {
+      return { ok: false as const, updatedRows: 0, error: payload || { status: response.status } };
+    }
+
+    const rows = Array.isArray(payload) ? payload : [];
+    return { ok: true as const, updatedRows: rows.length, error: null };
   }
-  if (customerId) {
-    const response = await fetch(`${supabaseUrl}/rest/v1/Users?StripeCustomerId=eq.${customerId}`, {
-      method: "PATCH",
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-        "Content-Type": "application/json",
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify(updates),
-    });
-    return { error: response.ok ? null : await response.json() };
+
+  const attempts = [
+    userId ? `id=eq.${encodeURIComponent(userId)}` : null,
+    customerId ? `StripeCustomerId=eq.${encodeURIComponent(customerId)}` : null,
+    subscriptionId ? `StripeSubscriptionId=eq.${encodeURIComponent(subscriptionId)}` : null,
+  ].filter(Boolean) as string[];
+
+  if (!attempts.length) {
+    return { error: { message: "Missing user id, customer id, and subscription id" } } as const;
   }
-  return { error: { message: "Missing user id" } } as const;
+
+  let lastError: unknown = null;
+  for (const filter of attempts) {
+    const result = await patchUser(filter);
+    if (!result.ok) {
+      lastError = result.error;
+      continue;
+    }
+
+    if (result.updatedRows > 0) {
+      return { error: null };
+    }
+  }
+
+  return { error: lastError || { message: "No matching user row found" } };
 }
 
 serve(async (req) => {
@@ -147,58 +192,149 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "";
+    const sessionId = typeof body?.sessionId === "string" ? body.sessionId.trim() : "";
+    const bodyAccountLevelId = Number(body?.accountLevelId || 0) || null;
+    const bodyUserId =
+      typeof body?.userId === "string"
+        ? body.userId.trim()
+        : typeof body?.userId === "number"
+          ? String(body.userId)
+          : "";
 
-    if (!sessionId) {
-      return jsonResponse(400, { error: "Missing sessionId" });
+    let userId: string | undefined = bodyUserId || undefined;
+    let customerId: string | null = null;
+    let subscriptionId: string | null = null;
+    let subscription: Stripe.Subscription | null = null;
+    let accountLevelId: number | null = null;
+
+    if (sessionId) {
+      const session = await stripe.checkout.sessions.retrieve(sessionId, {
+        expand: ["subscription"],
+      });
+
+      const subscriptionFromSession =
+        typeof session.subscription === "object" && session.subscription
+          ? (session.subscription as Stripe.Subscription)
+          : null;
+
+      subscriptionId =
+        typeof session.subscription === "string"
+          ? session.subscription
+          : subscriptionFromSession?.id || null;
+
+      subscription =
+        !subscriptionFromSession && subscriptionId
+          ? await stripe.subscriptions.retrieve(subscriptionId, { expand: ["items.data.price"] })
+          : subscriptionFromSession;
+
+      userId = userId || session.metadata?.user_id || subscription?.metadata?.user_id || undefined;
+      const metadataAccountLevelId = Number(
+        session.metadata?.account_level_id ||
+          subscription?.metadata?.account_level_id ||
+          0,
+      );
+      const derivedAccountLevelId = await resolveAccountLevelIdFromSubscription(subscription);
+      accountLevelId = derivedAccountLevelId || metadataAccountLevelId;
+
+      customerId =
+        (typeof session.customer === "string" ? session.customer : null) ||
+        (typeof subscription?.customer === "string" ? subscription?.customer : null);
+    } else {
+      if (!userId) {
+        return jsonResponse(400, { error: "Missing sessionId or userId" });
+      }
+
+      const userLookupResponse = await fetch(
+        `${supabaseUrl}/rest/v1/Users?id=eq.${encodeURIComponent(userId)}&select=id,StripeCustomerId,StripeSubscriptionId&limit=1`,
+        {
+          headers: {
+            apikey: serviceRoleKey,
+            Authorization: `Bearer ${serviceRoleKey}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+
+      const userRows = await userLookupResponse.json();
+      if (!userLookupResponse.ok) {
+        return jsonResponse(500, { error: "Failed to look up user", details: userRows });
+      }
+
+      const dbUser = Array.isArray(userRows) && userRows.length ? userRows[0] : null;
+      if (!dbUser) {
+        return jsonResponse(404, { error: "User not found" });
+      }
+
+      userId = String(dbUser.id || userId);
+      customerId = typeof dbUser.StripeCustomerId === "string" ? dbUser.StripeCustomerId : null;
+      subscriptionId = typeof dbUser.StripeSubscriptionId === "string" ? dbUser.StripeSubscriptionId : null;
+
+      if (subscriptionId) {
+        try {
+          subscription = await stripe.subscriptions.retrieve(subscriptionId, { expand: ["items.data.price"] });
+        } catch {
+          subscription = null;
+        }
+      }
+
+      if (!subscription && customerId) {
+        const listParams = new URLSearchParams();
+        listParams.append("customer", customerId);
+        listParams.append("status", "all");
+        listParams.append("limit", "20");
+
+        const subscriptionList = await stripeGet("subscriptions", listParams);
+        const preferredStatuses = ["active", "trialing", "past_due", "unpaid", "incomplete", "canceled", "incomplete_expired"];
+        const found = (subscriptionList?.data || []).find((sub: { status?: string }) =>
+          preferredStatuses.includes((sub?.status || "").toLowerCase())
+        );
+
+        if (found?.id) {
+          subscriptionId = found.id;
+          subscription = await stripe.subscriptions.retrieve(found.id, { expand: ["items.data.price"] });
+        }
+      }
+
+      if (!subscription) {
+        return jsonResponse(400, { error: "Unable to resolve Stripe subscription for user" });
+      }
+
+      if (!customerId && typeof subscription.customer === "string") {
+        customerId = subscription.customer;
+      }
+
+      if (!subscriptionId) {
+        subscriptionId = subscription.id;
+      }
+
+      const metadataAccountLevelId = Number(subscription.metadata?.account_level_id || 0);
+      const derivedAccountLevelId = await resolveAccountLevelIdFromSubscription(subscription);
+      accountLevelId = derivedAccountLevelId || metadataAccountLevelId;
     }
 
-    const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ["subscription"],
-    });
-
-    const subscriptionFromSession =
-      typeof session.subscription === "object" && session.subscription
-        ? (session.subscription as Stripe.Subscription)
-        : null;
-
-    const subscriptionId =
-      typeof session.subscription === "string"
-        ? session.subscription
-        : subscriptionFromSession?.id || null;
-
-    const subscription =
-      !subscriptionFromSession && subscriptionId
-        ? await stripe.subscriptions.retrieve(subscriptionId)
-        : subscriptionFromSession;
-
-    const userId =
-      session.metadata?.user_id || subscription?.metadata?.user_id || undefined;
-    const metadataAccountLevelId = Number(
-      session.metadata?.account_level_id ||
-        subscription?.metadata?.account_level_id ||
-        0,
-    );
-    const derivedAccountLevelId = await resolveAccountLevelIdFromSubscription(subscription);
-    const accountLevelId = derivedAccountLevelId || metadataAccountLevelId;
-
-    const customerId =
-      (typeof session.customer === "string" ? session.customer : null) ||
-      (typeof subscription?.customer === "string" ? subscription?.customer : null);
-
+    const subscriptionStatus = subscription?.status || "active";
     const updates: Record<string, unknown> = {
       StripeCustomerId: customerId || null,
       StripeSubscriptionId: subscription?.id || subscriptionId || null,
-      StripeSubscriptionStatus: subscription?.status || "active",
+      StripeSubscriptionStatus: subscriptionStatus,
     };
 
-    if (accountLevelId) {
+    if (["active", "trialing"].includes(subscriptionStatus) && accountLevelId) {
       updates.AccountLevel = accountLevelId;
+    } else if (["canceled", "unpaid", "past_due", "incomplete_expired"].includes(subscriptionStatus)) {
+      updates.AccountLevel = 1;
+    } else if (accountLevelId) {
+      updates.AccountLevel = accountLevelId;
+    }
+
+    if (bodyAccountLevelId) {
+      updates.AccountLevel = bodyAccountLevelId;
     }
 
     const result = await updateUserByIdOrCustomerId(
       userId,
       customerId || undefined,
+      subscription?.id || subscriptionId || undefined,
       updates,
     );
 
@@ -208,7 +344,12 @@ serve(async (req) => {
 
     return jsonResponse(200, {
       ok: true,
-      updated: { userId, customerId, accountLevelId },
+      updated: {
+        userId,
+        customerId,
+        subscriptionId,
+        accountLevelId: bodyAccountLevelId || accountLevelId,
+      },
     });
   } catch (error) {
     return jsonResponse(500, { error: error.message || "Unexpected error" });

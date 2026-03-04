@@ -223,6 +223,8 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
     setPortalError('')
     setConnectionStatus('')
 
+    const pendingAccountLevelKey = 'pendingAccountLevelId'
+
     if (!level || level.id === currentAccountLevelId) return
 
     const monthlyAmount = parseFloat(level.MonthlyAmount) || 0
@@ -241,6 +243,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
         setCurrentAccountLevelId(level.id)
         onSaved({ AccountLevel: level.id })
         fetchAccountLevel()
+        window.localStorage.removeItem(pendingAccountLevelKey)
       } catch (err) {
         setCheckoutError(err.message || 'Failed to update account level')
       }
@@ -252,6 +255,8 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
       if (!user?.id) {
         throw new Error('Missing user id')
       }
+
+      window.localStorage.setItem(pendingAccountLevelKey, String(level.id))
 
       const { data, error } = await supabase.functions.invoke('create_checkout_session', {
         body: {
@@ -273,10 +278,12 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
         setCurrentAccountLevelId(level.id)
         onSaved({ AccountLevel: level.id })
         fetchAccountLevel()
+        window.localStorage.removeItem(pendingAccountLevelKey)
         return
       }
 
       if (data?.alreadyOnPlan) {
+        window.localStorage.removeItem(pendingAccountLevelKey)
         setCheckoutError(data?.message || 'You are already on this plan')
         return
       }
@@ -287,6 +294,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
 
       window.location.assign(data.url)
     } catch (err) {
+      window.localStorage.removeItem(pendingAccountLevelKey)
       setCheckoutError(err.message || 'Unable to start checkout')
     } finally {
       setCheckoutLoading(null)

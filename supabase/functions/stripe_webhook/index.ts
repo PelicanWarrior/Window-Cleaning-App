@@ -141,46 +141,72 @@ async function resolveAccountLevelIdFromSubscription(
 async function updateUserByIdOrCustomerId(
   userId: string | undefined,
   customerId: string | undefined,
+  subscriptionId: string | undefined,
   updates: Record<string, unknown>,
 ) {
-  console.log("[stripe_webhook] updateUserByIdOrCustomerId called", { userId, customerId, updates });
-  
-  if (userId) {
-    const url = `${supabaseUrl}/rest/v1/Users?id=eq.${userId}`;
-    console.log("[stripe_webhook] Updating user by ID:", url);
+  console.log("[stripe_webhook] updateUserByIdOrCustomerId called", { userId, customerId, subscriptionId, updates });
+
+  async function patchUser(filterQuery: string, label: string) {
+    const url = `${supabaseUrl}/rest/v1/Users?${filterQuery}`;
+    console.log(`[stripe_webhook] Attempting update by ${label}:`, url);
+
     const response = await fetch(url, {
-      method: 'PATCH',
+      method: "PATCH",
       headers: {
-        'apikey': serviceRoleKey,
-        'Authorization': `Bearer ${serviceRoleKey}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal',
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        "Content-Type": "application/json",
+        Prefer: "return=representation",
       },
       body: JSON.stringify(updates),
     });
-    const result = response.ok ? { success: true } : await response.json();
-    console.log("[stripe_webhook] Update result:", { status: response.status, ok: response.ok, result });
-    return { error: response.ok ? null : result };
+
+    let payload: unknown = null;
+    if (response.status !== 204) {
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+    }
+
+    if (!response.ok) {
+      console.error("[stripe_webhook] Update request failed", { label, status: response.status, payload });
+      return { ok: false as const, updatedRows: 0, error: payload || { status: response.status } };
+    }
+
+    const rows = Array.isArray(payload) ? payload : [];
+    return { ok: true as const, updatedRows: rows.length, error: null };
   }
-  if (customerId) {
-    const url = `${supabaseUrl}/rest/v1/Users?StripeCustomerId=eq.${customerId}`;
-    console.log("[stripe_webhook] Updating user by customerId:", url);
-    const response = await fetch(url, {
-      method: 'PATCH',
-      headers: {
-        'apikey': serviceRoleKey,
-        'Authorization': `Bearer ${serviceRoleKey}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal',
-      },
-      body: JSON.stringify(updates),
-    });
-    const result = response.ok ? { success: true } : await response.json();
-    console.log("[stripe_webhook] Update result:", { status: response.status, ok: response.ok, result });
-    return { error: response.ok ? null : result };
+
+  const attempts = [
+    userId ? { label: "id", filter: `id=eq.${encodeURIComponent(userId)}` } : null,
+    customerId ? { label: "StripeCustomerId", filter: `StripeCustomerId=eq.${encodeURIComponent(customerId)}` } : null,
+    subscriptionId ? { label: "StripeSubscriptionId", filter: `StripeSubscriptionId=eq.${encodeURIComponent(subscriptionId)}` } : null,
+  ].filter(Boolean) as Array<{ label: string; filter: string }>;
+
+  if (!attempts.length) {
+    console.error("[stripe_webhook] Missing user id, customer id, and subscription id");
+    return { error: { message: "Missing user id, customer id, and subscription id" } } as const;
   }
-  console.error("[stripe_webhook] Neither userId nor customerId provided");
-  return { error: { message: "Missing user id and customer id" } } as const;
+
+  let lastError: unknown = null;
+  for (const attempt of attempts) {
+    const result = await patchUser(attempt.filter, attempt.label);
+    if (!result.ok) {
+      lastError = result.error;
+      continue;
+    }
+
+    if (result.updatedRows > 0) {
+      console.log("[stripe_webhook] Updated user rows", { matchedBy: attempt.label, updatedRows: result.updatedRows });
+      return { error: null };
+    }
+  }
+
+  const error = lastError || { message: "No matching user row found for webhook update" };
+  console.error("[stripe_webhook] No user row matched for update", { userId, customerId, subscriptionId, error });
+  return { error };
 }
 
 serve(async (req) => {
@@ -256,7 +282,7 @@ serve(async (req) => {
         if (accountLevelId) updates.AccountLevel = accountLevelId;
 
         console.log("[stripe_webhook] Updates to apply:", JSON.stringify(updates));
-        const result = await updateUserByIdOrCustomerId(userId, customerId || undefined, updates);
+        const result = await updateUserByIdOrCustomerId(userId, customerId || undefined, subscriptionId || undefined, updates);
         if (result.error) {
           console.error("[stripe_webhook] Error updating user:", JSON.stringify(result.error));
         } else {
@@ -286,7 +312,7 @@ serve(async (req) => {
           updates.AccountLevel = 1;
         }
 
-        await updateUserByIdOrCustomerId(userId, customerId || undefined, updates);
+        await updateUserByIdOrCustomerId(userId, customerId || undefined, subscription.id, updates);
         break;
       }
 
@@ -302,7 +328,7 @@ serve(async (req) => {
           AccountLevel: 1,
         };
 
-        await updateUserByIdOrCustomerId(userId, customerId || undefined, updates);
+        await updateUserByIdOrCustomerId(userId, customerId || undefined, subscription.id, updates);
         break;
       }
 
