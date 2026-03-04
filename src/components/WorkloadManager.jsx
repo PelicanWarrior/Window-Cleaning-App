@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import './WorkloadManager.css'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
@@ -45,6 +45,7 @@ function WorkloadManager({ user }) {
   const [isAddingService, setIsAddingService] = useState(false)
   const [newServiceData, setNewServiceData] = useState({ Service: '', Price: '', Description: '' })
   const [serviceDropdownOpen, setServiceDropdownOpen] = useState(null)
+  const serviceDropdownRefs = useRef({})
   const [editingServiceId, setEditingServiceId] = useState(null)
   const [editServiceData, setEditServiceData] = useState({})
   const [showHistory, setShowHistory] = useState(false)
@@ -68,6 +69,17 @@ function WorkloadManager({ user }) {
   const [importPersonalError, setImportPersonalError] = useState('')
   const [importPersonalDuplicateCount, setImportPersonalDuplicateCount] = useState(0)
   const [importPersonalAssumedYearCount, setImportPersonalAssumedYearCount] = useState(0)
+
+  useEffect(() => {
+    if (!serviceDropdownOpen) return
+
+    const dropdownElement = serviceDropdownRefs.current[serviceDropdownOpen]
+    if (!dropdownElement) return
+
+    requestAnimationFrame(() => {
+      dropdownElement.scrollIntoView({ behavior: 'smooth', block: 'end', inline: 'nearest' })
+    })
+  }, [serviceDropdownOpen])
 
   const getFullAddress = (customer) => {
     const parts = [
@@ -3309,7 +3321,16 @@ function WorkloadManager({ user }) {
                             <td className="actions-col">
                               <button className="service-actions-btn" onClick={() => setServiceDropdownOpen(serviceDropdownOpen === service.id ? null : service.id)}>⋮</button>
                               {serviceDropdownOpen === service.id && (
-                                <div className="service-actions-dropdown">
+                                <div
+                                  className="service-actions-dropdown"
+                                  ref={(element) => {
+                                    if (element) {
+                                      serviceDropdownRefs.current[service.id] = element
+                                    } else {
+                                      delete serviceDropdownRefs.current[service.id]
+                                    }
+                                  }}
+                                >
                                   <button onClick={() => { setEditingServiceId(service.id); setEditServiceData({...service}); setServiceDropdownOpen(null); }}>Edit</button>
                                   <button onClick={() => { handleDeleteService(service.id); setServiceDropdownOpen(null); }}>Delete</button>
                                   <button onClick={() => { handleAddToNextClean(service); setServiceDropdownOpen(null); }}>Add to Next Clean</button>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatDateByCountry, formatCurrency, getCurrencyConfig } from '../lib/format'
 import './Quotes.css'
@@ -18,11 +18,23 @@ function Quotes({ user }) {
   const [isAddingService, setIsAddingService] = useState(false)
   const [newServiceData, setNewServiceData] = useState({ Service: '', Price: '', Description: '' })
   const [serviceDropdownOpen, setServiceDropdownOpen] = useState(null)
+  const serviceDropdownRefs = useRef({})
   const [editingServiceId, setEditingServiceId] = useState(null)
   const [editServiceData, setEditServiceData] = useState({})
   const [showHistory, setShowHistory] = useState(false)
   const [customerHistory, setCustomerHistory] = useState([])
   const [bookJobModal, setBookJobModal] = useState({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
+
+  useEffect(() => {
+    if (!serviceDropdownOpen) return
+
+    const dropdownElement = serviceDropdownRefs.current[serviceDropdownOpen]
+    if (!dropdownElement) return
+
+    requestAnimationFrame(() => {
+      dropdownElement.scrollIntoView({ behavior: 'smooth', block: 'end', inline: 'nearest' })
+    })
+  }, [serviceDropdownOpen])
   const [quoteData, setQuoteData] = useState({
     CustomerName: '',
     Address: '',
@@ -655,7 +667,16 @@ function Quotes({ user }) {
                             <td className="actions-col">
                               <button className="service-actions-btn" onClick={() => setServiceDropdownOpen(serviceDropdownOpen === service.id ? null : service.id)}>⋮</button>
                               {serviceDropdownOpen === service.id && (
-                                <div className="service-actions-dropdown">
+                                <div
+                                  className="service-actions-dropdown"
+                                  ref={(element) => {
+                                    if (element) {
+                                      serviceDropdownRefs.current[service.id] = element
+                                    } else {
+                                      delete serviceDropdownRefs.current[service.id]
+                                    }
+                                  }}
+                                >
                                   <button onClick={() => { setEditingServiceId(service.id); setEditServiceData({...service}); setServiceDropdownOpen(null); }}>Edit</button>
                                   <button onClick={() => { handleDeleteService(service.id); setServiceDropdownOpen(null); }}>Delete</button>
                                 </div>
