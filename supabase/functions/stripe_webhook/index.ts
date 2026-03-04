@@ -70,6 +70,74 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
   db: { schema: 'public' },
 });
 
+async function findAccountLevelIdByStripeRefs(
+  stripePriceId: string | null,
+  stripeProductId: string | null,
+): Promise<number | null> {
+  if (stripePriceId) {
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/UserLevel?StripePriceId=eq.${encodeURIComponent(stripePriceId)}&select=id&limit=1`,
+      {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    if (response.ok) {
+      const rows = await response.json();
+      if (rows?.length) {
+        const levelId = Number(rows[0].id || 0);
+        if (levelId) return levelId;
+      }
+    }
+  }
+
+  if (stripeProductId) {
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/UserLevel?StripeProductId=eq.${encodeURIComponent(stripeProductId)}&select=id&limit=1`,
+      {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    if (response.ok) {
+      const rows = await response.json();
+      if (rows?.length) {
+        const levelId = Number(rows[0].id || 0);
+        if (levelId) return levelId;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function resolveAccountLevelIdFromSubscription(
+  subscription: Stripe.Subscription | null | undefined,
+): Promise<number | null> {
+  if (!subscription?.items?.data?.length) return null;
+
+  for (const item of subscription.items.data) {
+    const stripePriceId = item?.price?.id || null;
+    const rawProduct = item?.price?.product;
+    const stripeProductId = typeof rawProduct === "string"
+      ? rawProduct
+      : rawProduct?.id || null;
+
+    const levelId = await findAccountLevelIdByStripeRefs(stripePriceId, stripeProductId);
+    if (levelId) return levelId;
+  }
+
+  return null;
+}
+
 async function updateUserByIdOrCustomerId(
   userId: string | undefined,
   customerId: string | undefined,
@@ -167,9 +235,15 @@ serve(async (req) => {
         if (session.mode !== "subscription") break;
 
         const userId = session.metadata?.user_id;
-        const accountLevelId = Number(session.metadata?.account_level_id || 0);
+        const metadataAccountLevelId = Number(session.metadata?.account_level_id || 0);
         const subscriptionId = session.subscription as string | null;
         const customerId = session.customer as string | null;
+
+        const subscription = subscriptionId
+          ? await stripe.subscriptions.retrieve(subscriptionId, { expand: ["items.data.price"] })
+          : null;
+        const derivedAccountLevelId = await resolveAccountLevelIdFromSubscription(subscription);
+        const accountLevelId = derivedAccountLevelId || metadataAccountLevelId;
 
         console.log("[stripe_webhook] Metadata:", { userId, accountLevelId, subscriptionId, customerId });
 
@@ -195,7 +269,9 @@ serve(async (req) => {
         const subscription = event.data.object as Stripe.Subscription;
         const status = subscription.status;
         const userId = subscription.metadata?.user_id;
-        const accountLevelId = Number(subscription.metadata?.account_level_id || 0);
+        const metadataAccountLevelId = Number(subscription.metadata?.account_level_id || 0);
+        const derivedAccountLevelId = await resolveAccountLevelIdFromSubscription(subscription);
+        const accountLevelId = derivedAccountLevelId || metadataAccountLevelId;
         const customerId = subscription.customer as string | null;
 
         const updates: Record<string, unknown> = {

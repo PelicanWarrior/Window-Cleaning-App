@@ -381,6 +381,8 @@ serve(async (req) => {
     }
 
     const origin = req.headers.get("origin") || req.headers.get("referer") || "http://localhost:5173";
+    const querySeparator = origin.includes("?") ? "&" : "?";
+    const successReturnUrl = `${origin}${querySeparator}checkout=success&account_level_id=${encodeURIComponent(String(level.id))}`;
 
     if (existingSubscriptionId) {
       const subscription = await stripeGet(`subscriptions/${existingSubscriptionId}`, new URLSearchParams([
@@ -402,7 +404,7 @@ serve(async (req) => {
 
       const portalParams = new URLSearchParams();
       portalParams.append("customer", stripeCustomerId);
-      portalParams.append("return_url", origin);
+      portalParams.append("return_url", successReturnUrl);
       portalParams.append("flow_data[type]", "subscription_update_confirm");
       portalParams.append("flow_data[subscription_update_confirm][subscription]", subscription.id);
       portalParams.append("flow_data[subscription_update_confirm][items][0][id]", subscriptionItem.id);
@@ -444,6 +446,7 @@ serve(async (req) => {
             StripeCustomerId: stripeCustomerId,
             StripeSubscriptionId: updatedSubscription.id,
             StripeSubscriptionStatus: updatedSubscription.status,
+            AccountLevel: level.id,
           }),
         });
 
@@ -457,8 +460,8 @@ serve(async (req) => {
       }
     }
 
-    const successUrl = `${origin}?checkout=success&session_id={CHECKOUT_SESSION_ID}&user_id=${resolvedUserId}`;
-    const cancelUrl = `${origin}?checkout=cancelled`;
+    const successUrl = `${origin}${querySeparator}checkout=success&session_id={CHECKOUT_SESSION_ID}&user_id=${resolvedUserId}&account_level_id=${encodeURIComponent(String(level.id))}`;
+    const cancelUrl = `${origin}${querySeparator}checkout=cancelled`;
 
     const sessionParams = new URLSearchParams();
     sessionParams.append("mode", "subscription");

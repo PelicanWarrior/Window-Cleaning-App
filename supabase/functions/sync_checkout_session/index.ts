@@ -30,6 +30,74 @@ const stripe = new Stripe(stripeSecretKey, {
   httpClient: Stripe.createFetchHttpClient(),
 });
 
+async function findAccountLevelIdByStripeRefs(
+  stripePriceId: string | null,
+  stripeProductId: string | null,
+): Promise<number | null> {
+  if (stripePriceId) {
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/UserLevel?StripePriceId=eq.${encodeURIComponent(stripePriceId)}&select=id&limit=1`,
+      {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    if (response.ok) {
+      const rows = await response.json();
+      if (rows?.length) {
+        const levelId = Number(rows[0].id || 0);
+        if (levelId) return levelId;
+      }
+    }
+  }
+
+  if (stripeProductId) {
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/UserLevel?StripeProductId=eq.${encodeURIComponent(stripeProductId)}&select=id&limit=1`,
+      {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+          "Content-Type": "application/json",
+        },
+      },
+    );
+
+    if (response.ok) {
+      const rows = await response.json();
+      if (rows?.length) {
+        const levelId = Number(rows[0].id || 0);
+        if (levelId) return levelId;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function resolveAccountLevelIdFromSubscription(
+  subscription: Stripe.Subscription | null | undefined,
+): Promise<number | null> {
+  if (!subscription?.items?.data?.length) return null;
+
+  for (const item of subscription.items.data) {
+    const stripePriceId = item?.price?.id || null;
+    const rawProduct = item?.price?.product;
+    const stripeProductId = typeof rawProduct === "string"
+      ? rawProduct
+      : rawProduct?.id || null;
+
+    const levelId = await findAccountLevelIdByStripeRefs(stripePriceId, stripeProductId);
+    if (levelId) return levelId;
+  }
+
+  return null;
+}
+
 async function updateUserByIdOrCustomerId(
   userId: string | undefined,
   customerId: string | undefined,
@@ -106,11 +174,13 @@ serve(async (req) => {
 
     const userId =
       session.metadata?.user_id || subscription?.metadata?.user_id || undefined;
-    const accountLevelId = Number(
+    const metadataAccountLevelId = Number(
       session.metadata?.account_level_id ||
         subscription?.metadata?.account_level_id ||
         0,
     );
+    const derivedAccountLevelId = await resolveAccountLevelIdFromSubscription(subscription);
+    const accountLevelId = derivedAccountLevelId || metadataAccountLevelId;
 
     const customerId =
       (typeof session.customer === "string" ? session.customer : null) ||

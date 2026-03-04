@@ -23,6 +23,8 @@ function App() {
   const [checkoutStatus, setCheckoutStatus] = useState(null) // 'success', 'cancelled', or null
   const [statusMessage, setStatusMessage] = useState('')
 
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
   useEffect(() => {
     const handler = (e) => {
       e.preventDefault()
@@ -38,6 +40,7 @@ function App() {
     const params = new URLSearchParams(window.location.search)
     const checkoutParam = params.get('checkout')
     const sessionId = params.get('session_id')
+    const expectedAccountLevelId = Number(params.get('account_level_id') || 0) || null
 
     if (checkoutParam === 'success') {
       setCheckoutStatus('success')
@@ -47,7 +50,22 @@ function App() {
         if (sessionId) {
           await syncCheckoutSession(sessionId)
         }
-        await refreshUserData()
+
+        let latestUser = null
+        const maxAttempts = expectedAccountLevelId ? 8 : 1
+
+        for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+          latestUser = await refreshUserData()
+          if (!expectedAccountLevelId || Number(latestUser?.AccountLevel || 0) === expectedAccountLevelId) {
+            break
+          }
+
+          await sleep(1200)
+        }
+
+        if (expectedAccountLevelId && Number(latestUser?.AccountLevel || 0) !== expectedAccountLevelId) {
+          setStatusMessage('Payment successful. Your plan change is processing and should appear shortly.')
+        }
 
         // Clean up URL
         window.history.replaceState({}, document.title, window.location.pathname)
@@ -109,8 +127,10 @@ function App() {
       
       // Update user state with fresh data
       setUser(data)
+      return data
     } catch (err) {
       console.error('Error refreshing user data:', err)
+      return null
     }
   }
 

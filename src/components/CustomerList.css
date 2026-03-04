@@ -879,8 +879,9 @@
 
   .service-actions-dropdown {
     position: absolute;
-    right: 0;
-    top: 100%;
+    right: 100%;
+    margin-right: 0.4rem;
+    top: 0;
     background: white;
     border: 1px solid #ddd;
     border-radius: 6px;
