@@ -527,10 +527,8 @@ function Auth({ onLogin }) {
           return
         }
 
-        setPendingConfirmationEmail(signupEmail)
-        setConfirmationMessage('Account created. Please check your email and click the confirmation link to finish creating your account.')
-        setIsLogin(true)
-        setFormData({ username: '', email: '', password: '', companyName: '', country: 'United Kingdom' })
+        window.location.assign('/sign_up/')
+        return
       }
     } catch (err) {
       setError('An error occurred. Please try again.')

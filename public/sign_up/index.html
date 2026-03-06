@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-XNTXMVGNRS"></script>
+    <script>
+      window.dataLayer = window.dataLayer || []
+      function gtag() { dataLayer.push(arguments) }
+      gtag('js', new Date())
+      gtag('config', 'G-XNTXMVGNRS')
+    </script>
+    <title>Sign Up Complete | Pelican</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #f5f5f5;
+        font-family: Arial, sans-serif;
+        color: #2c3e50;
+      }
+      .card {
+        width: min(92vw, 520px);
+        background: #ffffff;
+        border-radius: 12px;
+        padding: 28px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        text-align: center;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 1.75rem;
+      }
+      p {
+        margin: 10px 0;
+        line-height: 1.45;
+      }
+      .countdown {
+        font-weight: 700;
+      }
+      .btn {
+        margin-top: 16px;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 1rem;
+        cursor: pointer;
+        color: #fff;
+        background: #3498db;
+      }
+      .btn:hover {
+        background: #2f88c5;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>Thank you for signing up!</h1>
+      <p>Your account was created successfully.</p>
+      <p>You will be redirected to the main page in <span class="countdown" id="countdown">6</span> seconds.</p>
+      <button class="btn" id="goNow" type="button">Go to app now</button>
+    </main>
+
+    <script>
+      (function () {
+        var seconds = 6
+        var countdownEl = document.getElementById('countdown')
+        var targetUrl = '/'
+
+        var intervalId = setInterval(function () {
+          seconds -= 1
+          if (countdownEl) {
+            countdownEl.textContent = String(Math.max(seconds, 0))
+          }
+          if (seconds <= 0) {
+            clearInterval(intervalId)
+            window.location.replace(targetUrl)
+          }
+        }, 1000)
+
+        var goNowBtn = document.getElementById('goNow')
+        if (goNowBtn) {
+          goNowBtn.addEventListener('click', function () {
+            window.location.replace(targetUrl)
+          })
+        }
+      })()
+    </script>
+  </body>
+</html>
