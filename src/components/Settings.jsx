@@ -40,6 +40,7 @@ async function getFunctionErrorMessage(error, fallback) {
 }
 
 function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
+  const isAdmin = Boolean(user?.admin)
   const [activeTab, setActiveTab] = useState(initialTab)
   const [password, setPassword] = useState('')
   const [companyName, setCompanyName] = useState(user.CompanyName || '')
@@ -688,9 +689,11 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
                 <p className="plan-note">
                   Paid plans are billed monthly via Stripe. You will be redirected to secure checkout.
                 </p>
-                <button className="plan-test-btn" onClick={handleTestConnection}>
-                  Test billing connection
-                </button>
+                {isAdmin && (
+                  <button className="plan-test-btn" onClick={handleTestConnection}>
+                    Test billing connection
+                  </button>
+                )}
                 {user?.StripeCustomerId && (
                   <button
                     className="plan-portal-btn"
