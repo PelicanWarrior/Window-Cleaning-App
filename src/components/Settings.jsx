@@ -338,7 +338,24 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
         throw new Error(message)
       }
       if (!data?.ok) throw new Error('Health check did not return ok')
-      setConnectionStatus('Billing connection OK')
+
+      const stripe = data?.stripe || {}
+      const mode = stripe.balanceLivemode === true
+        ? 'Live'
+        : stripe.balanceLivemode === false
+          ? 'Sandbox/Test'
+          : stripe.accountLivemode === true
+            ? 'Live (account)'
+            : stripe.accountLivemode === false
+              ? 'Sandbox/Test (account)'
+              : stripe.keyMode === 'live'
+                ? 'Live (key prefix)'
+                : stripe.keyMode === 'test'
+                  ? 'Sandbox/Test (key prefix)'
+                  : 'Unknown'
+
+      const details = stripe.accountError ? ` (${stripe.accountError})` : ''
+      setConnectionStatus(`Billing connection OK — Stripe mode: ${mode}${details}`)
     } catch (err) {
       setConnectionStatus(err.message || 'Billing connection failed')
     }
@@ -671,11 +688,9 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
                 <p className="plan-note">
                   Paid plans are billed monthly via Stripe. You will be redirected to secure checkout.
                 </p>
-                {user?.admin && (
-                  <button className="plan-test-btn" onClick={handleTestConnection}>
-                    Test billing connection
-                  </button>
-                )}
+                <button className="plan-test-btn" onClick={handleTestConnection}>
+                  Test billing connection
+                </button>
                 {user?.StripeCustomerId && (
                   <button
                     className="plan-portal-btn"

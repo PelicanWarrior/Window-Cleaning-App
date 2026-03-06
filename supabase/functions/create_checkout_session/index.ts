@@ -16,6 +16,13 @@ const corsHeaders = {
   "access-control-allow-headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function getStripeCurrency(): string {
+  const raw = (Deno.env.get("STRIPE_CURRENCY") || "gbp").toLowerCase().trim();
+  if (/^[a-z]{3,4}$/.test(raw)) return raw;
+  console.warn(`[create_checkout_session] Invalid STRIPE_CURRENCY '${raw}', defaulting to gbp`);
+  return "gbp";
+}
+
 function jsonResponse(status: number, data: unknown) {
   return new Response(JSON.stringify(data), {
     status,
@@ -82,7 +89,7 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("FUNCTION_SUPABASE_URL") || Deno.env.get("SUPABASE_URL");
     const serviceRoleKey = Deno.env.get("FUNCTION_SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const stripeCurrency = (Deno.env.get("STRIPE_CURRENCY") || "gbp").toLowerCase();
+    const stripeCurrency = getStripeCurrency();
 
     if (!supabaseUrl || !serviceRoleKey) {
       return jsonResponse(500, { error: "Missing Supabase configuration" });
@@ -307,6 +314,22 @@ serve(async (req) => {
     }
 
     let stripeProductId = level.StripeProductId as string | null;
+
+    if (stripeProductId) {
+      try {
+        await stripeGet(`products/${stripeProductId}`);
+      } catch (productError) {
+        const message = String(productError?.message || productError || "");
+        const missingProduct = message.toLowerCase().includes("no such product");
+
+        if (!missingProduct) {
+          throw productError;
+        }
+
+        stripeProductId = null;
+      }
+    }
+
     if (!stripeProductId) {
       const productParams = new URLSearchParams();
       productParams.append("name", `${level.LevelName} Plan`);
