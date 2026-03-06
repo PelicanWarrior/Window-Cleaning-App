@@ -142,6 +142,17 @@ function WorkloadManager({ user }) {
     return ''
   }
 
+  const parseDateKeyToLocalDate = (value) => {
+    const dateKey = normalizeDateKey(value)
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey)
+    if (!match) return null
+
+    const year = Number(match[1])
+    const month = Number(match[2]) - 1
+    const day = Number(match[3])
+    return new Date(year, month, day)
+  }
+
   const getPersonalItemsForDate = (dayOrDate) => {
     if (!isAdmin || !personalCalendarItems.length) return []
     const dateKey = normalizeDateKey(dayOrDate)
@@ -888,7 +899,12 @@ function WorkloadManager({ user }) {
       if (error) throw error
       
       if (data?.CalenderDate) {
-        const savedDate = new Date(data.CalenderDate)
+        const savedDate = parseDateKeyToLocalDate(data.CalenderDate)
+        if (!savedDate) {
+          setCurrentDate(new Date())
+          setSelectedDate(new Date().getDate())
+          return
+        }
         // Set currentDate to the actual saved date (not just the 1st of month)
         setCurrentDate(savedDate)
         setSelectedDate(savedDate.getDate())
@@ -1139,7 +1155,7 @@ function WorkloadManager({ user }) {
   // Helper function to save calendar date to database
   const saveCalendarDate = async (dateToSave) => {
     try {
-      const selectedDateStr = dateToSave.toISOString().split('T')[0]
+      const selectedDateStr = toLocalDateKey(dateToSave)
       const { error } = await supabase
         .from('Users')
         .update({ CalenderDate: selectedDateStr })
@@ -1155,35 +1171,29 @@ function WorkloadManager({ user }) {
 
   // Check if a date has any jobs scheduled (non-quote)
   const hasJobsOnDate = (dayOrDate) => {
-    const dateStr = (dayOrDate instanceof Date) 
-      ? dayOrDate.toISOString().split('T')[0]
-      : new Date(currentDate.getFullYear(), currentDate.getMonth(), dayOrDate).toISOString().split('T')[0]
+    const dateStr = normalizeDateKey(dayOrDate)
     return customers.some(customer => {
       if (!customer.NextClean || isQuoteCustomer(customer)) return false
-      const nextCleanDate = new Date(customer.NextClean).toISOString().split('T')[0]
+      const nextCleanDate = normalizeDateKey(customer.NextClean)
       return nextCleanDate === dateStr
     })
   }
 
   const hasQuotesOnDate = (dayOrDate) => {
-    const dateStr = (dayOrDate instanceof Date) 
-      ? dayOrDate.toISOString().split('T')[0]
-      : new Date(currentDate.getFullYear(), currentDate.getMonth(), dayOrDate).toISOString().split('T')[0]
+    const dateStr = normalizeDateKey(dayOrDate)
     return customers.some(customer => {
       if (!customer.NextClean || !isQuoteCustomer(customer)) return false
-      const nextCleanDate = new Date(customer.NextClean).toISOString().split('T')[0]
+      const nextCleanDate = normalizeDateKey(customer.NextClean)
       return nextCleanDate === dateStr
     })
   }
 
   // Get customers for a specific date
   const getCustomersForDate = (dayOrDate) => {
-    const dateStr = (dayOrDate instanceof Date) 
-      ? dayOrDate.toISOString().split('T')[0]
-      : new Date(currentDate.getFullYear(), currentDate.getMonth(), dayOrDate).toISOString().split('T')[0]
+    const dateStr = normalizeDateKey(dayOrDate)
     return customers.filter(customer => {
       if (!customer.NextClean) return false
-      const nextCleanDate = new Date(customer.NextClean).toISOString().split('T')[0]
+      const nextCleanDate = normalizeDateKey(customer.NextClean)
       return nextCleanDate === dateStr
     })
   }
@@ -1199,7 +1209,7 @@ function WorkloadManager({ user }) {
     try {
       // Create the actual date object with proper year, month, and day
       const actualDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
-      const selectedDateStr = actualDate.toISOString().split('T')[0]
+      const selectedDateStr = toLocalDateKey(actualDate)
       const { error } = await supabase
         .from('Users')
         .update({ CalenderDate: selectedDateStr })
@@ -1283,7 +1293,7 @@ function WorkloadManager({ user }) {
       const { error } = await supabase
         .from('Customers')
         .update({ 
-          NextClean: nextCleanDate.toISOString().split('T')[0]
+          NextClean: toLocalDateKey(nextCleanDate)
         })
         .eq('id', customer.id)
       
@@ -1327,7 +1337,7 @@ function WorkloadManager({ user }) {
       const { error } = await supabase
         .from('Customers')
         .update({ 
-          NextClean: nextCleanDate.toISOString().split('T')[0],
+          NextClean: toLocalDateKey(nextCleanDate),
           Outstanding: newOutstanding
         })
         .eq('id', customer.id)
@@ -1461,11 +1471,12 @@ function WorkloadManager({ user }) {
   // Handle Move Date (legacy - for backwards compatibility if needed)
   const handleMoveDate = async (customer, days) => {
     try {
-      const currentNextClean = new Date(customer.NextClean)
+      const currentNextClean = parseDateKeyToLocalDate(customer.NextClean)
+      if (!currentNextClean) return
       const newNextClean = new Date(currentNextClean)
       newNextClean.setDate(newNextClean.getDate() + days)
       
-      await handleMoveToDate(customer, newNextClean.toISOString().split('T')[0])
+      await handleMoveToDate(customer, toLocalDateKey(newNextClean))
     } catch (error) {
       console.error('Error moving date:', error.message)
     }
@@ -1483,13 +1494,14 @@ function WorkloadManager({ user }) {
         targetCustomers
           .filter((customer) => customer.NextClean)
           .map(async (customer) => {
-            const currentNextClean = new Date(customer.NextClean)
+            const currentNextClean = parseDateKeyToLocalDate(customer.NextClean)
+            if (!currentNextClean) return
             const newNextClean = new Date(currentNextClean)
             newNextClean.setDate(newNextClean.getDate() + days)
 
             const { error } = await supabase
               .from('Customers')
-              .update({ NextClean: newNextClean.toISOString().split('T')[0] })
+              .update({ NextClean: toLocalDateKey(newNextClean) })
               .eq('id', customer.id)
 
             if (error) throw error
@@ -2006,7 +2018,8 @@ function WorkloadManager({ user }) {
   const handleSkipClean = async (customer) => {
     try {
       const weeksToAdd = parseInt(user.RouteWeeks) || 1
-      const currentCleanDate = new Date(customer.NextClean)
+      const currentCleanDate = parseDateKeyToLocalDate(customer.NextClean)
+      if (!currentCleanDate) return
       const nextCleanDate = new Date(currentCleanDate)
       nextCleanDate.setDate(nextCleanDate.getDate() + (weeksToAdd * 7))
       
@@ -2016,7 +2029,7 @@ function WorkloadManager({ user }) {
       // Update customer with new NextClean date
       const { error } = await supabase
         .from('Customers')
-        .update({ NextClean: nextCleanDate.toISOString().split('T')[0] })
+        .update({ NextClean: toLocalDateKey(nextCleanDate) })
         .eq('id', customer.id)
       
       if (error) throw error
@@ -2221,7 +2234,7 @@ function WorkloadManager({ user }) {
       const personalItemsForDay = getPersonalItemsForDate(day)
       
       // Get weather data for this day
-      const dateStr = day.toISOString().split('T')[0]
+      const dateStr = toLocalDateKey(day)
       const weatherInfo = weeklyWeather[dateStr]
       
       // Calculate daily earnings - pass full date object
@@ -2545,7 +2558,7 @@ function WorkloadManager({ user }) {
                             {bulkDatePickerOpen && (
                               <input
                                 type="date"
-                                value={new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate).toISOString().split('T')[0]}
+                                value={toLocalDateKey(new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate))}
                                 onChange={(e) => handleBulkMoveToDate(e.target.value)}
                                 className="date-picker-input"
                                 autoFocus
@@ -2624,7 +2637,7 @@ function WorkloadManager({ user }) {
                           {bulkDatePickerOpen && (
                             <input
                               type="date"
-                              value={new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate).toISOString().split('T')[0]}
+                              value={toLocalDateKey(new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate))}
                               onChange={(e) => handleBulkMoveToDate(e.target.value)}
                               className="date-picker-input"
                               autoFocus

@@ -9,6 +9,7 @@ import Settings from './components/Settings'
 import AdminPanel from './components/AdminPanel'
 import logo1 from '../public/Logo1.png'
 import { supabase } from './lib/supabase'
+import { normalizeUserCountryFields } from './lib/format'
 
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
@@ -206,10 +207,11 @@ function App() {
         .single()
       
       if (error) throw error
-      
+      const normalizedUser = normalizeUserCountryFields(data)
+
       // Update user state with fresh data
-      setUser(data)
-      return data
+      setUser(normalizedUser)
+      return normalizedUser
     } catch (err) {
       console.error('Error refreshing user data:', err)
       return null
@@ -242,7 +244,7 @@ function App() {
   }
 
   const handleLogin = (userData) => {
-    setUser(userData)
+    setUser(normalizeUserCountryFields(userData))
   }
 
   const handleLogout = async () => {
@@ -257,7 +259,7 @@ function App() {
 
   const handleSettingsSaved = (updatedUserFields) => {
     // Merge updated fields into user and close settings
-    setUser((prev) => ({ ...prev, ...updatedUserFields }))
+    setUser((prev) => normalizeUserCountryFields({ ...prev, ...updatedUserFields }))
     setShowSettings(false)
   }
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { formatCurrency } from '../lib/format'
+import { formatCurrency, getCountryUpdateFields, getUserCountry } from '../lib/format'
 import { APP_VERSION } from '../config/appVersion'
 import './Settings.css'
 
@@ -47,7 +47,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
   const [address2, setAddress2] = useState(user['Address 2'] || '')
   const [town, setTown] = useState(user.Town || '')
   const [postcode, setPostcode] = useState(user.Postcode || '')
-  const [country, setCountry] = useState(user.SettingsCountry || 'United Kingdom')
+  const [country, setCountry] = useState(getUserCountry(user))
   const [routeWeeks, setRouteWeeks] = useState(user.RouteWeeks || '')
   const [vatRegistered, setVatRegistered] = useState(user.VAT || false)
   const [saving, setSaving] = useState(false)
@@ -82,7 +82,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
     setAddress2(user['Address 2'] || '')
     setTown(user.Town || '')
     setPostcode(user.Postcode || '')
-    setCountry(user.SettingsCountry || 'United Kingdom')
+    setCountry(getUserCountry(user))
     setRouteWeeks(user.RouteWeeks || '')
     setVatRegistered(user.VAT || false)
     setCurrentAccountLevelId(user.AccountLevel || null)
@@ -348,9 +348,9 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
     setError('')
     setSaving(true)
     try {
-      const updateFields = { 
+      const updateFields = {
         CompanyName: companyName, 
-        SettingsCountry: country, 
+        ...getCountryUpdateFields(user, country),
         RouteWeeks: routeWeeks || null, 
         VAT: vatRegistered 
       }
@@ -391,7 +391,11 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
           if (customerError) throw customerError
         }
 
-        const updatedFields = { SettingsCountry: country, RouteWeeks: routeWeeks, VAT: vatRegistered }
+        const updatedFields = {
+          ...getCountryUpdateFields(user, country),
+          RouteWeeks: routeWeeks,
+          VAT: vatRegistered
+        }
         
         // Add address fields to the callback
         if (address1) updatedFields['Address 1'] = address1
@@ -580,7 +584,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
               ) : (
                 <>
                   <h4 className="my-round-stat">Total Customers: {totalCustomers}</h4>
-                  <h4 className="my-round-stat">Average Monthly Round: £{averageMonthlyRound.toFixed(2)}</h4>
+                  <h4 className="my-round-stat">Average Monthly Round: {formatCurrency(averageMonthlyRound, country)}</h4>
                   
                   <div className="route-breakdown">
                     <h4 className="route-breakdown-title">Route Breakdown</h4>
@@ -597,7 +601,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
                           <tr key={index}>
                             <td>{route.route}</td>
                             <td>{route.customers}</td>
-                            <td>£{route.amount.toFixed(2)}</td>
+                            <td>{formatCurrency(route.amount, country)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -605,7 +609,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
                         <tr className="route-total">
                           <td><strong>Total</strong></td>
                           <td><strong>{totalCustomers}</strong></td>
-                          <td><strong>£{averageMonthlyRound.toFixed(2)}</strong></td>
+                          <td><strong>{formatCurrency(averageMonthlyRound, country)}</strong></td>
                         </tr>
                       </tfoot>
                     </table>
@@ -697,7 +701,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
                         </p>
                       ) : (
                         <p className="account-level-message">
-                          This entitles you to register {accountLevelCustomers} Customers or £{accountLevelRoundAmount} for your Monthly round, whichever is first. If you go beyond this then you will need to register for the next tier up.
+                          This entitles you to register {accountLevelCustomers} Customers or {formatCurrency(accountLevelRoundAmount, country)} for your Monthly round, whichever is first. If you go beyond this then you will need to register for the next tier up.
                         </p>
                       )}
                     </>

@@ -1009,7 +1009,110 @@ function CustomerList({ user }) {
       }
       
       const headers = parseCSVLine(lines[0])
+      const normalizeHeader = (value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+      const headerIndexMap = headers.reduce((acc, header, index) => {
+        const normalized = normalizeHeader(header)
+        if (normalized && acc[normalized] === undefined) {
+          acc[normalized] = index
+        }
+        return acc
+      }, {})
+
+      const getValueByHeaders = (values, possibleHeaders) => {
+        for (const headerName of possibleHeaders) {
+          const index = headerIndexMap[normalizeHeader(headerName)]
+          if (index !== undefined) {
+            return (values[index] || '').trim()
+          }
+        }
+        return ''
+      }
+
+      const getValueByHeadersOrIndex = (values, possibleHeaders, fallbackIndex) => {
+        const fromHeader = getValueByHeaders(values, possibleHeaders)
+        if (fromHeader) return fromHeader
+        if (typeof fallbackIndex === 'number' && fallbackIndex >= 0 && fallbackIndex < values.length) {
+          return (values[fallbackIndex] || '').trim()
+        }
+        return ''
+      }
+
+      const parseCurrencyNumber = (value) => {
+        if (!value) return 0
+        const cleaned = String(value).replace(/[^0-9.-]/g, '')
+        const numeric = parseFloat(cleaned)
+        return Number.isFinite(numeric) ? numeric : 0
+      }
+
+      const parseServicesList = (servicesText) => {
+        if (!servicesText) return []
+
+        return String(servicesText)
+          .split(';')
+          .map((segment) => segment.trim())
+          .filter(Boolean)
+          .map((segment) => {
+            let parsed = segment.match(/^(.+?)\s*(?:-|=)\s*£?\s*([0-9]+(?:\.[0-9]{1,2})?)$/)
+            if (!parsed) {
+              parsed = segment.match(/^(.+?)\s+£?\s*([0-9]+(?:\.[0-9]{1,2})?)$/)
+            }
+            if (!parsed) return null
+
+            const serviceName = (parsed[1] || '').trim()
+            const servicePrice = parseCurrencyNumber(parsed[2])
+            if (!serviceName) return null
+
+            return {
+              Service: serviceName,
+              Price: servicePrice
+            }
+          })
+          .filter(Boolean)
+      }
+
+      const extractNotesAndServices = (notesText) => {
+        const normalizedNotes = String(notesText || '').trim()
+        if (!normalizedNotes) return { cleanNotes: '', services: [] }
+
+        const servicesMatch = normalizedNotes.match(/\bservices\b\s*:?\s*(.+)$/i)
+        if (!servicesMatch || !servicesMatch[1]) {
+          return { cleanNotes: normalizedNotes, services: [] }
+        }
+
+        const cleanNotes = normalizedNotes
+          .slice(0, servicesMatch.index)
+          .replace(/[;,:\-\s]+$/, '')
+          .trim()
+
+        return {
+          cleanNotes,
+          services: parseServicesList(servicesMatch[1])
+        }
+      }
+
+      const buildCustomerSignature = (customer) => {
+        const name = String(customer?.CustomerName || '').trim().toLowerCase()
+        const address = String(customer?.Address || '').trim().toLowerCase()
+        const phone = String(customer?.PhoneNumber || '').trim()
+        const email = String(customer?.EmailAddress || '').trim().toLowerCase()
+        return `${name}|${address}|${phone}|${email}`
+      }
+
+      const hasCustomerNameHeader = headerIndexMap[normalizeHeader('CustomerName')] !== undefined || headerIndexMap[normalizeHeader('Customer Name')] !== undefined
+      const hasAddressHeader = headerIndexMap[normalizeHeader('Address')] !== undefined
+      const hasPriceHeader =
+        headerIndexMap[normalizeHeader('Price')] !== undefined ||
+        headerIndexMap[normalizeHeader('Customer Price')] !== undefined ||
+        headerIndexMap[normalizeHeader('Service Price')] !== undefined
+
+      if (!hasCustomerNameHeader || !hasAddressHeader || !hasPriceHeader) {
+        alert('CSV must include Customer Name, Address, and Price columns.')
+        event.target.value = ''
+        return
+      }
+
       const customersToImport = []
+      const servicesByCustomerSignature = new Map()
       
       for (let i = 1; i < lines.length; i++) {
         const line = lines[i].trim()
@@ -1017,9 +1120,12 @@ function CustomerList({ user }) {
         
         const values = parseCSVLine(line)
         
-        const weeks = parseInt(values[headers.indexOf('Weeks')]) || 4
-        const nextCleanValue = values[headers.indexOf('NextClean')]
-        const outstandingValue = values[headers.indexOf('Outstanding')]
+        const weeks = parseInt(getValueByHeadersOrIndex(values, ['Weeks', 'Weeks for clean', 'WeeksForClean', 'Weeks for clean (e.g., 4, 6, etc)'], 3)) || 4
+        const nextCleanValue = getValueByHeadersOrIndex(values, ['NextClean', 'Next Clean', 'Next Clean date', 'Next Clean Date'], 4)
+        const outstandingValue = getValueByHeadersOrIndex(values, ['Outstanding', 'Outstanding Amount', 'OutstandingAmount'], 5)
+        const priceValue = getValueByHeadersOrIndex(values, ['Price', 'Customer Price', 'Service Price'], 9)
+        const rawNotesValue = getValueByHeadersOrIndex(values, ['Notes'], 7)
+        const { cleanNotes, services: notesServices } = extractNotesAndServices(rawNotesValue)
         
         // Parse UK date format (dd/mm/yyyy) to ISO format (yyyy-mm-dd)
         let nextCleanDate
@@ -1046,23 +1152,24 @@ function CustomerList({ user }) {
         
         const customer = {
           UserId: user.id,
-          CustomerName: values[headers.indexOf('CustomerName')] || '',
-          Address: values[headers.indexOf('Address')] || '',
-          Address2: values[headers.indexOf('Address2')] || '',
-          Address3: values[headers.indexOf('Address3')] || '',
-          Postcode: values[headers.indexOf('Postcode')] || '',
-          PhoneNumber: values[headers.indexOf('PhoneNumber')] || '',
-          EmailAddress: values[headers.indexOf('EmailAddress')] || '',
-          Price: parseInt(values[headers.indexOf('Price')]) || 0,
+          CustomerName: getValueByHeadersOrIndex(values, ['CustomerName', 'Customer Name'], 1),
+          Address: getValueByHeadersOrIndex(values, ['Address'], 0),
+          Address2: getValueByHeaders(values, ['Address2', 'Address 2']),
+          Address3: getValueByHeaders(values, ['Address3', 'Address 3']),
+          Postcode: getValueByHeaders(values, ['Postcode']),
+          PhoneNumber: getValueByHeadersOrIndex(values, ['PhoneNumber', 'Phone Number', 'Phone'], 2),
+          EmailAddress: getValueByHeadersOrIndex(values, ['EmailAddress', 'Email Address', 'Email'], 8),
+          Price: parseCurrencyNumber(priceValue),
           Weeks: weeks,
-          Route: values[headers.indexOf('Route')] || '',
-          Notes: values[headers.indexOf('Notes')] || '',
-          Outstanding: outstandingValue ? parseFloat(outstandingValue) : 0,
+          Route: getValueByHeadersOrIndex(values, ['Route'], 6),
+          Notes: cleanNotes,
+          Outstanding: parseCurrencyNumber(outstandingValue),
           NextClean: nextCleanDate
         }
         
         if (customer.Address) {
           customersToImport.push(customer)
+          servicesByCustomerSignature.set(buildCustomerSignature(customer), notesServices)
         }
       }
 
@@ -1138,6 +1245,59 @@ function CustomerList({ user }) {
         .select()
       
       if (error) throw error
+
+      // Ensure imported customers have a "Windows" service entry in CustomerPrices
+      if (insertedCustomers && insertedCustomers.length > 0) {
+        const importedCustomerIds = insertedCustomers.map((customer) => customer.id)
+
+        const { data: existingPriceEntries, error: existingPriceError } = await supabase
+          .from('CustomerPrices')
+          .select('CustomerID, Service')
+          .in('CustomerID', importedCustomerIds)
+
+        if (existingPriceError) throw existingPriceError
+
+        const existingServiceKeys = new Set(
+          (existingPriceEntries || []).map((entry) => `${entry.CustomerID}|${String(entry.Service || '').trim().toLowerCase()}`)
+        )
+        const queuedServiceKeys = new Set()
+        const priceRowsToInsert = []
+
+        for (const customer of insertedCustomers) {
+          if (customer.Quote === true) continue
+
+          const windowsKey = `${customer.id}|windows`
+          if (!existingServiceKeys.has(windowsKey) && !queuedServiceKeys.has(windowsKey)) {
+            priceRowsToInsert.push({
+              CustomerID: customer.id,
+              Price: parseFloat(customer.Price) || 0,
+              Service: 'Windows'
+            })
+            queuedServiceKeys.add(windowsKey)
+          }
+
+          const extraServices = servicesByCustomerSignature.get(buildCustomerSignature(customer)) || []
+          for (const service of extraServices) {
+            const serviceKey = `${customer.id}|${String(service.Service || '').trim().toLowerCase()}`
+            if (existingServiceKeys.has(serviceKey) || queuedServiceKeys.has(serviceKey)) continue
+
+            priceRowsToInsert.push({
+              CustomerID: customer.id,
+              Price: parseFloat(service.Price) || 0,
+              Service: service.Service
+            })
+            queuedServiceKeys.add(serviceKey)
+          }
+        }
+
+        if (priceRowsToInsert.length > 0) {
+          const { error: insertWindowsError } = await supabase
+            .from('CustomerPrices')
+            .insert(priceRowsToInsert)
+
+          if (insertWindowsError) throw insertWindowsError
+        }
+      }
       
       // Append new customer IDs to Users.RouteOrder
       if (insertedCustomers && insertedCustomers.length > 0) {
@@ -1965,10 +2125,14 @@ function CustomerList({ user }) {
             <button className="modal-close" onClick={() => setShowCSVImportModal(false)}>×</button>
             <h3>CSV Import Instructions</h3>
             <div style={{ marginBottom: '1.5rem', lineHeight: '1.6' }}>
-              <p><strong>Please arrange your columns in the following order:</strong></p>
+              <p><strong>Required columns (can be in any order):</strong></p>
               <ol style={{ marginLeft: '1.5rem' }}>
-                <li>Address</li>
                 <li>Customer Name</li>
+                <li>Address</li>
+                <li>Price</li>
+              </ol>
+              <p><strong>Optional columns:</strong></p>
+              <ol style={{ marginLeft: '1.5rem' }}>
                 <li>Phone Number</li>
                 <li>Weeks for clean (e.g., 4, 6, etc)</li>
                 <li>Next Clean date</li>
@@ -1977,6 +2141,9 @@ function CustomerList({ user }) {
                 <li>Notes</li>
                 <li>Email Address</li>
               </ol>
+              <p><strong>Extra services via Notes:</strong> put <strong>Services:</strong> followed by service and price pairs, separated by semicolons.</p>
+              <p><strong>Important:</strong> put <strong>Services:</strong> at the end of the Notes text. Anything after <strong>Services:</strong> is used for CustomerPrices and is not saved in the customer Notes field.</p>
+              <p>Example: <strong>Services: Gutters - 25; Conservatory Roof - 35</strong></p>
             </div>
             <div className="modal-buttons">
               <button 

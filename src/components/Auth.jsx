@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { getCountryUpdateFields, normalizeUserCountryFields } from '../lib/format'
 import './Auth.css'
 
 function Auth({ onLogin }) {
@@ -101,32 +102,53 @@ function Auth({ onLogin }) {
       .maybeSingle()
 
     if (existingError) throw existingError
-    if (existingUser) return existingUser
+    if (existingUser) return normalizeUserCountryFields(existingUser)
 
     const metadata = authUser.user_metadata || {}
     const requestedUsername = signupDefaults.username || metadata.username || authEmail.split('@')[0]
     const uniqueUsername = await findUniqueUsername(requestedUsername, authEmail)
+
+    const preferredCountry = signupDefaults.country || metadata.country || 'United Kingdom'
 
     const newUserPayload = {
       UserName: uniqueUsername,
       email_address: authEmail,
       admin: false,
       CustomerSort: 'Route',
-      SettingsCountry: signupDefaults.country || metadata.country || 'United Kingdom',
       CompanyName: signupDefaults.companyName || metadata.companyName || '',
       MessageFooter: '',
       RouteWeeks: 4,
       AccountLevel: 1
     }
 
-    const { data: newUser, error: insertError } = await supabase
-      .from('Users')
-      .insert([newUserPayload])
-      .select()
-      .single()
+    const candidatePayloads = [
+      { ...newUserPayload, SettingsCountry: preferredCountry },
+      { ...newUserPayload, SettingsCounty: preferredCountry },
+      { ...newUserPayload }
+    ]
 
-    if (insertError) throw insertError
-    return newUser
+    let lastError = null
+
+    for (const payload of candidatePayloads) {
+      const { data: newUser, error: insertError } = await supabase
+        .from('Users')
+        .insert([payload])
+        .select()
+        .single()
+
+      if (!insertError && newUser) {
+        return normalizeUserCountryFields(newUser)
+      }
+
+      lastError = insertError
+      const message = String(insertError?.message || '').toLowerCase()
+      const isCountryColumnError = message.includes('settingscountry') || message.includes('settingscounty')
+      if (!isCountryColumnError) {
+        throw insertError
+      }
+    }
+
+    throw lastError || new Error('Unable to create user record')
   }
 
   useEffect(() => {
@@ -301,16 +323,22 @@ function Auth({ onLogin }) {
           return
         }
 
-        // If SettingsCountry is empty, set it to United Kingdom
-        let userData = data
-        if (!userData.SettingsCountry) {
+        // If country settings are empty, set them to United Kingdom
+        let userData = normalizeUserCountryFields(data)
+        const hasStoredCountry = Boolean(
+          (data?.SettingsCountry && String(data.SettingsCountry).trim()) ||
+          (data?.SettingsCounty && String(data.SettingsCounty).trim())
+        )
+
+        if (!hasStoredCountry) {
+          const countryUpdate = getCountryUpdateFields(data, 'United Kingdom')
           const { error: updateError } = await supabase
             .from('Users')
-            .update({ SettingsCountry: 'United Kingdom' })
+            .update(countryUpdate)
             .eq('id', userData.id)
           
           if (updateError) throw updateError
-          userData = { ...userData, SettingsCountry: 'United Kingdom' }
+          userData = normalizeUserCountryFields({ ...userData, ...countryUpdate })
         }
 
         // If RouteWeeks is empty, set it to 4
@@ -321,7 +349,7 @@ function Auth({ onLogin }) {
             .eq('id', userData.id)
           
           if (updateError) throw updateError
-          userData = { ...userData, RouteWeeks: 4 }
+          userData = normalizeUserCountryFields({ ...userData, RouteWeeks: 4 })
         }
 
         // If AccountLevel is empty, set it to 1
@@ -332,7 +360,7 @@ function Auth({ onLogin }) {
             .eq('id', userData.id)
           
           if (updateError) throw updateError
-          userData = { ...userData, AccountLevel: 1 }
+          userData = normalizeUserCountryFields({ ...userData, AccountLevel: 1 })
         }
 
         // Smart arrange addresses: split comma-separated addresses and extract postcodes
