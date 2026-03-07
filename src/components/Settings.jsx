@@ -39,7 +39,7 @@ async function getFunctionErrorMessage(error, fallback) {
   return error?.message || fallback
 }
 
-function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
+function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest = false, onRequireAuth }) {
   const isAdmin = Boolean(user?.admin)
   const [activeTab, setActiveTab] = useState(initialTab)
   const [password, setPassword] = useState('')
@@ -220,6 +220,11 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
   }
 
   const handleSelectLevel = async (level) => {
+    if (isGuest) {
+      onRequireAuth?.()
+      return
+    }
+
     setCheckoutError('')
     setPortalError('')
     setConnectionStatus('')
@@ -303,6 +308,11 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
   }
 
   const handleManageBilling = async () => {
+    if (isGuest) {
+      onRequireAuth?.()
+      return
+    }
+
     setPortalError('')
     setConnectionStatus('')
     try {
@@ -363,6 +373,11 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings' }) {
   }
 
   const handleSave = async () => {
+    if (isGuest) {
+      onRequireAuth?.()
+      return
+    }
+
     setError('')
     setSaving(true)
     try {

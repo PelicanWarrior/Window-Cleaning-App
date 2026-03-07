@@ -12,9 +12,22 @@ import { supabase } from './lib/supabase'
 import { normalizeUserCountryFields } from './lib/format'
 
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const PREVIEW_USER = {
+  id: 0,
+  UserName: 'Guest',
+  email_address: '',
+  admin: false,
+  AccountLevel: 1,
+  CustomerSort: 'Route',
+  CompanyName: '',
+  RouteWeeks: 4,
+  VAT: false,
+  SettingsCountry: 'United Kingdom'
+}
 
 function App() {
   const [user, setUser] = useState(null)
+  const [showAuth, setShowAuth] = useState(false)
   const [activeTab, setActiveTab] = useState('workload')
   const [showSettings, setShowSettings] = useState(false)
   const [showAdminPanel, setShowAdminPanel] = useState(false)
@@ -23,6 +36,8 @@ function App() {
   const [showInstallButton, setShowInstallButton] = useState(false)
   const [checkoutStatus, setCheckoutStatus] = useState(null) // 'success', 'cancelled', or null
   const [statusMessage, setStatusMessage] = useState('')
+  const isAuthenticated = Boolean(user?.id)
+  const activeUser = user || PREVIEW_USER
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -34,6 +49,63 @@ function App() {
     }
     window.addEventListener('beforeinstallprompt', handler)
     return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const syncUserFromSession = async (session) => {
+      const authUser = session?.user
+      if (!authUser?.email) {
+        if (isMounted) setUser(null)
+        return
+      }
+
+      const authEmail = authUser.email.trim().toLowerCase()
+      const { data, error } = await supabase
+        .from('Users')
+        .select('*')
+        .ilike('email_address', authEmail)
+        .maybeSingle()
+
+      if (error) {
+        console.error('Error loading user profile from session:', error)
+        return
+      }
+
+      if (isMounted && data) {
+        setUser(normalizeUserCountryFields(data))
+        setShowAuth(false)
+      }
+    }
+
+    const hydrateSession = async () => {
+      const { data, error } = await supabase.auth.getSession()
+      if (error) {
+        console.error('Error reading auth session:', error)
+        return
+      }
+
+      await syncUserFromSession(data?.session || null)
+    }
+
+    hydrateSession()
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return
+
+      if (event === 'SIGNED_OUT') {
+        setUser(null)
+        return
+      }
+
+      syncUserFromSession(session)
+    })
+
+    return () => {
+      isMounted = false
+      listener?.subscription?.unsubscribe()
+    }
   }, [])
 
   // Handle checkout success/cancel redirects
@@ -245,6 +317,7 @@ function App() {
 
   const handleLogin = (userData) => {
     setUser(normalizeUserCountryFields(userData))
+    setShowAuth(false)
   }
 
   const handleLogout = async () => {
@@ -254,7 +327,15 @@ function App() {
       console.error('Error signing out auth session:', err)
     }
     setUser(null)
+    setShowAuth(false)
     setActiveTab('workload')
+  }
+
+  const handleRequireAuth = () => {
+    const proceed = window.confirm('You can register for free to use the app. Press OK to go to the sign in page.')
+    if (proceed) {
+      setShowAuth(true)
+    }
   }
 
   const handleSettingsSaved = (updatedUserFields) => {
@@ -271,15 +352,14 @@ function App() {
   }
 
   const getAccountLevelInfo = () => {
-    const level = Number(user?.AccountLevel || 1)
+    const level = Number(activeUser?.AccountLevel || 1)
 
     if (level >= 3) return { label: 'Gold', className: 'gold' }
     if (level === 2) return { label: 'Silver', className: 'silver' }
     return { label: 'Bronze', className: 'bronze' }
   }
 
-  // Show login if not authenticated
-  if (!user) {
+  if (showAuth && !isAuthenticated) {
     return <Auth onLogin={handleLogin} />
   }
 
@@ -292,12 +372,12 @@ function App() {
             <h1>Pelican Window Cleaning Manager</h1>
           </div>
           <div className="user-info">
-            <span>Welcome, {user.UserName}</span>
+            <span>{isAuthenticated ? `Welcome, ${activeUser.UserName}` : 'Preview mode'}</span>
             {showInstallButton && (
               <button className="install-btn" onClick={handleInstallClick}>Install App</button>
             )}
             <button className="settings-btn" onClick={() => handleShowSettings('userSettings')}>Settings</button>
-            {user.admin ? (
+            {activeUser.admin ? (
               <span className="admin-badge" onClick={() => setShowAdminPanel(true)}>Admin</span>
             ) : (
               (() => {
@@ -313,7 +393,11 @@ function App() {
               })()
             )}
             <div className="logout-section">
-              <button className="logout-btn" onClick={handleLogout}>Logout</button>
+              {isAuthenticated ? (
+                <button className="logout-btn" onClick={handleLogout}>Logout</button>
+              ) : (
+                <button className="logout-btn" onClick={() => setShowAuth(true)}>Sign in / Register</button>
+              )}
             </div>
           </div>
         </div>
@@ -350,22 +434,30 @@ function App() {
         </nav>
       </header>
       <main className="app-main">
-        {activeTab === 'workload' && <WorkloadManager user={user} />}
-        {activeTab === 'customers' && <CustomerList user={user} />}
-        {activeTab === 'quotes' && <Quotes user={user} />}
-        {activeTab === 'letters' && <Letters user={user} />}
+        {activeTab === 'workload' && <WorkloadManager user={activeUser} />}
+        {activeTab === 'customers' && (
+          <CustomerList
+            user={activeUser}
+            isGuest={!isAuthenticated}
+            onRequireAuth={handleRequireAuth}
+          />
+        )}
+        {activeTab === 'quotes' && <Quotes user={activeUser} />}
+        {activeTab === 'letters' && <Letters user={activeUser} />}
       </main>
       {showSettings && (
         <Settings 
-          user={user} 
+          user={activeUser}
+          isGuest={!isAuthenticated}
+          onRequireAuth={handleRequireAuth}
           onClose={() => setShowSettings(false)} 
           onSaved={handleSettingsSaved}
           initialTab={settingsInitialTab}
         />
       )}
-      {showAdminPanel && (
+      {showAdminPanel && isAuthenticated && (
         <AdminPanel
-          user={user}
+          user={activeUser}
           onClose={() => setShowAdminPanel(false)}
         />
       )}

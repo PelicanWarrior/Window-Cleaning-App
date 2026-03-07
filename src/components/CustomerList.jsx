@@ -5,7 +5,7 @@ import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/f
 import InvoicesModal from './InvoicesModal'
 import InvoiceModalContent from './InvoiceModalNew'
 
-function CustomerList({ user }) {
+function CustomerList({ user, isGuest = false, onRequireAuth }) {
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
   const [sortBy, setSortBy] = useState(user.CustomerSort || 'Route')
@@ -77,6 +77,19 @@ function CustomerList({ user }) {
     NextClean: '',
     Notes: ''
   })
+
+  const requestAuthForWrite = () => {
+    onRequireAuth?.()
+  }
+
+  const handleOpenAddForm = () => {
+    if (isGuest) {
+      requestAuthForWrite()
+      return
+    }
+
+    setShowAddForm(true)
+  }
 
   useEffect(() => {
     fetchCustomers()
@@ -392,6 +405,12 @@ function CustomerList({ user }) {
 
   async function addCustomer(e) {
     e.preventDefault()
+
+    if (isGuest) {
+      requestAuthForWrite()
+      return
+    }
+
     try {
       const defaultNextCleanDate = new Date(Date.now() + (parseInt(newCustomer.Weeks) || 4) * 7 * 24 * 60 * 60 * 1000)
         .toISOString()
@@ -1342,7 +1361,7 @@ function CustomerList({ user }) {
       
       <div className="action-buttons">
         {!showAddForm && (
-          <button className="add-customer-btn" onClick={() => setShowAddForm(true)}>
+          <button className="add-customer-btn" onClick={handleOpenAddForm}>
             + Add Customer
           </button>
         )}
