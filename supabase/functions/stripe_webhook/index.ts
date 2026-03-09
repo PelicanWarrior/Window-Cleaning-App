@@ -32,15 +32,15 @@ async function verifyStripeSignature(
   // Parse signature header: "t=<timestamp>,v1=<signature>"
   const parts = signatureHeader.split(",");
   let timestamp = "";
-  let signature = "";
+  const signatures: string[] = [];
 
   for (const part of parts) {
     const [label, value] = part.trim().split("=");
     if (label === "t") timestamp = value;
-    if (label === "v1") signature = value;
+    if (label === "v1" && value) signatures.push(value);
   }
 
-  if (!timestamp || !signature) {
+  if (!timestamp || signatures.length === 0) {
     console.error("[stripe_webhook] Missing timestamp or signature in header");
     return false;
   }
@@ -62,7 +62,7 @@ async function verifyStripeSignature(
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
-  return computedSignatureHex === signature;
+  return signatures.includes(computedSignatureHex);
 }
 
 const supabase = createClient(supabaseUrl, serviceRoleKey, {

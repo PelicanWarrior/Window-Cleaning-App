@@ -4,6 +4,8 @@
 // - STRIPE_SECRET_KEY
 // - SUPABASE_URL
 // - SUPABASE_SERVICE_ROLE_KEY
+// Optional secrets:
+// - APP_BASE_URL (e.g. https://www.pelicanwindowcleaning.co.uk)
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -19,6 +21,41 @@ function jsonResponse(status: number, data: unknown) {
     status,
     headers: { "content-type": "application/json", ...corsHeaders },
   });
+}
+
+function normalizeBaseUrl(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl) return null;
+
+  try {
+    const parsed = new URL(rawUrl.trim());
+    const normalizedPath = parsed.pathname && parsed.pathname !== "/"
+      ? parsed.pathname.replace(/\/+$/, "")
+      : "";
+    return `${parsed.origin}${normalizedPath}`;
+  } catch {
+    return null;
+  }
+}
+
+function resolveAppBaseUrl(req: Request): string {
+  const configuredBaseUrl = normalizeBaseUrl(Deno.env.get("APP_BASE_URL"));
+  if (configuredBaseUrl) return configuredBaseUrl;
+
+  const originHeader = normalizeBaseUrl(req.headers.get("origin"));
+  if (originHeader) return originHeader;
+
+  const refererHeader = normalizeBaseUrl(req.headers.get("referer"));
+  if (refererHeader) return refererHeader;
+
+  return "http://localhost:5173";
+}
+
+function buildReturnUrl(baseUrl: string, params: Record<string, string>): string {
+  const url = new URL(baseUrl);
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
+  return url.toString();
 }
 
 async function stripeRequest(path: string, body: URLSearchParams) {
@@ -87,9 +124,8 @@ serve(async (req) => {
       return jsonResponse(400, { error: "User has no Stripe customer" });
     }
 
-    const origin = req.headers.get("origin") || req.headers.get("referer") || "http://localhost:5173";
-    const querySeparator = origin.includes("?") ? "&" : "?";
-    const returnUrl = `${origin}${querySeparator}billing=return`;
+    const baseUrl = resolveAppBaseUrl(req);
+    const returnUrl = buildReturnUrl(baseUrl, { billing: "return" });
 
     const params = new URLSearchParams();
     params.append("customer", user.StripeCustomerId);
