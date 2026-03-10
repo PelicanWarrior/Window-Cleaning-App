@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { getCountryUpdateFields, normalizeUserCountryFields } from '../lib/format'
 import './Auth.css'
@@ -24,6 +24,7 @@ function Auth({ onLogin }) {
   const [recoveryLoading, setRecoveryLoading] = useState(false)
   const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState('')
   const [resendLoading, setResendLoading] = useState(false)
+  const formPanelRef = useRef(null)
 
   useEffect(() => {
     const handler = (e) => {
@@ -538,18 +539,23 @@ function Auth({ onLogin }) {
     }
   }
 
-  return (
-    <div className="auth-container">
-      <div className="auth-card">
-        <img src="/Logo1.png" alt="Pelican Logo" className="auth-logo" />
-        <h1>Pelican Window Cleaning Manager</h1>
-        <h2>{isPasswordRecovery ? 'Set New Password' : (isLogin ? 'Login' : 'Create Account')}</h2>
+  const openSignupPanel = () => {
+    setIsLogin(false)
+    setError('')
+    setConfirmationMessage('')
+    setTimeout(() => {
+      formPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 0)
+  }
 
-        {error && <div className="error-message">{error}</div>}
-        {confirmationMessage && <div className="success-message">{confirmationMessage}</div>}
-        {recoveryError && <div className="error-message">{recoveryError}</div>}
-
-        {isPasswordRecovery ? (
+  if (isPasswordRecovery) {
+    return (
+      <div className="auth-page auth-recovery-page">
+        <div className="auth-form-panel auth-recovery-panel">
+          <img src="/Logo1.png" alt="Pelican Logo" className="auth-logo" />
+          <h1 className="auth-panel-title">Set New Password</h1>
+          {recoveryError && <div className="error-message">{recoveryError}</div>}
+          {confirmationMessage && <div className="success-message">{confirmationMessage}</div>}
           <form onSubmit={handleRecoverySubmit}>
             <input
               type="password"
@@ -571,109 +577,182 @@ function Auth({ onLogin }) {
               {recoveryLoading ? 'Updating...' : 'Update Password'}
             </button>
           </form>
-        ) : (
-        <>
+        </div>
+      </div>
+    )
+  }
 
-        <form onSubmit={handleSubmit}>
-          {!isLogin && (
-            <input
-              type="email"
-              placeholder="Email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              required={!isLogin}
-              disabled={loading}
-            />
-          )}
-          
-          <input
-            type="text"
-            placeholder={isLogin ? "Username or Email" : "Username"}
-            value={formData.username}
-            onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-            required
-            disabled={loading}
-          />
-          
-          {!isLogin && (
+  return (
+    <div className="auth-page">
+      <section className="auth-hero">
+        <div className="auth-hero-left">
+          <img src="/Logo1.png" alt="Pelican Logo" className="auth-logo" />
+          <h1>Window Cleaning Software Free Until You Hit 100 Customers or £1,000 Monthly Round</h1>
+          <p className="auth-hero-subtitle">
+            Manage customers, routes, quotes, invoices, and reminders in one app built for window cleaners.
+          </p>
+          <div className="auth-hero-actions">
+            <button type="button" className="hero-primary" onClick={openSignupPanel}>Start Free - No Card Needed</button>
+          </div>
+          <p className="auth-hero-trust">Free until you reach 100 customers or £1,000 monthly round, whichever comes first.</p>
+        </div>
+
+        <div className="auth-form-panel" ref={formPanelRef}>
+          <h2 className="auth-panel-title">{isLogin ? 'Log In' : 'Create Your Free Account'}</h2>
+          <p className="auth-panel-subtitle">
+            {isLogin ? 'Welcome back. Sign in to manage your round.' : 'Get started in under 2 minutes.'}
+          </p>
+
+          {error && <div className="error-message">{error}</div>}
+          {confirmationMessage && <div className="success-message">{confirmationMessage}</div>}
+
+          <form onSubmit={handleSubmit}>
+            {!isLogin && (
+              <input
+                type="email"
+                placeholder="Email address"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                required
+                disabled={loading}
+              />
+            )}
+
             <input
               type="text"
-              placeholder="Company Name"
-              value={formData.companyName}
-              onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
+              placeholder={isLogin ? 'Username or Email' : 'Username'}
+              value={formData.username}
+              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+              required
               disabled={loading}
             />
+
+            <input
+              type="password"
+              placeholder="Password"
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              required
+              disabled={loading}
+            />
+
+            <button type="submit" disabled={loading}>
+              {loading ? 'Please wait...' : (isLogin ? 'Log In' : 'Create Free Account')}
+            </button>
+          </form>
+
+          {!isLogin && <p className="signup-microcopy">Free until 100 customers or £1,000 monthly round. No card required.</p>}
+
+          {showInstallButton && (
+            <button className="install-app-btn" onClick={handleInstallClick}>
+              Install App
+            </button>
           )}
-          
-          {!isLogin && (
-            <select
-              value={formData.country}
-              onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+
+          {pendingConfirmationEmail && (
+            <button
+              type="button"
+              className="toggle-button"
+              onClick={handleResendConfirmation}
+              disabled={loading || resendLoading}
+            >
+              {resendLoading ? 'Resending...' : 'Resend confirmation email'}
+            </button>
+          )}
+
+          <p className="toggle-text">
+            {isLogin ? "Don't have an account? " : 'Already have an account? '}
+            <button
+              type="button"
+              className="toggle-button"
+              onClick={() => {
+                setIsLogin(!isLogin)
+                setError('')
+                setConfirmationMessage('')
+                setFormData({ username: '', email: '', password: '', companyName: '', country: 'United Kingdom' })
+              }}
               disabled={loading}
             >
-              <option value="United Kingdom">United Kingdom</option>
-              <option value="United States">United States</option>
-              <option value="Canada">Canada</option>
-              <option value="Australia">Australia</option>
-              <option value="New Zealand">New Zealand</option>
-              <option value="Ireland">Ireland</option>
-              <option value="France">France</option>
-              <option value="Germany">Germany</option>
-              <option value="Spain">Spain</option>
-              <option value="Italy">Italy</option>
-            </select>
-          )}
-          
-          <input
-            type="password"
-            placeholder="Password"
-            value={formData.password}
-            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-            required
-            disabled={loading}
-          />
+              {isLogin ? 'Create one' : 'Log in'}
+            </button>
+          </p>
+        </div>
+      </section>
 
-          <button type="submit" disabled={loading}>
-            {loading ? 'Please wait...' : (isLogin ? 'Login' : 'Create Account')}
-          </button>
-        </form>
+      <section className="auth-strip">
+        <h3>Stop Losing Time to Admin</h3>
+        <ul>
+          <li>Know exactly who is due and when</li>
+          <li>Send quotes and invoices in minutes</li>
+          <li>Keep customer history in one place</li>
+          <li>Track routes and weekly workload clearly</li>
+        </ul>
+      </section>
 
-        {showInstallButton && (
-          <button className="install-app-btn" onClick={handleInstallClick}>
-            Install App
-          </button>
-        )}
+      <section className="auth-features" id="auth-demo">
+        <h3>Everything You Need to Run Your Round</h3>
+        <div className="feature-grid">
+          <article className="feature-card">
+            <h4>Customer Management</h4>
+            <p>Store addresses, pricing, notes, and clean history.</p>
+          </article>
+          <article className="feature-card">
+            <h4>Workload and Routes</h4>
+            <p>Plan your days and avoid missed cleans.</p>
+          </article>
+          <article className="feature-card">
+            <h4>Quotes and Invoices</h4>
+            <p>Create, send, and track payments fast.</p>
+          </article>
+          <article className="feature-card">
+            <h4>Reminders and Messages</h4>
+            <p>Send customer updates without copy-paste chaos.</p>
+          </article>
+        </div>
+      </section>
 
-        {pendingConfirmationEmail && (
-          <button
-            type="button"
-            className="toggle-button"
-            onClick={handleResendConfirmation}
-            disabled={loading || resendLoading}
-          >
-            {resendLoading ? 'Resending...' : 'Resend confirmation email'}
-          </button>
-        )}
+      <section className="auth-offer">
+        <h3>Start Free and Stay Free Until You Grow</h3>
+        <p>Use Pelican free until you reach 100 customers or £1,000 monthly round, whichever comes first. No trial countdown. No card required.</p>
+        <button type="button" className="hero-primary" onClick={openSignupPanel}>Create Free Account</button>
+      </section>
 
-        <p className="toggle-text">
-          {isLogin ? "Don't have an account? " : "Already have an account? "}
-          <button 
-            type="button" 
-            className="toggle-button"
-            onClick={() => {
-              setIsLogin(!isLogin)
-              setError('')
-              setConfirmationMessage('')
-              setFormData({ username: '', email: '', password: '', companyName: '', country: 'United Kingdom' })
-            }}
-            disabled={loading}
-          >
-            {isLogin ? 'Create one' : 'Login'}
-          </button>
-        </p>
-        </>
-        )}
-      </div>
+      <section className="auth-testimonials">
+        <h3>Built for Real Window Cleaning Businesses</h3>
+        <div className="testimonial-grid">
+          <blockquote>"Set up in under 20 minutes."</blockquote>
+          <blockquote>"Saved me hours every week."</blockquote>
+          <blockquote>"Finally one place for customers, routes, and invoices."</blockquote>
+        </div>
+      </section>
+
+      <section className="auth-faq">
+        <h3>Frequently Asked Questions</h3>
+        <div className="faq-grid">
+          <article>
+            <h4>Is this really free?</h4>
+            <p>Yes. It is free until you reach 100 customers or £1,000 monthly round, whichever comes first.</p>
+          </article>
+          <article>
+            <h4>Do I need a credit card?</h4>
+            <p>No card is required to start your free account.</p>
+          </article>
+          <article>
+            <h4>Can I upgrade later?</h4>
+            <p>Yes. Upgrade only when you pass 100 customers or £1,000 monthly round.</p>
+          </article>
+          <article>
+            <h4>Can I import my customers?</h4>
+            <p>Yes. We can help you with setup and import.</p>
+          </article>
+        </div>
+      </section>
+
+      <section className="auth-final-cta">
+        <h3>Ready to Get Organised?</h3>
+        <button type="button" className="hero-primary" onClick={openSignupPanel}>Start Free - 100 Customers or £1,000 Round</button>
+        <p>Takes less than 2 minutes to create your account.</p>
+      </section>
     </div>
   )
 }

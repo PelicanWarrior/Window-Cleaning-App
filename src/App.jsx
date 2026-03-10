@@ -27,7 +27,7 @@ const PREVIEW_USER = {
 
 function App() {
   const [user, setUser] = useState(null)
-  const [showAuth, setShowAuth] = useState(false)
+  const [showAuth, setShowAuth] = useState(true)
   const [activeTab, setActiveTab] = useState('workload')
   const [showSettings, setShowSettings] = useState(false)
   const [showAdminPanel, setShowAdminPanel] = useState(false)
