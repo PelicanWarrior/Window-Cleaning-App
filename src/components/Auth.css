@@ -259,6 +259,7 @@
 .auth-strip,
 .auth-features,
 .auth-offer,
+.auth-pricing,
 .auth-testimonials,
 .auth-faq,
 .auth-final-cta {
@@ -272,6 +273,7 @@
 .auth-strip h3,
 .auth-features h3,
 .auth-offer h3,
+.auth-pricing h3,
 .auth-testimonials h3,
 .auth-faq h3,
 .auth-final-cta h3 {
@@ -349,6 +351,63 @@
   padding: 0.72rem;
 }
 
+.auth-pricing-intro {
+  margin: 0.45rem 0 0;
+  color: var(--auth-muted);
+  font-size: 0.92rem;
+}
+
+.pricing-grid {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.pricing-card {
+  border: 1px solid #e3d8ca;
+  border-radius: 13px;
+  background: #fff;
+  padding: 0.8rem;
+}
+
+.pricing-card-featured {
+  border-color: #0f7c82;
+  box-shadow: 0 8px 20px rgba(15, 124, 130, 0.14);
+}
+
+.pricing-label {
+  margin: 0;
+  color: #3f5760;
+  font-size: 0.86rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pricing-amount {
+  margin: 0.3rem 0 0;
+  font-family: 'DM Serif Display', serif;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.pricing-amount span {
+  margin-left: 0.2rem;
+  font-family: 'Manrope', sans-serif;
+  font-size: 0.8rem;
+  color: var(--auth-muted);
+}
+
+.pricing-card ul {
+  margin: 0.7rem 0 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.35rem;
+  color: #4f6168;
+  font-size: 0.89rem;
+}
+
 .auth-final-cta {
   text-align: center;
   margin-bottom: 0;
@@ -390,6 +449,10 @@
 
   .feature-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pricing-grid {
+    grid-template-columns: 1fr;
   }
 
   .testimonial-grid {

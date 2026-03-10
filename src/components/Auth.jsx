@@ -717,6 +717,40 @@ function Auth({ onLogin }) {
         <button type="button" className="hero-primary" onClick={openSignupPanel}>Create Free Account</button>
       </section>
 
+      <section className="auth-pricing">
+        <h3>Simple Pricing as You Grow</h3>
+        <p className="auth-pricing-intro">Start free, then move up only when your round reaches the limit.</p>
+        <div className="pricing-grid">
+          <article className="pricing-card">
+            <p className="pricing-label">Free</p>
+            <p className="pricing-amount">£0<span>/month</span></p>
+            <ul>
+              <li>Up to 100 customers</li>
+              <li>Up to £1,000 monthly round</li>
+              <li>No card required</li>
+            </ul>
+          </article>
+          <article className="pricing-card pricing-card-featured">
+            <p className="pricing-label">Growth</p>
+            <p className="pricing-amount">£4.99<span>/month</span></p>
+            <ul>
+              <li>Up to 500 customers</li>
+              <li>Up to £5,000 monthly round</li>
+              <li>Ideal for growing rounds</li>
+            </ul>
+          </article>
+          <article className="pricing-card">
+            <p className="pricing-label">Unlimited</p>
+            <p className="pricing-amount">£9.99<span>/month</span></p>
+            <ul>
+              <li>Unlimited customers</li>
+              <li>Unlimited monthly round</li>
+              <li>For established businesses</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
       <section className="auth-testimonials">
         <h3>Built for Real Window Cleaning Businesses</h3>
         <div className="testimonial-grid">
