@@ -81,6 +81,23 @@ function WorkloadManager({ user }) {
     })
   }, [serviceDropdownOpen])
 
+  useEffect(() => {
+    if (!mobileMenuOpenCustomerId) return
+
+    const handleOutsideMenuClick = (event) => {
+      if (event.target.closest('.mobile-menu-container')) return
+      setMobileMenuOpenCustomerId(null)
+    }
+
+    document.addEventListener('mousedown', handleOutsideMenuClick)
+    document.addEventListener('touchstart', handleOutsideMenuClick)
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideMenuClick)
+      document.removeEventListener('touchstart', handleOutsideMenuClick)
+    }
+  }, [mobileMenuOpenCustomerId])
+
   const getFullAddress = (customer) => {
     const parts = [
       customer.Address || '',

@@ -78,6 +78,21 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
     Notes: ''
   })
 
+  const parsePriceNumber = (value) => {
+    const raw = String(value ?? '').trim()
+    if (!raw) return 0
+
+    let normalized = raw.replace(/[^0-9,.-]/g, '')
+    if (normalized.includes(',') && !normalized.includes('.')) {
+      normalized = normalized.replace(',', '.')
+    } else {
+      normalized = normalized.replace(/,/g, '')
+    }
+
+    const numeric = parseFloat(normalized)
+    return Number.isFinite(numeric) ? numeric : 0
+  }
+
   const requestAuthForWrite = () => {
     onRequireAuth?.()
   }
@@ -419,7 +434,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       const customerData = {
         ...newCustomer,
         UserId: user.id,
-        Price: parseInt(newCustomer.Price) || 0,
+        Price: parsePriceNumber(newCustomer.Price),
         Weeks: parseInt(newCustomer.Weeks) || 4,
         Outstanding: 0,
         NextClean: (newCustomer.NextClean || '').trim() || defaultNextCleanDate
@@ -459,7 +474,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
           .from('CustomerPrices')
           .insert([{
             CustomerID: newCustomerId,
-            Price: parseInt(newCustomer.Price) || 0,
+            Price: parsePriceNumber(newCustomer.Price),
             Service: 'Windows'
           }])
         
@@ -539,7 +554,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
           Postcode: editFormData.Postcode,
           PhoneNumber: editFormData.PhoneNumber,
           EmailAddress: editFormData.EmailAddress,
-          Price: parseInt(editFormData.Price) || 0,
+          Price: parsePriceNumber(editFormData.Price),
           Weeks: parseInt(editFormData.Weeks) || 4,
           Route: editFormData.Route,
           Notes: editFormData.Notes,
@@ -1056,12 +1071,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
         return ''
       }
 
-      const parseCurrencyNumber = (value) => {
-        if (!value) return 0
-        const cleaned = String(value).replace(/[^0-9.-]/g, '')
-        const numeric = parseFloat(cleaned)
-        return Number.isFinite(numeric) ? numeric : 0
-      }
+      const parseCurrencyNumber = (value) => parsePriceNumber(value)
 
       const parseServicesList = (servicesText) => {
         if (!servicesText) return []
@@ -1346,7 +1356,14 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       fetchCustomers()
     } catch (error) {
       console.error('Error importing CSV:', error.message)
-      alert('Error importing CSV: ' + error.message)
+      const rawMessage = String(error?.message || '')
+      const normalizedMessage = rawMessage.toLowerCase()
+
+      if (normalizedMessage.includes('invalid input syntax for type integer') || normalizedMessage.includes('type integer')) {
+        alert('Error importing CSV: a price column in Supabase is still integer. Set both Customers.Price and CustomerPrices.Price to numeric(10,2), then try again.')
+      } else {
+        alert('Error importing CSV: ' + rawMessage)
+      }
     }
     
     // Reset the file input
@@ -1818,22 +1835,44 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       </div>
 
       {showCustomerModal && selectedCustomer && (
-        <div className="modal-overlay" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); setShowHistory(false); }}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay customer-details-overlay" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); setShowHistory(false); }}>
+          <div
+            className="modal-content customer-modal-main"
+            style={{
+              width: 'min(96vw, 820px)',
+              maxWidth: '820px',
+              maxHeight: '88vh',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              padding: '1rem 1.25rem',
+              boxSizing: 'border-box'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <button className="modal-close" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); setShowHistory(false); }}>×</button>
             <h3>{showHistory ? 'Customer History' : showServices ? 'Customer Services' : 'Customer Details'}</h3>
             
-            <div className="modal-actions">
+            <div
+              className="modal-actions customer-modal-actions"
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '0.75rem',
+                marginBottom: '1rem',
+                paddingBottom: '0.9rem',
+                borderBottom: '1px solid rgba(21, 101, 192, 0.2)'
+              }}
+            >
               {isEditingModal ? (
                 <>
-                  <button className="modal-save-btn" onClick={handleModalSave}>Save</button>
-                  <button className="modal-cancel-btn" onClick={() => setIsEditingModal(false)}>Cancel</button>
+                  <button className="modal-save-btn customer-modal-action-btn" style={{ minWidth: '88px' }} onClick={handleModalSave}>Save</button>
+                  <button className="modal-cancel-btn customer-modal-action-btn" style={{ minWidth: '88px' }} onClick={() => setIsEditingModal(false)}>Cancel</button>
                 </>
               ) : (
                 <>
-                  {!showServices && !showHistory && <button className="modal-edit-btn" onClick={() => { setIsEditingModal(true); setModalEditData({...selectedCustomer}); setPreferredDaysSelected(parsePreferredDays(selectedCustomer.PrefferedDays)); }}>Edit</button>}
-                  <button className="modal-services-btn" onClick={() => { setShowServices(!showServices); setShowHistory(false); if (!showServices) fetchCustomerServices(selectedCustomer.id); }}>{showServices ? 'Customer Details' : 'Services'}</button>
-                  <button className="modal-history-btn" onClick={() => { setShowHistory(!showHistory); setShowServices(false); if (!showHistory) fetchCustomerHistory(selectedCustomer.id); }}>{showHistory ? 'Customer Details' : 'History'}</button>
+                  {!showServices && !showHistory && <button className="modal-edit-btn customer-modal-action-btn" style={{ minWidth: '88px' }} onClick={() => { setIsEditingModal(true); setModalEditData({...selectedCustomer}); setPreferredDaysSelected(parsePreferredDays(selectedCustomer.PrefferedDays)); }}>Edit</button>}
+                  <button className="modal-services-btn customer-modal-action-btn" style={{ minWidth: '96px' }} onClick={() => { setShowServices(!showServices); setShowHistory(false); if (!showServices) fetchCustomerServices(selectedCustomer.id); }}>{showServices ? 'Customer Details' : 'Services'}</button>
+                  <button className="modal-history-btn customer-modal-action-btn" style={{ minWidth: '96px' }} onClick={() => { setShowHistory(!showHistory); setShowServices(false); if (!showHistory) fetchCustomerHistory(selectedCustomer.id); }}>{showHistory ? 'Customer Details' : 'History'}</button>
                 </>
               )}
             </div>
@@ -1841,42 +1880,75 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
             {!showServices && !showHistory ? (
               // Customer Details View
               isEditingModal ? (
-                <div className="details-grid-edit">
-                  <div className="full-width"><strong>Name:</strong> <input type="text" value={modalEditData.CustomerName} onChange={(e) => setModalEditData({...modalEditData, CustomerName: e.target.value})} className="modal-input" /></div>
-                  <div className="full-width address-section">
-                    <strong>Address:</strong>
+                <div className="details-grid-edit customer-edit-form">
+                  <div className="full-width customer-edit-field">
+                    <label className="customer-edit-label">Name</label>
+                    <input type="text" value={modalEditData.CustomerName} onChange={(e) => setModalEditData({...modalEditData, CustomerName: e.target.value})} className="modal-input" />
+                  </div>
+                  <div className="full-width address-section customer-edit-field">
+                    <label className="customer-edit-label">Address</label>
                     <input type="text" value={modalEditData.Address} onChange={(e) => setModalEditData({...modalEditData, Address: e.target.value})} className="modal-input" placeholder="Address Line 1" />
                     <input type="text" value={modalEditData.Address2} onChange={(e) => setModalEditData({...modalEditData, Address2: e.target.value})} className="modal-input" placeholder="Address Line 2" />
                     <input type="text" value={modalEditData.Address3} onChange={(e) => setModalEditData({...modalEditData, Address3: e.target.value})} className="modal-input" placeholder="Address Line 3" />
                   </div>
-                  <div><strong>Postcode:</strong> <input type="text" value={modalEditData.Postcode} onChange={(e) => setModalEditData({...modalEditData, Postcode: e.target.value})} className="modal-input" /></div>
-                  <div><strong>Phone:</strong> <input type="tel" value={modalEditData.PhoneNumber} onChange={(e) => setModalEditData({...modalEditData, PhoneNumber: e.target.value})} className="modal-input" /></div>
-                  <div><strong>Email:</strong> <input type="email" value={modalEditData.EmailAddress} onChange={(e) => setModalEditData({...modalEditData, EmailAddress: e.target.value})} className="modal-input" /></div>
-                  <div><strong>Route:</strong> <input type="text" value={modalEditData.Route} onChange={(e) => setModalEditData({...modalEditData, Route: e.target.value})} className="modal-input" /></div>
-                  <div className="inline-fields">
-                    <div className="inline-field"><strong>Price:</strong> <input type="number" value={modalEditData.Price} onChange={(e) => setModalEditData({...modalEditData, Price: e.target.value})} className="modal-input" /></div>
-                    <div className="inline-field"><strong>Weeks:</strong> <input type="number" value={modalEditData.Weeks} onChange={(e) => setModalEditData({...modalEditData, Weeks: e.target.value})} className="modal-input" /></div>
+                  <div className="customer-edit-field">
+                    <label className="customer-edit-label">Postcode</label>
+                    <input type="text" value={modalEditData.Postcode} onChange={(e) => setModalEditData({...modalEditData, Postcode: e.target.value})} className="modal-input" />
                   </div>
-                  <div><strong>Next Clean:</strong> <input type="date" value={modalEditData.NextClean} onChange={(e) => setModalEditData({...modalEditData, NextClean: e.target.value})} className="modal-input" /></div>
-                  <div><strong>Outstanding:</strong> <input type="number" value={modalEditData.Outstanding} onChange={(e) => setModalEditData({...modalEditData, Outstanding: e.target.value})} className="modal-input" /></div>
-                  <div><strong>VAT Registered:</strong> <input type="checkbox" checked={modalEditData.VAT || false} onChange={(e) => setModalEditData({...modalEditData, VAT: e.target.checked})} /></div>
-                  <div className="full-width">
-                    <strong>Preferred Days:</strong>
+                  <div className="customer-edit-field">
+                    <label className="customer-edit-label">Phone</label>
+                    <input type="tel" value={modalEditData.PhoneNumber} onChange={(e) => setModalEditData({...modalEditData, PhoneNumber: e.target.value})} className="modal-input" />
+                  </div>
+                  <div className="customer-edit-field">
+                    <label className="customer-edit-label">Email</label>
+                    <input type="email" value={modalEditData.EmailAddress} onChange={(e) => setModalEditData({...modalEditData, EmailAddress: e.target.value})} className="modal-input" />
+                  </div>
+                  <div className="customer-edit-field">
+                    <label className="customer-edit-label">Route</label>
+                    <input type="text" value={modalEditData.Route} onChange={(e) => setModalEditData({...modalEditData, Route: e.target.value})} className="modal-input" />
+                  </div>
+                  <div className="inline-fields full-width">
+                    <div className="inline-field customer-edit-field">
+                      <label className="customer-edit-label">Price</label>
+                      <input type="number" value={modalEditData.Price} onChange={(e) => setModalEditData({...modalEditData, Price: e.target.value})} className="modal-input" />
+                    </div>
+                    <div className="inline-field customer-edit-field">
+                      <label className="customer-edit-label">Weeks</label>
+                      <input type="number" value={modalEditData.Weeks} onChange={(e) => setModalEditData({...modalEditData, Weeks: e.target.value})} className="modal-input" />
+                    </div>
+                  </div>
+                  <div className="customer-edit-field">
+                    <label className="customer-edit-label">Next Clean</label>
+                    <input type="date" value={modalEditData.NextClean} onChange={(e) => setModalEditData({...modalEditData, NextClean: e.target.value})} className="modal-input" />
+                  </div>
+                  <div className="customer-edit-field">
+                    <label className="customer-edit-label">Outstanding</label>
+                    <input type="number" value={modalEditData.Outstanding} onChange={(e) => setModalEditData({...modalEditData, Outstanding: e.target.value})} className="modal-input" />
+                  </div>
+                  <div className="customer-edit-field customer-edit-checkbox full-width">
+                    <label className="customer-edit-label">VAT Registered</label>
+                    <input type="checkbox" checked={modalEditData.VAT || false} onChange={(e) => setModalEditData({...modalEditData, VAT: e.target.checked})} />
+                  </div>
+                  <div className="full-width customer-edit-field">
+                    <label className="customer-edit-label">Preferred Days</label>
                     <div className="days-checkboxes">
                       {daysOfWeek.map((day, index) => (
-                        <label key={day} style={{ marginRight: '1rem', display: 'inline-flex', alignItems: 'center' }}>
+                        <label key={day} className="day-checkbox-item">
                           <input 
                             type="checkbox" 
                             checked={preferredDaysSelected[day] || false}
                             onChange={(e) => setPreferredDaysSelected({...preferredDaysSelected, [day]: e.target.checked})}
-                            style={{ marginRight: '0.5rem', cursor: 'pointer' }}
+                            style={{ cursor: 'pointer' }}
                           />
                           {dayShortcuts[index]}
                         </label>
                       ))}
                     </div>
                   </div>
-                  <div className="full-width"><strong>Notes:</strong> <textarea value={modalEditData.Notes} onChange={(e) => { setModalEditData({...modalEditData, Notes: e.target.value}); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'; }} className="modal-input" style={{ minHeight: '40px', maxHeight: '200px', overflow: 'hidden', resize: 'none' }} /></div>
+                  <div className="full-width customer-edit-field">
+                    <label className="customer-edit-label">Notes</label>
+                    <textarea value={modalEditData.Notes} onChange={(e) => { setModalEditData({...modalEditData, Notes: e.target.value}); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'; }} className="modal-input" style={{ minHeight: '40px', maxHeight: '200px', overflow: 'hidden', resize: 'none' }} />
+                  </div>
                 </div>
               ) : (
                 <>
@@ -2061,7 +2133,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       )}
 
       {cancelServiceModal.show && selectedCustomer && (
-        <div className="modal-overlay" onClick={() => setCancelServiceModal({ show: false, reason: '' })}>
+        <div className="modal-overlay simple-modal-overlay" onClick={() => setCancelServiceModal({ show: false, reason: '' })}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>Cancel Service</h3>
             <div className="modal-form">
@@ -2093,7 +2165,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       )}
 
       {changePriceModal.show && selectedCustomer && (
-        <div className="modal-overlay" onClick={() => setChangePriceModal({ show: false, price: '' })}>
+        <div className="modal-overlay simple-modal-overlay" onClick={() => setChangePriceModal({ show: false, price: '' })}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>Change Price</h3>
             <div className="modal-form">
@@ -2139,7 +2211,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       )}
 
       {showCSVImportModal && (
-        <div className="modal-overlay" onClick={() => setShowCSVImportModal(false)}>
+        <div className="modal-overlay simple-modal-overlay" onClick={() => setShowCSVImportModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={() => setShowCSVImportModal(false)}>×</button>
             <h3>CSV Import Instructions</h3>

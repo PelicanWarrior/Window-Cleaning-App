@@ -434,6 +434,201 @@
    cursor: pointer;
  }
  .modal-close:hover { background: #c0392b; }
+
+ .customer-details-overlay .modal-content {
+   width: min(96vw, 820px);
+   max-width: 820px;
+   max-height: 88vh;
+   overflow-y: auto;
+   overflow-x: hidden;
+   box-sizing: border-box;
+ }
+
+ .customer-details-overlay .modal-content h3 {
+   margin: 0 0 1rem;
+   font-size: 2rem;
+   font-weight: 700;
+   color: #1f2d3d;
+ }
+
+ .customer-details-overlay .modal-actions {
+   display: flex;
+   flex-wrap: wrap;
+   gap: 0.75rem;
+   align-items: center;
+   margin-bottom: 1rem;
+   padding-bottom: 0.9rem;
+   border-bottom: 1px solid rgba(21, 101, 192, 0.2);
+ }
+
+ .customer-details-overlay .modal-edit-btn,
+ .customer-details-overlay .modal-save-btn,
+ .customer-details-overlay .modal-cancel-btn,
+ .customer-details-overlay .modal-services-btn,
+ .customer-details-overlay .modal-history-btn {
+   padding: 0.55rem 1rem;
+   border-radius: 6px;
+   border: none;
+   font-size: 0.95rem;
+   font-weight: 600;
+   cursor: pointer;
+   white-space: nowrap;
+ }
+
+ .customer-details-overlay .modal-edit-btn {
+   background-color: #1976d2;
+   color: #fff;
+ }
+
+ .customer-details-overlay .modal-save-btn {
+   background-color: #2e7d32;
+   color: #fff;
+ }
+
+ .customer-details-overlay .modal-cancel-btn {
+   background-color: #d32f2f;
+   color: #fff;
+ }
+
+ .customer-details-overlay .modal-services-btn {
+   background-color: #f57c00;
+   color: #fff;
+ }
+
+ .customer-details-overlay .modal-history-btn {
+   background-color: #7b1fa2;
+   color: #fff;
+ }
+
+ .customer-details-overlay .details-grid,
+ .customer-details-overlay .details-grid-edit {
+   grid-template-columns: repeat(2, minmax(0, 1fr));
+ }
+
+ .customer-details-overlay .details-grid-edit {
+   gap: 0.75rem 1rem;
+   overflow-x: hidden;
+ }
+
+ .customer-details-overlay .customer-edit-field {
+   display: flex;
+   flex-direction: column;
+   gap: 0.3rem;
+ }
+
+ .customer-details-overlay .customer-edit-label {
+   font-weight: 700;
+   color: #1f2d3d;
+   line-height: 1.2;
+ }
+
+ .customer-details-overlay .customer-edit-checkbox {
+   flex-direction: row;
+   align-items: center;
+   gap: 0.6rem;
+ }
+
+ .customer-details-overlay .customer-edit-checkbox .customer-edit-label {
+   margin: 0;
+ }
+
+ .customer-details-overlay .details-grid > div,
+ .customer-details-overlay .details-grid-edit > div {
+   min-width: 0;
+ }
+
+ .customer-details-overlay .details-grid-edit > div > strong,
+ .customer-details-overlay .details-grid-edit .address-section > strong,
+ .customer-details-overlay .details-grid-edit .full-width > strong {
+   display: block;
+   margin: 0 0 0.3rem;
+ }
+
+ .customer-details-overlay .details-grid-edit input:not([type="checkbox"]),
+ .customer-details-overlay .details-grid-edit textarea {
+   width: 100%;
+   box-sizing: border-box;
+ }
+
+ .customer-details-overlay .details-grid > div {
+   overflow-wrap: anywhere;
+ }
+
+ .customer-details-overlay .details-grid-edit .inline-fields {
+   display: grid;
+   grid-template-columns: repeat(2, minmax(0, 1fr));
+   gap: 0.75rem;
+ }
+
+ .customer-details-overlay .details-grid-edit .inline-field {
+   display: flex;
+   flex-direction: column;
+   align-items: stretch;
+   gap: 0.3rem;
+ }
+
+ .customer-details-overlay .details-grid-edit .inline-field strong {
+   white-space: normal;
+ }
+
+ .customer-details-overlay .details-grid-edit .inline-field input {
+   flex: initial;
+ }
+
+ .customer-details-overlay .details-grid-edit input[type="checkbox"] {
+   width: auto;
+ }
+
+ .customer-details-overlay .modal-input {
+   width: 100%;
+   box-sizing: border-box;
+   padding: 0.4rem 0.5rem;
+   border: 1px solid #b0bec5;
+   border-radius: 4px;
+   font-size: 0.95rem;
+ }
+
+ .customer-details-overlay .days-checkboxes {
+   display: flex;
+   flex-wrap: wrap;
+   gap: 0.35rem 0.9rem;
+ }
+
+ .customer-details-overlay .details-grid-edit .days-checkboxes {
+   display: grid;
+   grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+   gap: 0.35rem 0.75rem;
+ }
+
+ .customer-details-overlay .days-checkboxes label {
+   margin-right: 0 !important;
+ }
+
+ .customer-details-overlay .details-grid-edit .days-checkboxes label {
+   display: flex !important;
+   align-items: center;
+   gap: 0.4rem;
+   min-width: 0;
+   font-weight: 500;
+   color: #2c3e50;
+ }
+
+ .customer-details-overlay .details-grid-edit .day-checkbox-item input {
+   margin: 0;
+ }
+
+ @media (max-width: 768px) {
+   .customer-details-overlay .modal-content {
+     width: min(96vw, 700px);
+     padding: 0.9rem 1rem;
+   }
+
+   .customer-details-overlay .details-grid,
+   .customer-details-overlay .details-grid-edit,
+   .customer-details-overlay .details-grid-edit .inline-fields {
+     grid-template-columns: 1fr;
+   }
+ }
  .details-grid {
    display: grid;
    grid-template-columns: 1fr 1fr;
@@ -1120,7 +1315,7 @@
   opacity: 0.7;
 }
 
-.modal-overlay {
+.simple-modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -1133,7 +1328,7 @@
   z-index: 1000;
 }
 
-.modal-content {
+.simple-modal-overlay .modal-content {
   background-color: white;
   border-radius: 12px;
   padding: 2rem;
@@ -1142,24 +1337,24 @@
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
 }
 
-.modal-content h3 {
+.simple-modal-overlay .modal-content h3 {
   margin: 0 0 1.5rem 0;
   font-size: 1.3rem;
   color: #2c3e50;
 }
 
-.modal-form {
+.simple-modal-overlay .modal-form {
   margin-bottom: 1.5rem;
 }
 
-.modal-form label {
+.simple-modal-overlay .modal-form label {
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
   color: #34495e;
 }
 
-.modal-form textarea {
+.simple-modal-overlay .modal-form textarea {
   width: 100%;
   padding: 0.75rem;
   border: 1px solid #ccc;
@@ -1170,20 +1365,20 @@
   box-sizing: border-box;
 }
 
-.modal-form textarea:focus {
+.simple-modal-overlay .modal-form textarea:focus {
   outline: none;
   border-color: #3498db;
   box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
 }
 
-.modal-buttons {
+.simple-modal-overlay .modal-buttons {
   display: flex;
   gap: 1rem;
   justify-content: flex-end;
 }
 
-.modal-ok-btn,
-.modal-cancel-btn {
+.simple-modal-overlay .modal-ok-btn,
+.simple-modal-overlay .modal-cancel-btn {
   padding: 0.6rem 1.2rem;
   border: none;
   border-radius: 6px;
@@ -1193,20 +1388,63 @@
   font-size: 0.95rem;
 }
 
-.modal-ok-btn {
+.simple-modal-overlay .modal-ok-btn {
   background-color: #e74c3c;
   color: white;
 }
 
-.modal-ok-btn:hover {
+.simple-modal-overlay .modal-ok-btn:hover {
   background-color: #c0392b;
 }
 
-.modal-cancel-btn {
+.simple-modal-overlay .modal-cancel-btn {
   background-color: #ecf0f1;
   color: #34495e;
 }
 
-.modal-cancel-btn:hover {
+.simple-modal-overlay .modal-cancel-btn:hover {
   background-color: #bdc3c7;
+}
+
+/* Force-consistent styling for Customer Details modal edit view */
+.customer-modal-main {
+  width: min(96vw, 820px) !important;
+  max-width: 820px !important;
+  max-height: 88vh !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  box-sizing: border-box !important;
+  padding: 1rem 1.25rem !important;
+}
+
+.customer-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid rgba(21, 101, 192, 0.2);
+}
+
+.customer-modal-action-btn {
+  padding: 0.55rem 1rem !important;
+  border-radius: 6px !important;
+  border: none !important;
+  font-size: 0.95rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+}
+
+.customer-details-overlay .details-grid-edit {
+  overflow-x: hidden !important;
+}
+
+.customer-details-overlay .details-grid-edit .customer-edit-field {
+  min-width: 0;
+}
+
+.customer-details-overlay .details-grid-edit .customer-edit-label {
+  display: block;
+  margin-bottom: 0.3rem;
 }
