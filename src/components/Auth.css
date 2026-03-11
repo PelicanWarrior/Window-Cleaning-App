@@ -258,6 +258,7 @@
 
 .auth-strip,
 .auth-features,
+.auth-gallery,
 .auth-offer,
 .auth-pricing,
 .auth-testimonials,
@@ -272,6 +273,7 @@
 
 .auth-strip h3,
 .auth-features h3,
+.auth-gallery h3,
 .auth-offer h3,
 .auth-pricing h3,
 .auth-testimonials h3,
@@ -296,6 +298,55 @@
   margin-top: 0.75rem;
   display: grid;
   gap: 0.62rem;
+}
+
+.auth-gallery-intro {
+  margin: 0.45rem 0 0;
+  color: var(--auth-muted);
+  font-size: 0.92rem;
+}
+
+.auth-gallery-grid {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.auth-gallery-item {
+  margin: 0;
+  border: 1px solid #e3d8ca;
+  border-radius: 13px;
+  background: #fff;
+  padding: 0.58rem;
+}
+
+.auth-gallery-button {
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: zoom-in;
+}
+
+.auth-gallery-button img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid #e8dfd2;
+  transition: transform 0.2s ease;
+}
+
+.auth-gallery-button:hover img {
+  transform: scale(1.02);
+}
+
+.auth-gallery-item figcaption {
+  margin-top: 0.45rem;
+  color: #4f6168;
+  font-size: 0.88rem;
+  line-height: 1.45;
 }
 
 .feature-grid {
@@ -417,6 +468,60 @@
   margin-top: 0.62rem;
 }
 
+.auth-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(14, 19, 22, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.auth-lightbox-card {
+  width: min(920px, 100%);
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 0.95rem;
+  position: relative;
+}
+
+.auth-lightbox-card img {
+  width: 100%;
+  max-height: 76vh;
+  object-fit: contain;
+  border-radius: 10px;
+  border: 1px solid #e7ded2;
+  background: #f9f4ed;
+}
+
+.auth-lightbox-card p {
+  margin: 0.55rem 0 0;
+  color: #4f6168;
+  font-size: 0.95rem;
+}
+
+.auth-lightbox-close {
+  position: absolute;
+  right: 0.7rem;
+  top: 0.55rem;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
+  background: #1f2f36;
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.auth-lightbox-close:hover {
+  background: #0f7c82;
+}
+
 .auth-recovery-page {
   display: flex;
   align-items: center;
@@ -451,6 +556,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .auth-gallery-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .pricing-grid {
     grid-template-columns: 1fr;
   }
@@ -471,7 +580,9 @@
 
   .auth-strip h3,
   .auth-features h3,
+  .auth-gallery h3,
   .auth-offer h3,
+  .auth-pricing h3,
   .auth-testimonials h3,
   .auth-faq h3,
   .auth-final-cta h3 {
@@ -479,6 +590,7 @@
   }
 
   .feature-grid,
+  .auth-gallery-grid,
   .faq-grid {
     grid-template-columns: 1fr;
   }

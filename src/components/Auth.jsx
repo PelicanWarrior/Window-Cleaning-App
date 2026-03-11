@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { getCountryUpdateFields, normalizeUserCountryFields } from '../lib/format'
+import { LANDING_PICTURES } from '../config/landingPictures'
 import './Auth.css'
 
 function Auth({ onLogin }) {
@@ -24,6 +25,9 @@ function Auth({ onLogin }) {
   const [recoveryLoading, setRecoveryLoading] = useState(false)
   const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState('')
   const [resendLoading, setResendLoading] = useState(false)
+  const [captionByPicture, setCaptionByPicture] = useState({})
+  const [orderByPicture, setOrderByPicture] = useState({})
+  const [selectedPicture, setSelectedPicture] = useState(null)
   const formPanelRef = useRef(null)
 
   useEffect(() => {
@@ -35,6 +39,60 @@ function Auth({ onLogin }) {
     window.addEventListener('beforeinstallprompt', handler)
     return () => window.removeEventListener('beforeinstallprompt', handler)
   }, [])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const fetchPictureCaptions = async () => {
+      if (!LANDING_PICTURES.length) return
+
+      const pictureKeys = LANDING_PICTURES.map((picture) => picture.fileName)
+      const { data, error } = await supabase
+        .from('PictureCaptions')
+        .select('picture_key, caption, display_order')
+        .in('picture_key', pictureKeys)
+
+      if (error) {
+        console.error('Error loading picture captions:', error.message)
+        return
+      }
+
+      if (!isMounted) return
+
+      const nextMap = {}
+      const nextOrderMap = {}
+      for (const row of data || []) {
+        if (row.picture_key) {
+          nextMap[row.picture_key] = row.caption || ''
+          if (Number.isFinite(row.display_order)) {
+            nextOrderMap[row.picture_key] = row.display_order
+          }
+        }
+      }
+
+      setCaptionByPicture(nextMap)
+      setOrderByPicture(nextOrderMap)
+    }
+
+    fetchPictureCaptions()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!selectedPicture) return
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setSelectedPicture(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedPicture])
 
   const handleInstallClick = async () => {
     if (!deferredPrompt) return
@@ -548,6 +606,30 @@ function Auth({ onLogin }) {
     }, 0)
   }
 
+  const getPictureCaption = (picture) => {
+    const customCaption = captionByPicture[picture.fileName]
+    if (typeof customCaption === 'string' && customCaption.trim()) {
+      return customCaption.trim()
+    }
+    return picture.defaultCaption
+  }
+
+  const orderedPictures = useMemo(() => {
+    const resolveOrder = (picture) => {
+      const customOrder = Number(orderByPicture[picture.fileName])
+      if (Number.isFinite(customOrder) && customOrder > 0) {
+        return customOrder
+      }
+      return picture.order
+    }
+
+    return [...LANDING_PICTURES].sort((a, b) => {
+      const orderDelta = resolveOrder(a) - resolveOrder(b)
+      if (orderDelta !== 0) return orderDelta
+      return a.order - b.order
+    })
+  }, [orderByPicture])
+
   if (isPasswordRecovery) {
     return (
       <div className="auth-page auth-recovery-page">
@@ -711,6 +793,28 @@ function Auth({ onLogin }) {
         </div>
       </section>
 
+      {LANDING_PICTURES.length > 0 && (
+        <section className="auth-gallery">
+          <h3>See Pelican in Action</h3>
+          <p className="auth-gallery-intro">Click any screenshot to enlarge.</p>
+          <div className="auth-gallery-grid">
+            {orderedPictures.map((picture) => (
+              <figure className="auth-gallery-item" key={picture.fileName}>
+                <button
+                  type="button"
+                  className="auth-gallery-button"
+                  onClick={() => setSelectedPicture(picture)}
+                  aria-label={`Enlarge ${picture.fileName}`}
+                >
+                  <img src={picture.src} alt={getPictureCaption(picture)} loading="lazy" />
+                </button>
+                <figcaption>{getPictureCaption(picture)}</figcaption>
+              </figure>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="auth-offer">
         <h3>Start Free and Stay Free Until You Grow</h3>
         <p>Use Pelican free until you reach 100 customers or £1,000 monthly round, whichever comes first. No trial countdown. No card required.</p>
@@ -787,6 +891,23 @@ function Auth({ onLogin }) {
         <button type="button" className="hero-primary" onClick={openSignupPanel}>Start Free - 100 Customers or £1,000 Round</button>
         <p>Takes less than 2 minutes to create your account.</p>
       </section>
+
+      {selectedPicture && (
+        <div className="auth-lightbox" onClick={() => setSelectedPicture(null)}>
+          <div className="auth-lightbox-card" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="auth-lightbox-close"
+              onClick={() => setSelectedPicture(null)}
+              aria-label="Close preview"
+            >
+              x
+            </button>
+            <img src={selectedPicture.src} alt={getPictureCaption(selectedPicture)} />
+            <p>{getPictureCaption(selectedPicture)}</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
