@@ -327,6 +327,115 @@ function Auth({ onLogin }) {
     }
   }
 
+  const withTimeout = async (promise, timeoutMs = 15000, timeoutMessage = 'Connection timed out. Please check internet and try again.') => {
+    let timeoutHandle
+    try {
+      return await Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          timeoutHandle = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs)
+        })
+      ])
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle)
+    }
+  }
+
+  const runPostLoginMaintenance = async (userData) => {
+    try {
+      const { data: customers, error: customersError } = await withTimeout(
+        supabase
+          .from('Customers')
+          .select('id, Price, Address, Address2, Address3, Postcode, Quote, NextServices')
+          .eq('UserId', userData.id),
+        12000,
+        'Customer sync timed out.'
+      )
+
+      if (customersError || !customers) return
+
+      // Smart arrange addresses: split comma-separated addresses and extract postcodes
+      const addressUpdates = []
+      for (const customer of customers) {
+        if (customer.Address && !customer.Address2 && !customer.Address3 && !customer.Postcode) {
+          const addressStr = customer.Address.trim()
+          const postcodeRegex = /\b([A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2})\b/i
+          const postcodeMatch = addressStr.match(postcodeRegex)
+
+          let postcode = ''
+          let remainingAddress = addressStr
+
+          if (postcodeMatch) {
+            postcode = postcodeMatch[1].toUpperCase()
+            remainingAddress = addressStr.replace(postcodeMatch[0], '').trim()
+          }
+
+          const parts = remainingAddress.split(',').map((p) => p.trim()).filter(Boolean)
+          const updateData = {
+            Address: parts[0] || '',
+            Address2: parts[1] || '',
+            Address3: parts[2] || '',
+            Postcode: postcode
+          }
+
+          addressUpdates.push(
+            supabase
+              .from('Customers')
+              .update(updateData)
+              .eq('id', customer.id)
+          )
+        }
+      }
+
+      if (addressUpdates.length > 0) {
+        await Promise.all(addressUpdates)
+      }
+
+      // Ensure all customers have a "Windows" service entry in CustomerPrices
+      const { data: priceEntries, error: priceError } = await supabase
+        .from('CustomerPrices')
+        .select('CustomerID, Service')
+        .in('CustomerID', customers.map((c) => c.id))
+
+      if (!priceError && priceEntries) {
+        const windowsEntries = new Set(
+          priceEntries
+            .filter((entry) => entry.Service === 'Windows')
+            .map((entry) => entry.CustomerID)
+        )
+
+        const missingWindows = customers.filter((c) => !windowsEntries.has(c.id) && c.Quote !== true)
+
+        if (missingWindows.length > 0) {
+          const windowsPrices = missingWindows.map((customer) => ({
+            CustomerID: customer.id,
+            Price: customer.Price || 0,
+            Service: 'Windows'
+          }))
+
+          await supabase
+            .from('CustomerPrices')
+            .insert(windowsPrices)
+        }
+      }
+
+      // Ensure NextServices exists only for missing rows
+      const customersNeedingNextServices = customers.filter((c) => !c.NextServices)
+      if (customersNeedingNextServices.length > 0) {
+        const nextServiceUpdates = customersNeedingNextServices.map((customer) =>
+          supabase
+            .from('Customers')
+            .update({ NextServices: 'Windows' })
+            .eq('id', customer.id)
+        )
+
+        await Promise.all(nextServiceUpdates)
+      }
+    } catch (maintenanceError) {
+      console.error('Post-login maintenance error:', maintenanceError)
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
@@ -356,10 +465,14 @@ function Auth({ onLogin }) {
           return
         }
 
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email: authLoginEmail,
-          password: formData.password
-        })
+        const { data: authData, error: authError } = await withTimeout(
+          supabase.auth.signInWithPassword({
+            email: authLoginEmail,
+            password: formData.password
+          }),
+          15000,
+          'Login timed out. Please check internet and try again.'
+        )
 
         if (authError || !authData?.user) {
           const authMessage = (authError?.message || '').toLowerCase()
@@ -422,111 +535,10 @@ function Auth({ onLogin }) {
           userData = normalizeUserCountryFields({ ...userData, AccountLevel: 1 })
         }
 
-        // Smart arrange addresses: split comma-separated addresses and extract postcodes
-        const { data: customers, error: customersError } = await supabase
-          .from('Customers')
-          .select('id, Price, Address, Address2, Address3, Postcode')
-          .eq('UserId', userData.id)
-
-        if (!customersError && customers) {
-          const updates = []
-          
-          for (const customer of customers) {
-            // Only process if Address has content and other fields are empty
-            if (customer.Address && !customer.Address2 && !customer.Address3 && !customer.Postcode) {
-              const addressStr = customer.Address.trim()
-              
-              // UK postcode pattern (e.g., SG1 4LE, SW1A 1AA, etc.)
-              const postcodeRegex = /\b([A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2})\b/i
-              const postcodeMatch = addressStr.match(postcodeRegex)
-              
-              let postcode = ''
-              let remainingAddress = addressStr
-              
-              if (postcodeMatch) {
-                postcode = postcodeMatch[1].toUpperCase()
-                remainingAddress = addressStr.replace(postcodeMatch[0], '').trim()
-              }
-              
-              // Split by comma and clean up parts
-              const parts = remainingAddress.split(',').map(p => p.trim()).filter(Boolean)
-              
-              const updateData = {
-                Address: parts[0] || '',
-                Address2: parts[1] || '',
-                Address3: parts[2] || '',
-                Postcode: postcode
-              }
-              
-              updates.push(
-                supabase
-                  .from('Customers')
-                  .update(updateData)
-                  .eq('id', customer.id)
-              )
-            }
-          }
-          
-          if (updates.length > 0) {
-            await Promise.all(updates)
-          }
-        }
-
-        // Ensure all customers have a "Windows" service entry in CustomerPrices
-        if (customers) {
-          const { data: priceEntries, error: priceError } = await supabase
-            .from('CustomerPrices')
-            .select('CustomerID, Service')
-            .in('CustomerID', customers.map(c => c.id))
-
-          if (!priceError && priceEntries) {
-            const windowsEntries = new Set(
-              priceEntries
-                .filter(entry => entry.Service === 'Windows')
-                .map(entry => entry.CustomerID)
-            )
-
-            const missingWindows = customers.filter(c => !windowsEntries.has(c.id) && c.Quote !== true)
-
-            if (missingWindows.length > 0) {
-              const windowsPrices = missingWindows.map(customer => ({
-                CustomerID: customer.id,
-                Price: customer.Price || 0,
-                Service: 'Windows'
-              }))
-
-              const { error: insertError } = await supabase
-                .from('CustomerPrices')
-                .insert(windowsPrices)
-
-              if (insertError) throw insertError
-            }
-          }
-        }
-
-        // Ensure all customers have NextServices populated with "Windows" if empty
-        if (customers) {
-          const customersNeedingNextServices = customers.filter(c => !c.NextServices)
-
-          if (customersNeedingNextServices.length > 0) {
-            const updates = customersNeedingNextServices.map(customer =>
-              supabase
-                .from('Customers')
-                .update({ NextServices: 'Windows' })
-                .eq('id', customer.id)
-            )
-
-            const results = await Promise.all(updates)
-            const errors = results.filter(r => r.error)
-            if (errors.length > 0) {
-              console.error('Errors updating NextServices:', errors)
-            }
-          }
-        }
-
-        // Successful login
         setPendingConfirmationEmail('')
         onLogin(userData)
+        void runPostLoginMaintenance(userData)
+        return
       } else {
         // Sign up - create new account with email confirmation
         if (!formData.email || !formData.username || !formData.password) {
@@ -539,18 +551,22 @@ function Auth({ onLogin }) {
         const signupUsername = formData.username.trim()
         const emailRedirectTo = getEmailRedirectUrl()
 
-        const { data: signupData, error: signupError } = await supabase.auth.signUp({
-          email: signupEmail,
-          password: formData.password,
-          options: {
-            emailRedirectTo,
-            data: {
-              username: signupUsername,
-              companyName: formData.companyName || '',
-              country: formData.country || 'United Kingdom'
+        const { data: signupData, error: signupError } = await withTimeout(
+          supabase.auth.signUp({
+            email: signupEmail,
+            password: formData.password,
+            options: {
+              emailRedirectTo,
+              data: {
+                username: signupUsername,
+                companyName: formData.companyName || '',
+                country: formData.country || 'United Kingdom'
+              }
             }
-          }
-        })
+          }),
+          15000,
+          'Signup timed out. Please check internet and try again.'
+        )
 
         if (signupError) {
           const signupMessage = String(signupError.message || '')
