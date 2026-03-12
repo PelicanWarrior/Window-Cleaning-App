@@ -28,6 +28,8 @@ function Auth({ onLogin }) {
   const [captionByPicture, setCaptionByPicture] = useState({})
   const [orderByPicture, setOrderByPicture] = useState({})
   const [selectedPicture, setSelectedPicture] = useState(null)
+  const [isMobileViewport, setIsMobileViewport] = useState(false)
+  const [mobilePictureIndex, setMobilePictureIndex] = useState(0)
   const formPanelRef = useRef(null)
 
   useEffect(() => {
@@ -93,6 +95,23 @@ function Auth({ onLogin }) {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selectedPicture])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const mediaQuery = window.matchMedia('(max-width: 768px)')
+    const syncViewport = () => setIsMobileViewport(mediaQuery.matches)
+
+    syncViewport()
+
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', syncViewport)
+      return () => mediaQuery.removeEventListener('change', syncViewport)
+    }
+
+    mediaQuery.addListener(syncViewport)
+    return () => mediaQuery.removeListener(syncViewport)
+  }, [])
 
   const handleInstallClick = async () => {
     if (!deferredPrompt) return
@@ -646,6 +665,35 @@ function Auth({ onLogin }) {
     })
   }, [orderByPicture])
 
+  useEffect(() => {
+    if (!orderedPictures.length) {
+      setMobilePictureIndex(0)
+      return
+    }
+
+    setMobilePictureIndex((previousIndex) => previousIndex % orderedPictures.length)
+  }, [orderedPictures])
+
+  useEffect(() => {
+    if (!isMobileViewport || orderedPictures.length <= 1) return
+
+    const intervalId = window.setInterval(() => {
+      setMobilePictureIndex((previousIndex) => (previousIndex + 1) % orderedPictures.length)
+    }, 5000)
+
+    return () => window.clearInterval(intervalId)
+  }, [isMobileViewport, orderedPictures.length])
+
+  const handleNextMobilePicture = () => {
+    if (!orderedPictures.length) return
+    setMobilePictureIndex((previousIndex) => (previousIndex + 1) % orderedPictures.length)
+  }
+
+  const handlePreviousMobilePicture = () => {
+    if (!orderedPictures.length) return
+    setMobilePictureIndex((previousIndex) => (previousIndex - 1 + orderedPictures.length) % orderedPictures.length)
+  }
+
   if (isPasswordRecovery) {
     return (
       <div className="auth-page auth-recovery-page">
@@ -813,21 +861,76 @@ function Auth({ onLogin }) {
         <section className="auth-gallery">
           <h3>See Pelican in Action</h3>
           <p className="auth-gallery-intro">Click any screenshot to enlarge.</p>
-          <div className="auth-gallery-grid">
-            {orderedPictures.map((picture) => (
-              <figure className="auth-gallery-item" key={picture.fileName}>
+
+          {isMobileViewport ? (
+            <div className="auth-gallery-mobile">
+              {orderedPictures.length > 0 && (
+                <figure className="auth-gallery-item" key={orderedPictures[mobilePictureIndex].fileName}>
+                  <button
+                    type="button"
+                    className="auth-gallery-button"
+                    onClick={() => setSelectedPicture(orderedPictures[mobilePictureIndex])}
+                    aria-label={`Enlarge ${orderedPictures[mobilePictureIndex].fileName}`}
+                  >
+                    <img
+                      src={orderedPictures[mobilePictureIndex].src}
+                      alt={getPictureCaption(orderedPictures[mobilePictureIndex])}
+                      loading="lazy"
+                    />
+                  </button>
+                  <figcaption>{getPictureCaption(orderedPictures[mobilePictureIndex])}</figcaption>
+                </figure>
+              )}
+
+              <div className="auth-gallery-mobile-controls">
                 <button
                   type="button"
-                  className="auth-gallery-button"
-                  onClick={() => setSelectedPicture(picture)}
-                  aria-label={`Enlarge ${picture.fileName}`}
+                  className="auth-gallery-nav-btn"
+                  onClick={handlePreviousMobilePicture}
+                  disabled={orderedPictures.length <= 1}
                 >
-                  <img src={picture.src} alt={getPictureCaption(picture)} loading="lazy" />
+                  Previous
                 </button>
-                <figcaption>{getPictureCaption(picture)}</figcaption>
-              </figure>
-            ))}
-          </div>
+                <span>{orderedPictures.length ? `${mobilePictureIndex + 1} / ${orderedPictures.length}` : '0 / 0'}</span>
+                <button
+                  type="button"
+                  className="auth-gallery-nav-btn"
+                  onClick={handleNextMobilePicture}
+                  disabled={orderedPictures.length <= 1}
+                >
+                  Next
+                </button>
+              </div>
+
+              <div className="auth-gallery-mobile-dots" role="tablist" aria-label="Picture selector">
+                {orderedPictures.map((picture, index) => (
+                  <button
+                    type="button"
+                    key={picture.fileName}
+                    className={`auth-gallery-dot ${index === mobilePictureIndex ? 'active' : ''}`}
+                    aria-label={`Show picture ${index + 1}`}
+                    onClick={() => setMobilePictureIndex(index)}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="auth-gallery-grid">
+              {orderedPictures.map((picture) => (
+                <figure className="auth-gallery-item" key={picture.fileName}>
+                  <button
+                    type="button"
+                    className="auth-gallery-button"
+                    onClick={() => setSelectedPicture(picture)}
+                    aria-label={`Enlarge ${picture.fileName}`}
+                  >
+                    <img src={picture.src} alt={getPictureCaption(picture)} loading="lazy" />
+                  </button>
+                  <figcaption>{getPictureCaption(picture)}</figcaption>
+                </figure>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
