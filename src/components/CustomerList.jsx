@@ -52,6 +52,10 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   const [invoicesListModal, setInvoicesListModal] = useState({ show: false, customer: null })
   const [changePriceModal, setChangePriceModal] = useState({ show: false, price: '' })
   const [showCSVImportModal, setShowCSVImportModal] = useState(false)
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [exportFields, setExportFields] = useState([])
+  const [exportFieldIncluded, setExportFieldIncluded] = useState({})
+  const [exportingCustomers, setExportingCustomers] = useState(false)
   const [csvValidationError, setCSVValidationError] = useState('')
   const [preferredDaysSelected, setPreferredDaysSelected] = useState({})
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -326,6 +330,165 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       customer.Postcode || ''
     ].filter(Boolean)
     return parts.join(', ')
+  }
+
+  const getDefaultExportFields = () => {
+    const excludedFields = new Set(['Quote', 'NextServices', 'UserId', 'id'])
+    const fallbackFields = [
+      'CustomerName', 'Address', 'Address2', 'Address3', 'Postcode',
+      'PhoneNumber', 'EmailAddress', 'Price', 'Weeks', 'Route',
+      'NextClean', 'Outstanding', 'Notes', 'PrefferedDays', 'VAT',
+      'Quote', 'NextServices', 'UserId', 'id'
+    ]
+
+    const keySet = new Set(fallbackFields.filter((fieldName) => !excludedFields.has(fieldName)))
+    customers.forEach((customer) => {
+      Object.keys(customer || {}).forEach((key) => {
+        if (!excludedFields.has(key)) {
+          keySet.add(key)
+        }
+      })
+    })
+
+    return [...keySet]
+  }
+
+  const openExportModal = () => {
+    const fields = getDefaultExportFields()
+    const includeState = fields.reduce((acc, fieldName) => {
+      acc[fieldName] = true
+      return acc
+    }, {})
+
+    setExportFields(fields)
+    setExportFieldIncluded(includeState)
+    setShowExportModal(true)
+  }
+
+  const toggleExportFieldIncluded = (fieldName) => {
+    setExportFieldIncluded((prev) => ({
+      ...prev,
+      [fieldName]: !(prev[fieldName] ?? true)
+    }))
+  }
+
+  const moveExportField = (index, direction) => {
+    const targetIndex = index + direction
+    if (targetIndex < 0 || targetIndex >= exportFields.length) return
+
+    const reordered = [...exportFields]
+    const temp = reordered[index]
+    reordered[index] = reordered[targetIndex]
+    reordered[targetIndex] = temp
+    setExportFields(reordered)
+  }
+
+  const escapeCSVValue = (value) => {
+    const stringValue = value === null || value === undefined ? '' : String(value)
+    if (/[",\n\r]/.test(stringValue)) {
+      return `"${stringValue.replace(/"/g, '""')}"`
+    }
+    return stringValue
+  }
+
+  const formatServicePriceForCSV = (priceValue) => {
+    const numeric = parseFloat(priceValue)
+    if (!Number.isFinite(numeric)) return ''
+    return numeric.toFixed(2).replace(/\.00$/, '')
+  }
+
+  const handleExportCustomers = async () => {
+    if (!customers.length) {
+      alert('No customers available to export.')
+      return
+    }
+
+    const selectedExportFields = exportFields.filter((fieldName) => exportFieldIncluded[fieldName] !== false)
+
+    if (!selectedExportFields.length) {
+      alert('No fields selected to export.')
+      return
+    }
+
+    try {
+      setExportingCustomers(true)
+
+      const customerIds = customers.map((customer) => customer.id).filter(Boolean)
+      let servicesByCustomerId = new Map()
+
+      if (customerIds.length > 0) {
+        const { data: servicesData, error: servicesError } = await supabase
+          .from('CustomerPrices')
+          .select('CustomerID, Service, Price')
+          .in('CustomerID', customerIds)
+
+        if (servicesError) throw servicesError
+
+        servicesByCustomerId = (servicesData || []).reduce((acc, serviceRow) => {
+          const customerId = serviceRow.CustomerID
+          if (!acc.has(customerId)) {
+            acc.set(customerId, [])
+          }
+          acc.get(customerId).push(serviceRow)
+          return acc
+        }, new Map())
+      }
+
+      const getNotesWithServices = (customer) => {
+        const currentNotes = String(customer?.Notes || '').trim()
+        const customerServices = servicesByCustomerId.get(customer.id) || []
+
+        if (!customerServices.length) return currentNotes
+
+        const servicesText = customerServices
+          .map((serviceRow) => {
+            const serviceName = String(serviceRow.Service || '').trim()
+            const priceText = formatServicePriceForCSV(serviceRow.Price)
+            if (!serviceName) return null
+            return priceText ? `${serviceName} - ${priceText}` : serviceName
+          })
+          .filter(Boolean)
+          .join('; ')
+
+        if (!servicesText) return currentNotes
+        if (!currentNotes) return `Services: ${servicesText}`
+        return `${currentNotes}; Services: ${servicesText}`
+      }
+
+      const headers = selectedExportFields
+      const rows = customers.map((customer) => {
+        return selectedExportFields.map((fieldName) => {
+          if (fieldName === 'Notes') {
+            return getNotesWithServices(customer)
+          }
+          return customer[fieldName] ?? ''
+        })
+      })
+
+      const csvLines = [
+        headers.map(escapeCSVValue).join(','),
+        ...rows.map((row) => row.map(escapeCSVValue).join(','))
+      ]
+
+      const csvContent = csvLines.join('\n')
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const today = new Date().toISOString().split('T')[0]
+      link.href = url
+      link.setAttribute('download', `customers_export_${today}.csv`)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+
+      setShowExportModal(false)
+    } catch (error) {
+      console.error('Error exporting customers:', error.message)
+      alert('Error exporting customers: ' + error.message)
+    } finally {
+      setExportingCustomers(false)
+    }
   }
 
   const parsePreferredDays = (preferredDaysString) => {
@@ -1387,6 +1550,9 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
             🔍 Find Customer
           </button>
         )}
+        <button className="export-customers-btn" onClick={openExportModal}>
+          ⬇ Export Customers
+        </button>
       </div>
 
       {showAddForm && (
@@ -2251,6 +2417,83 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
                 type="button"
                 className="modal-cancel-btn" 
                 onClick={() => setShowCSVImportModal(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showExportModal && (
+        <div className="modal-overlay simple-modal-overlay" onClick={() => setShowExportModal(false)}>
+          <div className="modal-content export-customers-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setShowExportModal(false)}>×</button>
+            <h3>Export Customers</h3>
+            <p className="export-customers-help">
+              Reorder fields below and untick Include for any columns you do not want. CSV columns follow this order. Services are added into the Notes field.
+            </p>
+
+            <div className="export-fields-list">
+              <div className="export-fields-header">
+                <span>Include</span>
+                <span>Field</span>
+                <span>Move</span>
+              </div>
+              {exportFields.map((fieldName, index) => (
+                <div key={fieldName} className="export-field-row">
+                  <div className="export-include-cell">
+                    <input
+                      type="checkbox"
+                      checked={exportFieldIncluded[fieldName] !== false}
+                      onChange={() => toggleExportFieldIncluded(fieldName)}
+                      aria-label={`Include ${fieldName}`}
+                    />
+                  </div>
+                  <span className="export-field-name">
+                    {fieldName}
+                    {fieldName === 'Notes' && (
+                      <span className="export-field-note"> (includes customer services)</span>
+                    )}
+                  </span>
+                  <div className="export-field-actions">
+                    <button
+                      type="button"
+                      className="export-move-btn"
+                      onClick={() => moveExportField(index, -1)}
+                      disabled={index === 0}
+                      title="Move up"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="export-move-btn"
+                      onClick={() => moveExportField(index, 1)}
+                      disabled={index === exportFields.length - 1}
+                      title="Move down"
+                    >
+                      ↓
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="modal-buttons">
+              <button
+                type="button"
+                className="modal-ok-btn export-confirm-btn"
+                onClick={handleExportCustomers}
+                disabled={exportingCustomers}
+              >
+                {exportingCustomers ? 'Exporting...' : 'Export CSV'}
+              </button>
+              <button
+                type="button"
+                className="modal-cancel-btn"
+                onClick={() => setShowExportModal(false)}
+                disabled={exportingCustomers}
               >
                 Cancel
               </button>

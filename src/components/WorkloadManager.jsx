@@ -178,7 +178,8 @@ function WorkloadManager({ user }) {
 
   const getSelectedCalendarDateString = () => {
     if (selectedDate) {
-      return toLocalDateKey(new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate))
+      const selectedLocalDate = parseDateKeyToLocalDate(selectedDate)
+      if (selectedLocalDate) return toLocalDateKey(selectedLocalDate)
     }
     return toLocalDateKey(currentDate)
   }
@@ -919,20 +920,20 @@ function WorkloadManager({ user }) {
         const savedDate = parseDateKeyToLocalDate(data.CalenderDate)
         if (!savedDate) {
           setCurrentDate(new Date())
-          setSelectedDate(new Date().getDate())
+          setSelectedDate(toLocalDateKey(new Date()))
           return
         }
         // Set currentDate to the actual saved date (not just the 1st of month)
         setCurrentDate(savedDate)
-        setSelectedDate(savedDate.getDate())
+        setSelectedDate(toLocalDateKey(savedDate))
       } else {
         // If no saved date, use today
         setCurrentDate(new Date())
-        setSelectedDate(new Date().getDate())
+        setSelectedDate(toLocalDateKey(new Date()))
       }
     } catch (error) {
       console.error('Error fetching calendar date:', error.message)
-      setSelectedDate(new Date().getDate())
+      setSelectedDate(toLocalDateKey(new Date()))
     }
   }
 
@@ -1219,14 +1220,14 @@ function WorkloadManager({ user }) {
   const getQuotesForDate = (dayOrDate) => getCustomersForDate(dayOrDate).filter(c => isQuoteCustomer(c))
 
   // Handle day click
-  const handleDayClick = async (day) => {
-    setSelectedDate(day)
+  const handleDayClick = async (dayOrDate) => {
+    const selectedDateStr = normalizeDateKey(dayOrDate)
+    if (!selectedDateStr) return
+
+    setSelectedDate(selectedDateStr)
     
     // Save the selected date to CalenderDate in Users table
     try {
-      // Create the actual date object with proper year, month, and day
-      const actualDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
-      const selectedDateStr = toLocalDateKey(actualDate)
       const { error } = await supabase
         .from('Users')
         .update({ CalenderDate: selectedDateStr })
@@ -1297,7 +1298,7 @@ function WorkloadManager({ user }) {
   // Handle Done and Paid
   const handleDoneAndPaid = async (customer) => {
     try {
-      const currentWorkDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate)
+      const currentWorkDate = parseDateKeyToLocalDate(selectedDate) || new Date(currentDate)
       const weeksToAdd = parseInt(customer.Weeks) || 0
       const nextCleanDate = new Date(currentWorkDate)
       nextCleanDate.setDate(nextCleanDate.getDate() + (weeksToAdd * 7))
@@ -1339,7 +1340,7 @@ function WorkloadManager({ user }) {
   // Handle Done and Not Paid
   const handleDoneAndNotPaid = async (customer) => {
     try {
-      const currentWorkDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate)
+      const currentWorkDate = parseDateKeyToLocalDate(selectedDate) || new Date(currentDate)
       const weeksToAdd = parseInt(customer.Weeks) || 0
       const nextCleanDate = new Date(currentWorkDate)
       nextCleanDate.setDate(nextCleanDate.getDate() + (weeksToAdd * 7))
@@ -2186,17 +2187,19 @@ function WorkloadManager({ user }) {
 
     // Add days of the month
     for (let day = 1; day <= daysInMonth; day++) {
+      const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
+      const dayDateKey = toLocalDateKey(dayDate)
       const hasJobs = hasJobsOnDate(day)
       const hasQuotes = hasQuotesOnDate(day)
       const hasAnyWork = hasJobs || hasQuotes
-      const isSelected = selectedDate === day
+      const isSelected = normalizeDateKey(selectedDate) === dayDateKey
       const personalItemsForDay = getPersonalItemsForDate(day)
       
       days.push(
         <div
           key={day}
           className={`calendar-day ${hasAnyWork ? 'has-work' : ''} ${isSelected ? 'selected' : ''}`}
-          onClick={() => handleDayClick(day)}
+          onClick={() => handleDayClick(dayDate)}
         >
           <div className="day-number">{day}</div>
           {isAdmin && personalItemsForDay.length > 0 && (
@@ -2247,7 +2250,8 @@ function WorkloadManager({ user }) {
       const day = new Date(weekStart)
       day.setDate(day.getDate() + i)
       const dayOfMonth = day.getDate()
-      const isSelected = selectedDate === dayOfMonth
+      const dayDateKey = toLocalDateKey(day)
+      const isSelected = normalizeDateKey(selectedDate) === dayDateKey
       const personalItemsForDay = getPersonalItemsForDate(day)
       
       // Get weather data for this day
@@ -2267,7 +2271,7 @@ function WorkloadManager({ user }) {
         <div
           key={i}
           className={`calendar-day weekly-day ${isSelected ? 'selected' : ''}`}
-          onClick={() => handleDayClick(dayOfMonth)}
+          onClick={() => handleDayClick(day)}
           title={weatherInfo ? `${weatherInfo.icon} ${weatherInfo.temp_max}°C` : ''}
         >
           <div className="weather-icon" title={weatherInfo ? `${weatherInfo.temp_max}°C` : ''}>
@@ -2339,8 +2343,26 @@ function WorkloadManager({ user }) {
     'July', 'August', 'September', 'October', 'November', 'December'
   ]
 
+  const formatLongDateWithOrdinal = (dateObj) => {
+    if (!(dateObj instanceof Date)) return ''
+    const day = dateObj.getDate()
+    const month = monthNames[dateObj.getMonth()]
+    const year = dateObj.getFullYear()
+
+    const teen = day % 100
+    let suffix = 'th'
+    if (teen < 11 || teen > 13) {
+      if (day % 10 === 1) suffix = 'st'
+      else if (day % 10 === 2) suffix = 'nd'
+      else if (day % 10 === 3) suffix = 'rd'
+    }
+
+    return `${day}${suffix} ${month} ${year}`
+  }
+
   if (loading) return <div className="loading">Loading workload...</div>
 
+  const selectedDateObject = parseDateKeyToLocalDate(selectedDate) || null
   const selectedDayJobs = selectedDate ? getJobsForDate(selectedDate) : []
   const selectedDayQuotes = selectedDate ? getQuotesForDate(selectedDate) : []
   const selectedDayPersonalItems = selectedDate ? getPersonalItemsForDate(selectedDate) : []
@@ -2575,7 +2597,7 @@ function WorkloadManager({ user }) {
                             {bulkDatePickerOpen && (
                               <input
                                 type="date"
-                                value={toLocalDateKey(new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate))}
+                                value={selectedDate ? normalizeDateKey(selectedDate) : toLocalDateKey(currentDate)}
                                 onChange={(e) => handleBulkMoveToDate(e.target.value)}
                                 className="date-picker-input"
                                 autoFocus
@@ -2654,7 +2676,7 @@ function WorkloadManager({ user }) {
                           {bulkDatePickerOpen && (
                             <input
                               type="date"
-                              value={toLocalDateKey(new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate))}
+                              value={selectedDate ? normalizeDateKey(selectedDate) : toLocalDateKey(currentDate)}
                               onChange={(e) => handleBulkMoveToDate(e.target.value)}
                               className="date-picker-input"
                               autoFocus
@@ -2707,7 +2729,7 @@ function WorkloadManager({ user }) {
           )}
           
           <h3>
-            Jobs for {monthNames[currentDate.getMonth()]} {selectedDate}, {currentDate.getFullYear()}
+            Jobs for {formatLongDateWithOrdinal(selectedDateObject || currentDate)}
           </h3>
           <p className="income-total">Income: {formatCurrency(totalIncome, user.SettingsCountry || 'United Kingdom')}</p>
 
@@ -2758,7 +2780,7 @@ function WorkloadManager({ user }) {
                       setSelectedCustomer(customer)
                       setShowCustomerModal(true)
                     }}>
-                      {!isDayMatchingPreferredDays(new Date(currentDate.getFullYear(), currentDate.getMonth(), selectedDate), customer.PrefferedDays) && customer.PrefferedDays && (
+                      {!isDayMatchingPreferredDays(selectedDateObject, customer.PrefferedDays) && customer.PrefferedDays && (
                         <div style={{ color: '#e74c3c', fontWeight: '600', fontSize: '0.9rem', marginBottom: '0.25rem' }}>Preferred Days: {customer.PrefferedDays}</div>
                       )}
                       <div className="customer-address-main">{getFullAddress(customer)}</div>

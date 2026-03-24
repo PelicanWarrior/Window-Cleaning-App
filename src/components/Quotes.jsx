@@ -4,6 +4,18 @@ import { formatDateByCountry, formatCurrency, getCurrencyConfig } from '../lib/f
 import './Quotes.css'
 
 function Quotes({ user }) {
+  const createEmptyBookJobModal = () => ({
+    show: false,
+    customer: null,
+    selectedDate: '',
+    services: [],
+    selectedServices: [],
+    routeSelection: '',
+    newRoute: '',
+    oneOff: false,
+    weeks: 4
+  })
+
   const [showAddForm, setShowAddForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -23,7 +35,8 @@ function Quotes({ user }) {
   const [editServiceData, setEditServiceData] = useState({})
   const [showHistory, setShowHistory] = useState(false)
   const [customerHistory, setCustomerHistory] = useState([])
-  const [bookJobModal, setBookJobModal] = useState({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
+  const [bookJobModal, setBookJobModal] = useState(createEmptyBookJobModal())
+  const [routeOptions, setRouteOptions] = useState([])
 
   useEffect(() => {
     if (!serviceDropdownOpen) return
@@ -50,6 +63,30 @@ function Quotes({ user }) {
   useEffect(() => {
     if (user?.id) fetchQuotes()
   }, [user])
+
+  useEffect(() => {
+    if (user?.id) fetchRouteOptions()
+  }, [user])
+
+  const fetchRouteOptions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('Customers')
+        .select('Route')
+        .eq('UserId', user.id)
+
+      if (error) throw error
+
+      const routes = [...new Set((data || [])
+        .map((row) => String(row.Route || '').trim())
+        .filter(Boolean)
+      )].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+
+      setRouteOptions(routes)
+    } catch (err) {
+      console.error('Error fetching routes:', err.message)
+    }
+  }
 
   const fetchQuotes = async () => {
     setLoading(true)
@@ -287,7 +324,20 @@ function Quotes({ user }) {
       }
       
       // Show date and service picker modal
-      setBookJobModal({ show: true, customer, selectedDate: '', services: services || [], selectedServices: [] })
+      const customerRoute = String(customer.Route || '').trim()
+      const customerWeeks = Number.isFinite(parseInt(customer.Weeks, 10)) ? parseInt(customer.Weeks, 10) : 4
+
+      setBookJobModal({
+        show: true,
+        customer,
+        selectedDate: '',
+        services: services || [],
+        selectedServices: [],
+        routeSelection: customerRoute || '',
+        newRoute: '',
+        oneOff: customerWeeks === 0,
+        weeks: customerWeeks === 0 ? 4 : customerWeeks
+      })
     } catch (error) {
       console.error('Error checking services:', error.message)
       alert('Error checking services: ' + error.message)
@@ -304,6 +354,19 @@ function Quotes({ user }) {
       const selectedServiceObjects = bookJobModal.services.filter(s => bookJobModal.selectedServices.includes(s.id))
       const totalPrice = selectedServiceObjects.reduce((sum, s) => sum + (parseFloat(s.Price) || 0), 0)
       const serviceNames = selectedServiceObjects.map(s => s.Service).join(', ')
+      const isNewRoute = bookJobModal.routeSelection === '__new__'
+      const resolvedRoute = isNewRoute ? String(bookJobModal.newRoute || '').trim() : String(bookJobModal.routeSelection || '').trim()
+      const resolvedWeeks = bookJobModal.oneOff ? 0 : (parseInt(bookJobModal.weeks, 10) || 4)
+
+      if (!bookJobModal.oneOff && resolvedWeeks <= 0) {
+        alert('Weeks must be greater than 0 unless One Off is selected')
+        return
+      }
+
+      if (isNewRoute && !resolvedRoute) {
+        alert('Please enter a new round name')
+        return
+      }
       
       const { error } = await supabase
         .from('Customers')
@@ -311,6 +374,8 @@ function Quotes({ user }) {
           NextClean: bookJobModal.selectedDate,
           Price: totalPrice,
           NextServices: serviceNames,
+          Route: resolvedRoute,
+          Weeks: resolvedWeeks,
           Quote: false 
         })
         .eq('id', bookJobModal.customer.id)
@@ -327,8 +392,9 @@ function Quotes({ user }) {
       
       if (historyError) throw historyError
       
-      setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
+      setBookJobModal(createEmptyBookJobModal())
       setShowQuoteModal(false)
+      fetchRouteOptions()
       fetchQuotes()
     } catch (error) {
       console.error('Error booking job:', error.message)
@@ -699,7 +765,7 @@ function Quotes({ user }) {
       )}
 
       {bookJobModal.show && bookJobModal.customer && (
-        <div className="modal-overlay" onClick={() => setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })}>
+        <div className="modal-overlay" onClick={() => setBookJobModal(createEmptyBookJobModal())}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>Book Job for {bookJobModal.customer.CustomerName}</h3>
             <div className="modal-form">
@@ -711,6 +777,54 @@ function Quotes({ user }) {
                 onChange={(e) => setBookJobModal(prev => ({ ...prev, selectedDate: e.target.value }))}
                 className="modal-input"
               />
+
+              <label htmlFor="jobRound" style={{ marginTop: '1rem' }}>Round:</label>
+              <select
+                id="jobRound"
+                value={bookJobModal.routeSelection}
+                onChange={(e) => setBookJobModal(prev => ({ ...prev, routeSelection: e.target.value }))}
+                className="modal-input"
+              >
+                <option value="">Select round</option>
+                {routeOptions.map((route) => (
+                  <option key={route} value={route}>{route}</option>
+                ))}
+                <option value="__new__">+ Create new round</option>
+              </select>
+
+              {bookJobModal.routeSelection === '__new__' && (
+                <input
+                  type="text"
+                  value={bookJobModal.newRoute}
+                  onChange={(e) => setBookJobModal(prev => ({ ...prev, newRoute: e.target.value }))}
+                  className="modal-input"
+                  placeholder="Enter new round name"
+                  style={{ marginTop: '0.5rem' }}
+                />
+              )}
+
+              <div className="book-job-frequency-row">
+                <label className="book-job-oneoff-toggle">
+                  <input
+                    type="checkbox"
+                    checked={bookJobModal.oneOff}
+                    onChange={(e) => setBookJobModal(prev => ({ ...prev, oneOff: e.target.checked }))}
+                  />
+                  One Off
+                </label>
+                <div className="book-job-weeks-input-wrap">
+                  <label htmlFor="jobWeeks">Weeks</label>
+                  <input
+                    id="jobWeeks"
+                    type="number"
+                    min="1"
+                    value={bookJobModal.weeks}
+                    onChange={(e) => setBookJobModal(prev => ({ ...prev, weeks: e.target.value }))}
+                    className="modal-input"
+                    disabled={bookJobModal.oneOff}
+                  />
+                </div>
+              </div>
               
               {bookJobModal.services.length > 0 && (
                 <>
@@ -764,7 +878,7 @@ function Quotes({ user }) {
                 Save
               </button>
               <button 
-                onClick={() => setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })}
+                onClick={() => setBookJobModal(createEmptyBookJobModal())}
                 className="modal-cancel-btn"
               >
                 Cancel

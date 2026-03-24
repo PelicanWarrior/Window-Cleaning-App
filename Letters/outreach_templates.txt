@@ -1,0 +1,122 @@
+WINDOW CLEANING APP OUTREACH TEMPLATES
+
+==================================================
+3-EMAIL SEQUENCE
+==================================================
+
+EMAIL 1 (Day 0)
+
+Subject options:
+- 3 months free for [Company Name]
+- Quick idea for [Company Name]
+- Window cleaning software trial for [Company Name]
+
+Body:
+Hi [First Name],
+I run a simple app built for window cleaning companies to manage rounds, customer details, quotes, reminders and invoicing in one place.
+
+I'm offering [Company Name] 3 months free (plus help with setup/import) in exchange for honest feedback.
+
+Would you be open to a quick 10-minute walkthrough this week?
+
+Thanks,
+[Your Name]
+[Role]
+[Phone]
+[Website]
+
+
+EMAIL 2 (Day 3)
+
+Subject:
+Re: 3 months free for [Company Name]
+
+Body:
+Hi [First Name],
+Just following up in case this got buried.
+
+Most cleaners I speak to want to reduce admin and stop juggling notes/spreadsheets.
+The app helps with:
+- recurring round scheduling
+- customer/job history
+- quotes + invoicing in one place
+
+Still happy to offer 3 months free and help get you set up.
+Open to a short call this week?
+
+Best,
+[Your Name]
+
+
+EMAIL 3 (Day 7)
+
+Subject:
+Close this out?
+
+Body:
+Hi [First Name],
+I don't want to keep bothering you, so I'll close this out after this email.
+
+If useful, I can still offer [Company Name] 3 months free + setup help.
+If timing isn't right, just reply "later" and I'll check back in a few months.
+
+Worth a quick 10-minute demo, yes/no?
+
+Thanks,
+[Your Name]
+
+
+==================================================
+REPLY SCRIPTS
+==================================================
+
+1) "Not now"
+No problem at all, thanks for replying.
+Would it be okay if I check back in [2-3 months]?
+If helpful, I can also send a one-page summary so you have it on file.
+
+
+2) "Send details"
+Absolutely. Quick summary:
+
+- Built for window cleaning businesses
+- Handles rounds, customer records, quotes, reminders, invoicing
+- Offer: 3 months free + setup/import support
+- Typical setup time: [X] minutes
+
+If useful, I can show it in a 10-minute demo here: [booking link]
+Or you can start directly: [trial link]
+
+
+3) "How much after free period?"
+Great question. After the 3 free months, pricing is [PSX/month or your tiers], no long-term contract.
+If you'd like, I can recommend the best plan based on your team size and round volume.
+
+
+4) "We already use [competitor/tool]"
+That makes sense. Most people I speak to were already using something.
+The easiest way to compare is a quick side-by-side demo focused on your current workflow.
+No pressure, and you still get 3 months free if you decide to try it.
+
+
+5) "Who are you / is this legit?"
+Fair question. I'm [Your Name], founder of [App Name].
+Website: [site]
+I can also send a quick video walkthrough and a direct number if you prefer to call first: [phone].
+
+
+==================================================
+LANDING PAGE OFFER COPY (OPTIONAL)
+==================================================
+
+Headline:
+3 Months Free for Window Cleaning Companies
+
+Primary CTA:
+Book 10-Min Demo
+
+Secondary CTA:
+Start Free Trial
+
+Short form fields:
+Name, Company, Email, Phone
