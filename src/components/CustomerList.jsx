@@ -1542,16 +1542,16 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       <div className="action-buttons">
         {!showAddForm && (
           <button className="add-customer-btn" onClick={handleOpenAddForm}>
-            + Add Customer
+            Add
           </button>
         )}
         {!showFindForm && (
           <button className="find-customer-btn" onClick={() => setShowFindForm(true)}>
-            🔍 Find Customer
+            Find
           </button>
         )}
         <button className="export-customers-btn" onClick={openExportModal}>
-          ⬇ Export Customers
+          Export
         </button>
       </div>
 
