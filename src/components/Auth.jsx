@@ -936,7 +936,7 @@ function Auth({ onLogin }) {
 
       <section className="auth-offer">
         <h3>Start Free and Stay Free Until You Grow</h3>
-        <p>Use Pelican free until you reach 100 customers or £1,000 monthly round, whichever comes first. No trial countdown. No card required.</p>
+        <p>Use Pelican free until you reach 100 customers or £1,000 monthly round, whichever comes first. Paid plans include a 3-month free trial for first-time subscribers.</p>
         <button type="button" className="hero-primary" onClick={openSignupPanel}>Create Free Account</button>
       </section>
 

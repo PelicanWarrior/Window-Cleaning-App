@@ -24,6 +24,18 @@ function getStripeCurrency(): string {
   return "gbp";
 }
 
+function getStripeTrialDays(): number {
+  const raw = (Deno.env.get("STRIPE_TRIAL_DAYS") || "90").trim();
+  const days = Number(raw);
+
+  if (Number.isFinite(days) && days > 0 && days <= 365) {
+    return Math.floor(days);
+  }
+
+  console.warn(`[create_checkout_session] Invalid STRIPE_TRIAL_DAYS '${raw}', defaulting to 90`);
+  return 90;
+}
+
 function normalizeBaseUrl(rawUrl: string | null | undefined): string | null {
   if (!rawUrl) return null;
 
@@ -126,6 +138,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("FUNCTION_SUPABASE_URL") || Deno.env.get("SUPABASE_URL");
     const serviceRoleKey = Deno.env.get("FUNCTION_SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const stripeCurrency = getStripeCurrency();
+    const stripeTrialDays = getStripeTrialDays();
 
     if (!supabaseUrl || !serviceRoleKey) {
       return jsonResponse(500, { error: "Missing Supabase configuration" });
@@ -421,23 +434,41 @@ serve(async (req) => {
     }
 
     const updatableStatuses = new Set(["trialing", "active", "past_due", "unpaid"]);
+    const hadAnySubscriptionStatuses = new Set([
+      "trialing",
+      "active",
+      "past_due",
+      "unpaid",
+      "canceled",
+      "incomplete",
+      "incomplete_expired",
+      "paused",
+    ]);
     let existingSubscriptionId =
       user.StripeSubscriptionId && updatableStatuses.has((user.StripeSubscriptionStatus || "").toLowerCase())
         ? user.StripeSubscriptionId
         : null;
 
-    if (!existingSubscriptionId && stripeCustomerId) {
+    let hasPriorSubscription = false;
+
+    if (stripeCustomerId) {
       const listParams = new URLSearchParams();
       listParams.append("customer", stripeCustomerId);
       listParams.append("status", "all");
       listParams.append("limit", "20");
 
       const subscriptionList = await stripeGet("subscriptions", listParams);
+      hasPriorSubscription = (subscriptionList?.data || []).some((sub: { status?: string }) =>
+        hadAnySubscriptionStatuses.has((sub?.status || "").toLowerCase())
+      );
+
       const found = (subscriptionList?.data || []).find((sub: { status?: string }) =>
         updatableStatuses.has((sub?.status || "").toLowerCase())
       );
       existingSubscriptionId = found?.id || null;
     }
+
+    const isTrialEligible = !existingSubscriptionId && !hasPriorSubscription;
 
     const baseUrl = resolveAppBaseUrl(req);
     const successReturnUrl = buildReturnUrl(baseUrl, {
@@ -540,12 +571,22 @@ serve(async (req) => {
     sessionParams.append("cancel_url", cancelUrl);
     sessionParams.append("metadata[user_id]", resolvedUserId);
     sessionParams.append("metadata[account_level_id]", String(level.id));
+    sessionParams.append("metadata[trial_applied]", isTrialEligible ? "true" : "false");
     sessionParams.append("subscription_data[metadata][user_id]", resolvedUserId);
     sessionParams.append("subscription_data[metadata][account_level_id]", String(level.id));
+    sessionParams.append("subscription_data[metadata][trial_applied]", isTrialEligible ? "true" : "false");
+
+    if (isTrialEligible) {
+      sessionParams.append("subscription_data[trial_period_days]", String(stripeTrialDays));
+    }
 
     const session = await stripeRequest("checkout/sessions", sessionParams);
 
-    return jsonResponse(200, { url: session.url });
+    return jsonResponse(200, {
+      url: session.url,
+      trialApplied: isTrialEligible,
+      trialDays: isTrialEligible ? stripeTrialDays : 0,
+    });
   } catch (error) {
     return jsonResponse(500, { error: error.message || "Unexpected error" });
   }

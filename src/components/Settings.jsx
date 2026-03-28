@@ -702,7 +702,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
                   </div>
                 )}
                 <p className="plan-note">
-                  Paid plans are billed monthly via Stripe. You will be redirected to secure checkout.
+                  Paid plans include a 3-month free trial for first-time subscribers, then monthly billing via Stripe.
                 </p>
                 {isAdmin && (
                   <button className="plan-test-btn" onClick={handleTestConnection}>

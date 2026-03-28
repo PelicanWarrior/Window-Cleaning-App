@@ -276,7 +276,7 @@ serve(async (req) => {
         const updates: Record<string, unknown> = {
           StripeCustomerId: customerId || null,
           StripeSubscriptionId: subscriptionId || null,
-          StripeSubscriptionStatus: "active",
+          StripeSubscriptionStatus: subscription?.status || "active",
         };
 
         if (accountLevelId) updates.AccountLevel = accountLevelId;
