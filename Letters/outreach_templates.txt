@@ -15,15 +15,16 @@ Body:
 Hi [First Name],
 I run a simple app built for window cleaning companies to manage rounds, customer details, quotes, reminders and invoicing in one place.
 
-I'm offering [Company Name] 3 months free (plus help with setup/import) in exchange for honest feedback.
+I'm offering you and your company 3 months free (plus help with setup/import) in exchange for honest feedback.
 
-Would you be open to a quick 10-minute walkthrough this week?
+You can view the app here: https://www.pelicanwindowcleaning.co.uk/
+
+Would you be open to trying it?
 
 Thanks,
-[Your Name]
-[Role]
-[Phone]
-[Website]
+Gavin Grainger
+Business Owner
+https://www.pelicanwindowcleaning.co.uk/
 
 
 EMAIL 2 (Day 3)
@@ -42,7 +43,8 @@ The app helps with:
 - quotes + invoicing in one place
 
 Still happy to offer 3 months free and help get you set up.
-Open to a short call this week?
+You can view the app here: https://www.pelicanwindowcleaning.co.uk/
+Open to giving it a try?
 
 Best,
 [Your Name]
@@ -60,7 +62,9 @@ I don't want to keep bothering you, so I'll close this out after this email.
 If useful, I can still offer [Company Name] 3 months free + setup help.
 If timing isn't right, just reply "later" and I'll check back in a few months.
 
-Worth a quick 10-minute demo, yes/no?
+You can view the app here: https://www.pelicanwindowcleaning.co.uk/
+
+Worth trying it, yes/no?
 
 Thanks,
 [Your Name]
@@ -84,8 +88,8 @@ Absolutely. Quick summary:
 - Offer: 3 months free + setup/import support
 - Typical setup time: [X] minutes
 
-If useful, I can show it in a 10-minute demo here: [booking link]
-Or you can start directly: [trial link]
+You can view the app here: https://www.pelicanwindowcleaning.co.uk/
+You can start directly here: https://www.pelicanwindowcleaning.co.uk/
 
 
 3) "How much after free period?"
@@ -113,7 +117,7 @@ Headline:
 3 Months Free for Window Cleaning Companies
 
 Primary CTA:
-Book 10-Min Demo
+Start Free Trial
 
 Secondary CTA:
 Start Free Trial

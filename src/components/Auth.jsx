@@ -621,7 +621,10 @@ function Auth({ onLogin }) {
           return
         }
 
-        window.location.assign('/sign_up/')
+        setPendingConfirmationEmail(signupEmail)
+        setConfirmationMessage('Account created. Please check your email and click the confirmation link before logging in. Check spam/junk if needed.')
+        setIsLogin(true)
+        setFormData({ username: '', email: signupEmail, password: '', companyName: '', country: 'United Kingdom' })
         return
       }
     } catch (err) {

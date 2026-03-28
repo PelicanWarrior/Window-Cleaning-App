@@ -10,7 +10,7 @@
       gtag('js', new Date())
       gtag('config', 'G-XNTXMVGNRS')
     </script>
-    <title>Sign Up Complete | Pelican</title>
+    <title>Confirm Your Email | Pelican</title>
     <style>
       body {
         margin: 0;
@@ -57,15 +57,16 @@
   </head>
   <body>
     <main class="card">
-      <h1>Thank you for signing up!</h1>
-      <p>Your account was created successfully.</p>
-      <p>You will be redirected to the main page in <span class="countdown" id="countdown">6</span> seconds.</p>
-      <button class="btn" id="goNow" type="button">Go to app now</button>
+      <h1>Check your email to confirm your account</h1>
+      <p>We sent a confirmation link to your email address.</p>
+      <p>Please open that email and click the link before you try to log in.</p>
+      <p>You will be redirected to the login page in <span class="countdown" id="countdown">8</span> seconds.</p>
+      <button class="btn" id="goNow" type="button">Go to login now</button>
     </main>
 
     <script>
       (function () {
-        var seconds = 6
+        var seconds = 8
         var countdownEl = document.getElementById('countdown')
         var targetUrl = '/'
 

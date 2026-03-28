@@ -5,6 +5,7 @@ import CustomerList from './components/CustomerList'
 import WorkloadManager from './components/WorkloadManager'
 import Quotes from './components/Quotes'
 import Letters from './components/Letters'
+import LeadsManager from './components/LeadsManager'
 import Settings from './components/Settings'
 import AdminPanel from './components/AdminPanel'
 import logo1 from '../public/Logo1.png'
@@ -359,6 +360,12 @@ function App() {
     return { label: 'Bronze', className: 'bronze' }
   }
 
+  useEffect(() => {
+    if (activeTab === 'leads' && !activeUser?.admin) {
+      setActiveTab('workload')
+    }
+  }, [activeTab, activeUser?.admin])
+
   if (showAuth && !isAuthenticated) {
     return <Auth onLogin={handleLogin} />
   }
@@ -431,6 +438,14 @@ function App() {
           >
             Messages
           </button>
+          {activeUser.admin && (
+            <button
+              className={activeTab === 'leads' ? 'active' : ''}
+              onClick={() => setActiveTab('leads')}
+            >
+              Leads
+            </button>
+          )}
         </nav>
       </header>
       <main className="app-main">
@@ -444,6 +459,7 @@ function App() {
         )}
         {activeTab === 'quotes' && <Quotes user={activeUser} />}
         {activeTab === 'letters' && <Letters user={activeUser} />}
+        {activeTab === 'leads' && activeUser.admin && <LeadsManager user={activeUser} />}
       </main>
       {showSettings && (
         <Settings 

@@ -1,1 +1,3 @@
-export const APP_VERSION = 'V1.19'
+import versionText from '../../version.txt?raw'
+
+export const APP_VERSION = versionText.trim()
