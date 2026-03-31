@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import './CustomerList.css'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
 import { getOwnerUserId, isOwnerUser } from '../lib/team'
+import { formatCacheTimestamp, getOfflineCacheKey, isLikelyOfflineError, readOfflineCache, writeOfflineCache } from '../lib/offlineCache'
 import InvoicesModal from './InvoicesModal'
 import InvoiceModalContent from './InvoiceModalNew'
 
@@ -11,6 +12,7 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 function CustomerList({ user, isGuest = false, onRequireAuth }) {
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
+  const [offlineCacheInfo, setOfflineCacheInfo] = useState({ usingCache: false, savedAt: null })
   const [sortBy, setSortBy] = useState(user.CustomerSort || 'Route')
   // Show the sorted column on initial load
   const [sortedColumn, setSortedColumn] = useState(user.CustomerSort || 'Route')
@@ -100,6 +102,62 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   const ownerUserId = getOwnerUserId(user)
   const isOwner = isOwnerUser(user)
   const hasEmployees = isOwner && teamMembers.length > 0
+  const customerCacheKey = ownerUserId
+    ? getOfflineCacheKey('customers', ownerUserId, isOwner ? 'owner' : `employee-${user?.id || 'unknown'}`)
+    : null
+
+  const hasActiveFilters = () => Object.values(filters).some((value) => String(value || '').trim() !== '')
+
+  const compareText = (left, right) => String(left || '').localeCompare(String(right || ''), undefined, { sensitivity: 'base' })
+
+  const applyFiltersAndSortLocally = (rows = []) => {
+    const filteredRows = rows.filter((customer) => {
+      if (!isOwner && user?.id && Number(customer.AssignedUserId) !== Number(user.id)) {
+        return false
+      }
+
+      if (customer.Quote === true) {
+        return false
+      }
+
+      if (filters.CustomerName && !String(customer.CustomerName || '').toLowerCase().includes(filters.CustomerName.toLowerCase())) {
+        return false
+      }
+      if (filters.Address && !String(customer.Address || '').toLowerCase().includes(filters.Address.toLowerCase())) {
+        return false
+      }
+      if (filters.PhoneNumber && !String(customer.PhoneNumber || '').toLowerCase().includes(filters.PhoneNumber.toLowerCase())) {
+        return false
+      }
+      if (filters.Route && !String(customer.Route || '').toLowerCase().includes(filters.Route.toLowerCase())) {
+        return false
+      }
+
+      return true
+    })
+
+    return filteredRows.sort((a, b) => {
+      switch (sortBy) {
+        case 'Next Clean': {
+          const left = String(a.NextClean || '')
+          const right = String(b.NextClean || '')
+          if (!left && right) return 1
+          if (left && !right) return -1
+          return left.localeCompare(right)
+        }
+        case 'Route':
+          return compareText(a.Route, b.Route)
+        case 'Outstanding':
+          return parsePriceNumber(b.Outstanding) - parsePriceNumber(a.Outstanding)
+        case 'Customer Name':
+          return compareText(a.CustomerName, b.CustomerName)
+        case 'Address':
+          return compareText(a.Address, b.Address)
+        default:
+          return compareText(a.Route, b.Route)
+      }
+    })
+  }
 
   const parsePriceNumber = (value) => {
     const raw = String(value ?? '').trim()
@@ -274,8 +332,23 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       const { data, error } = await query
       
       if (error) throw error
-      setCustomers(data || [])
+      const latestCustomers = data || []
+      setCustomers(latestCustomers)
+      setOfflineCacheInfo({ usingCache: false, savedAt: null })
+
+      if (customerCacheKey && !hasActiveFilters()) {
+        writeOfflineCache(customerCacheKey, latestCustomers)
+      }
     } catch (error) {
+      if (customerCacheKey && isLikelyOfflineError(error)) {
+        const cached = readOfflineCache(customerCacheKey)
+        if (cached?.data) {
+          setCustomers(applyFiltersAndSortLocally(cached.data))
+          setOfflineCacheInfo({ usingCache: true, savedAt: cached.savedAt || null })
+          return
+        }
+      }
+
       console.error('Error fetching customers:', error.message)
     } finally {
       setLoading(false)
@@ -1718,6 +1791,12 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   return (
     <div className="customer-list">
       <h2>Customer Management</h2>
+
+      {offlineCacheInfo.usingCache && (
+        <div className="offline-cache-banner">
+          Offline mode: showing previously downloaded customers from {formatCacheTimestamp(offlineCacheInfo.savedAt)}.
+        </div>
+      )}
       
       <div className="action-buttons">
         {!showAddForm && (

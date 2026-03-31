@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import './WorkloadManager.css'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
 import { getOwnerUserId, isOwnerUser } from '../lib/team'
+import { formatCacheTimestamp, getOfflineCacheKey, isLikelyOfflineError, readOfflineCache, writeOfflineCache } from '../lib/offlineCache'
 import InvoiceModal from './InvoiceModal'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import axios from 'axios'
@@ -11,6 +12,7 @@ import Tesseract from 'tesseract.js'
 function WorkloadManager({ user }) {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [customers, setCustomers] = useState([])
+  const [offlineCacheInfo, setOfflineCacheInfo] = useState({ usingCache: false, savedAt: null })
   const [selectedDate, setSelectedDate] = useState(null)
   const [loading, setLoading] = useState(true)
   const [messages, setMessages] = useState([])
@@ -64,6 +66,9 @@ function WorkloadManager({ user }) {
   const ownerUserId = getOwnerUserId(user)
   const isOwner = isOwnerUser(user)
   const hasEmployees = isOwner && teamMembers.length > 0
+  const workloadCustomerCacheKey = ownerUserId
+    ? getOfflineCacheKey('workload-customers', ownerUserId, isOwner ? 'owner' : `employee-${user?.id || 'unknown'}`)
+    : null
   const [personalCalendarItems, setPersonalCalendarItems] = useState([])
   const [showPersonalItemModal, setShowPersonalItemModal] = useState(false)
   const [savingPersonalItem, setSavingPersonalItem] = useState(false)
@@ -821,8 +826,23 @@ function WorkloadManager({ user }) {
       const { data, error } = await query
       
       if (error) throw error
-      setCustomers(data || [])
+      const latestCustomers = data || []
+      setCustomers(latestCustomers)
+      setOfflineCacheInfo({ usingCache: false, savedAt: null })
+
+      if (workloadCustomerCacheKey) {
+        writeOfflineCache(workloadCustomerCacheKey, latestCustomers)
+      }
     } catch (error) {
+      if (workloadCustomerCacheKey && isLikelyOfflineError(error)) {
+        const cached = readOfflineCache(workloadCustomerCacheKey)
+        if (cached?.data) {
+          setCustomers(cached.data)
+          setOfflineCacheInfo({ usingCache: true, savedAt: cached.savedAt || null })
+          return
+        }
+      }
+
       console.error('Error fetching customers:', error.message)
     } finally {
       setLoading(false)
@@ -2549,6 +2569,12 @@ function WorkloadManager({ user }) {
 
   return (
     <div className={`workload-manager ${calendarCollapsed ? 'calendar-collapsed' : ''}`}>
+      {offlineCacheInfo.usingCache && (
+        <div className="offline-cache-banner">
+          Offline mode: showing previously downloaded workload data from {formatCacheTimestamp(offlineCacheInfo.savedAt)}.
+        </div>
+      )}
+
       <div className="calendar-header">
         <button onClick={previousMonth} className="month-nav-btn">←</button>
         <h2>

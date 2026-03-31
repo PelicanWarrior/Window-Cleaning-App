@@ -5,6 +5,16 @@
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
+.offline-cache-banner {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid #f1d08b;
+  border-radius: 6px;
+  background: #fff7e6;
+  color: #8a4b08;
+  font-weight: 600;
+}
+
 .view-tabs {
   display: flex;
   gap: 0.5rem;
