@@ -118,6 +118,24 @@ function buildEditableLeadPayload(lead) {
   }
 }
 
+function getNextCustomLeadId(leads) {
+  const prefix = 'CUS-'
+  const used = new Set(
+    leads
+      .map((lead) => String(lead.lead_id || '').trim())
+      .filter((id) => id.startsWith(prefix))
+  )
+
+  let candidate = 1
+  while (candidate <= 99999) {
+    const id = `${prefix}${String(candidate).padStart(3, '0')}`
+    if (!used.has(id)) return id
+    candidate += 1
+  }
+
+  return `${prefix}${Date.now()}`
+}
+
 function LeadsManager({ user }) {
   const [leads, setLeads] = useState([])
   const [loading, setLoading] = useState(true)
@@ -126,6 +144,21 @@ function LeadsManager({ user }) {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [activeListTab, setActiveListTab] = useState('leads')
+  const [isAddingLead, setIsAddingLead] = useState(false)
+  const [newLead, setNewLead] = useState({
+    lead_id: '',
+    business_name: '',
+    area: '',
+    owner_name: '',
+    email: '',
+    phone: '',
+    website: '',
+    status: 'new',
+    sequence_step: '',
+    next_follow_up: '',
+    response_status: '',
+    notes: ''
+  })
 
   useEffect(() => {
     if (!user?.admin) return
@@ -159,9 +192,93 @@ function LeadsManager({ user }) {
     }))
   }
 
+  async function handleStatusChange(lead, value) {
+    const updatedLead = {
+      ...lead,
+      status: value
+    }
+
+    setLeads((prev) => prev.map((row) => {
+      if (row.id !== lead.id) return row
+      return updatedLead
+    }))
+
+    await saveLead(updatedLead)
+  }
+
   function normalizeDate(value) {
     const trimmed = (value || '').trim()
     return trimmed || null
+  }
+
+  function handleNewLeadChange(field, value) {
+    setNewLead((prev) => ({ ...prev, [field]: value }))
+  }
+
+  function resetNewLead() {
+    setNewLead({
+      lead_id: '',
+      business_name: '',
+      area: '',
+      owner_name: '',
+      email: '',
+      phone: '',
+      website: '',
+      status: 'new',
+      sequence_step: '',
+      next_follow_up: '',
+      response_status: '',
+      notes: ''
+    })
+  }
+
+  async function addLead() {
+    const businessName = (newLead.business_name || '').trim()
+    if (!businessName) {
+      setStatusMessage('Business name is required to add a lead')
+      return
+    }
+
+    const leadIdInput = (newLead.lead_id || '').trim()
+    const nextLeadId = leadIdInput || getNextCustomLeadId(leads)
+
+    const payload = {
+      lead_id: nextLeadId,
+      business_name: businessName,
+      area: (newLead.area || '').trim() || null,
+      owner_name: (newLead.owner_name || '').trim() || null,
+      email: (newLead.email || '').trim() || null,
+      phone: (newLead.phone || '').trim() || null,
+      website: (newLead.website || '').trim() || null,
+      source_url: null,
+      status: (newLead.status || 'new').trim() || 'new',
+      sequence_step: (newLead.sequence_step || '').trim() || null,
+      next_follow_up: normalizeDate(newLead.next_follow_up),
+      response_status: (newLead.response_status || '').trim() || null,
+      notes: (newLead.notes || '').trim() || null
+    }
+
+    setIsAddingLead(true)
+    setStatusMessage('')
+
+    try {
+      const { data, error } = await supabase
+        .from('Leads')
+        .insert(payload)
+        .select('*')
+        .single()
+
+      if (error) throw error
+
+      setLeads((prev) => [...prev, data].sort((a, b) => String(a.lead_id).localeCompare(String(b.lead_id))))
+      resetNewLead()
+      setStatusMessage(`Added ${payload.lead_id}`)
+    } catch (error) {
+      console.error('Error adding lead:', error.message)
+      setStatusMessage(`Could not add lead: ${error.message}`)
+    } finally {
+      setIsAddingLead(false)
+    }
   }
 
   async function saveLead(lead) {
@@ -256,7 +373,13 @@ function LeadsManager({ user }) {
         return false
       }
 
-      const matchesStatus = statusFilter === 'all' || (lead.status || 'new') === statusFilter
+      if (activeListTab === 'leads' && (lead.status || 'new') !== 'new') {
+        return false
+      }
+
+      const matchesStatus = activeListTab === 'leads'
+        ? true
+        : statusFilter === 'all' || (lead.status || 'new') === statusFilter
       if (!matchesStatus) return false
 
       if (!query) return true
@@ -321,12 +444,103 @@ function LeadsManager({ user }) {
           onChange={(e) => setSearchTerm(e.target.value)}
         />
 
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          disabled={activeListTab === 'leads'}
+        >
           <option value="all">All statuses</option>
           {statusOptions.map((option) => (
             <option key={option} value={option}>{option}</option>
           ))}
         </select>
+      </div>
+
+      <div className="add-lead-card">
+        <h3>Add New Lead</h3>
+        <div className="add-lead-grid">
+          <input
+            type="text"
+            placeholder="Lead ID (optional, e.g. CUS-001)"
+            value={newLead.lead_id}
+            onChange={(e) => handleNewLeadChange('lead_id', e.target.value)}
+          />
+          <input
+            type="text"
+            placeholder="Business name *"
+            value={newLead.business_name}
+            onChange={(e) => handleNewLeadChange('business_name', e.target.value)}
+          />
+          <input
+            type="text"
+            placeholder="Area"
+            value={newLead.area}
+            onChange={(e) => handleNewLeadChange('area', e.target.value)}
+          />
+          <input
+            type="text"
+            placeholder="Owner name"
+            value={newLead.owner_name}
+            onChange={(e) => handleNewLeadChange('owner_name', e.target.value)}
+          />
+          <input
+            type="email"
+            placeholder="Email"
+            value={newLead.email}
+            onChange={(e) => handleNewLeadChange('email', e.target.value)}
+          />
+          <input
+            type="text"
+            placeholder="Phone"
+            value={newLead.phone}
+            onChange={(e) => handleNewLeadChange('phone', e.target.value)}
+          />
+          <input
+            type="text"
+            placeholder="Website"
+            value={newLead.website}
+            onChange={(e) => handleNewLeadChange('website', e.target.value)}
+          />
+          <select
+            value={newLead.status}
+            onChange={(e) => handleNewLeadChange('status', e.target.value)}
+          >
+            {statusOptions.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+          <input
+            type="text"
+            placeholder="Sequence step"
+            value={newLead.sequence_step}
+            onChange={(e) => handleNewLeadChange('sequence_step', e.target.value)}
+          />
+          <input
+            type="date"
+            value={newLead.next_follow_up}
+            onChange={(e) => handleNewLeadChange('next_follow_up', e.target.value)}
+          />
+          <input
+            type="text"
+            placeholder="Response status"
+            value={newLead.response_status}
+            onChange={(e) => handleNewLeadChange('response_status', e.target.value)}
+          />
+          <input
+            type="text"
+            placeholder="Notes"
+            value={newLead.notes}
+            onChange={(e) => handleNewLeadChange('notes', e.target.value)}
+          />
+        </div>
+        <div className="add-lead-actions">
+          <button type="button" className="save-btn" onClick={addLead} disabled={isAddingLead}>
+            {isAddingLead ? 'Adding...' : 'Add Lead'}
+          </button>
+          <button type="button" className="refresh-btn" onClick={resetNewLead} disabled={isAddingLead}>
+            Clear
+          </button>
+        </div>
       </div>
 
       {statusMessage && <p className="leads-status-message">{statusMessage}</p>}
@@ -356,24 +570,20 @@ function LeadsManager({ user }) {
                   <td>{lead.lead_id}</td>
                   <td>
                     <div className="business-cell">
-                      <strong>{lead.business_name}</strong>
-                      <span>{lead.area}</span>
-                      <div className="action-buttons">
+                      <div className="business-title-row">
+                        <strong>{lead.business_name}</strong>
                         <button
-                          className="send-next-btn"
-                          onClick={() => sendNextEmail(lead)}
-                          disabled={savingLeadId === lead.id}
-                        >
-                          Send Next Email
-                        </button>
-                        <button
-                          className="save-btn"
+                          type="button"
+                          className="save-mini-btn"
                           onClick={() => saveLead(lead)}
                           disabled={savingLeadId === lead.id}
+                          title="Save lead"
+                          aria-label="Save lead"
                         >
-                          {savingLeadId === lead.id ? 'Saving...' : 'Save'}
+                          S
                         </button>
                       </div>
+                      <span>{lead.area}</span>
                     </div>
                   </td>
                   <td>
@@ -398,14 +608,26 @@ function LeadsManager({ user }) {
                     />
                   </td>
                   <td>
-                    <select
-                      value={lead.status || 'new'}
-                      onChange={(e) => handleFieldChange(lead.id, 'status', e.target.value)}
-                    >
-                      {statusOptions.map((option) => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
+                    <div className="status-cell">
+                      <select
+                        value={lead.status || 'new'}
+                        onChange={(e) => handleStatusChange(lead, e.target.value)}
+                      >
+                        {statusOptions.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="send-next-icon-btn"
+                        onClick={() => sendNextEmail(lead)}
+                        disabled={savingLeadId === lead.id}
+                        title="Send next email"
+                        aria-label="Send next email"
+                      >
+                        ✉
+                      </button>
+                    </div>
                   </td>
                   <td>
                     <input
