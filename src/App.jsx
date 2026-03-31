@@ -386,7 +386,7 @@ function App() {
             <button className="settings-btn" onClick={() => handleShowSettings('userSettings')}>Settings</button>
             {activeUser.admin ? (
               <span className="admin-badge" onClick={() => setShowAdminPanel(true)}>Admin</span>
-            ) : (
+            ) : !activeUser.ParentUserId ? (
               (() => {
                 const levelInfo = getAccountLevelInfo()
                 return (
@@ -398,7 +398,7 @@ function App() {
                   </span>
                 )
               })()
-            )}
+            ) : null}
             <div className="logout-section">
               {isAuthenticated ? (
                 <button className="logout-btn" onClick={handleLogout}>Logout</button>
@@ -432,12 +432,14 @@ function App() {
           >
             Quotes
           </button>
+          {!activeUser.ParentUserId && (
           <button 
             className={activeTab === 'letters' ? 'active' : ''}
             onClick={() => setActiveTab('letters')}
           >
             Messages
           </button>
+          )}
           {activeUser.admin && (
             <button
               className={activeTab === 'leads' ? 'active' : ''}

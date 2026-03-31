@@ -9,6 +9,7 @@ const statusOptions = [
   'sent_e2',
   'sent_e3',
   'replied',
+  'registered',
   'won',
   'closed'
 ]
@@ -89,6 +90,37 @@ If timing isn't right, just reply "later" and I'll check back in a few months.
 You can view the app here: ${APP_URL}
 
 Worth trying it, yes/no?
+
+Thanks,
+Gavin Grainger
+Business Owner
+${APP_URL}`
+    }
+  },
+  registered: {
+    nextStatus: 'registered',
+    sequenceStep: 'registered_nudge',
+    followUpDays: 7,
+    subject: (lead) => `You're all set — just one more step`,
+    body: (lead) => {
+      const greeting = lead.owner_name?.trim()
+        ? `Hi ${lead.owner_name.trim()},`
+        : 'Hi there,'
+
+      return `${greeting}
+Great news — you've already signed up to Pelican, which is the hard part done.
+
+I noticed you haven't added any customers yet. It only takes a couple of minutes to get your first round set up, and I'm happy to help you do it.
+
+Here's what you can do right now:
+- Add your first customer manually (takes 30 seconds)
+- Or send me your list and I'll import it for you
+
+Once your customers are in, you'll be able to manage your rounds, send quotes and invoices, and track everything in one place.
+
+Just reply to this email if you'd like a hand — I'm here.
+
+You can log back in here: ${APP_URL}
 
 Thanks,
 Gavin Grainger
@@ -203,7 +235,13 @@ function LeadsManager({ user }) {
       return updatedLead
     }))
 
-    await saveLead(updatedLead)
+    // If the new status has an email template, open Gmail automatically then
+    // let sendNextEmail handle saving. Otherwise just save immediately.
+    if (emailStepByStatus[value]) {
+      await sendNextEmail(updatedLead)
+    } else {
+      await saveLead(updatedLead)
+    }
   }
 
   function normalizeDate(value) {

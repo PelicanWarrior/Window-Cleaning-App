@@ -585,7 +585,7 @@
 
 .customer-row-item {
   display: grid;
-  grid-template-columns: 40px 40px 80px 1.5fr 80px auto;
+  grid-template-columns: 40px 40px 80px minmax(260px, 1.5fr) 80px auto;
   gap: 0.8rem;
   padding: 0.6rem 0.8rem;
   border: 1px solid #e0e0e0;
@@ -593,6 +593,10 @@
   background-color: white;
   transition: all 0.2s;
   align-items: flex-start;
+}
+
+.customer-row-item.with-assignee {
+  grid-template-columns: 40px 40px 120px 80px minmax(240px, 1.5fr) 80px auto;
 }
 
 .customer-row-item:hover {
@@ -615,6 +619,19 @@
 .checkbox-col {
   justify-content: center;
   flex-shrink: 0;
+}
+
+.assigned-to-col {
+  min-width: 110px;
+}
+
+.assigned-dropdown {
+  width: 100%;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid #cfd8dc;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 0.82rem;
 }
 
 .outstanding-col {
@@ -1835,6 +1852,14 @@
     gap: 0.1rem;
     padding: 0.5rem;
     align-items: center;
+  }
+
+  .customer-row-item.with-assignee {
+    grid-template-columns: 28px 28px 1fr 60px auto;
+  }
+
+  .customer-row-item.with-assignee .assigned-to-col {
+    display: none;
   }
 
   .drag-col {

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import './WorkloadManager.css'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
+import { getOwnerUserId, isOwnerUser } from '../lib/team'
 import InvoiceModal from './InvoiceModal'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import axios from 'axios'
@@ -14,6 +15,8 @@ function WorkloadManager({ user }) {
   const [loading, setLoading] = useState(true)
   const [messages, setMessages] = useState([])
   const [messageFooter, setMessageFooter] = useState('')
+  const [messageFooterIncludeEmployee, setMessageFooterIncludeEmployee] = useState(false)
+  const [invoiceFooterIncludeEmployee, setInvoiceFooterIncludeEmployee] = useState(false)
   const [selectedLetters, setSelectedLetters] = useState({})
   const [selectedLetterAll, setSelectedLetterAll] = useState('')
   const [selectedCustomerIds, setSelectedCustomerIds] = useState([])
@@ -56,7 +59,11 @@ function WorkloadManager({ user }) {
   const [selectedRoutes, setSelectedRoutes] = useState([])
   const [calendarView, setCalendarView] = useState('Monthly')
   const [weeklyWeather, setWeeklyWeather] = useState({})
+  const [teamMembers, setTeamMembers] = useState([])
   const isAdmin = Boolean(user?.admin)
+  const ownerUserId = getOwnerUserId(user)
+  const isOwner = isOwnerUser(user)
+  const hasEmployees = isOwner && teamMembers.length > 0
   const [personalCalendarItems, setPersonalCalendarItems] = useState([])
   const [showPersonalItemModal, setShowPersonalItemModal] = useState(false)
   const [savingPersonalItem, setSavingPersonalItem] = useState(false)
@@ -69,7 +76,6 @@ function WorkloadManager({ user }) {
   const [importPersonalError, setImportPersonalError] = useState('')
   const [importPersonalDuplicateCount, setImportPersonalDuplicateCount] = useState(0)
   const [importPersonalAssumedYearCount, setImportPersonalAssumedYearCount] = useState(0)
-
   useEffect(() => {
     if (!serviceDropdownOpen) return
 
@@ -182,6 +188,42 @@ function WorkloadManager({ user }) {
       if (selectedLocalDate) return toLocalDateKey(selectedLocalDate)
     }
     return toLocalDateKey(currentDate)
+  }
+
+  // Get employee name by assigned user ID
+  const getEmployeeNameById = (userId) => {
+    if (!userId) return 'Unassigned'
+    if (Number(userId) === Number(ownerUserId)) return user?.UserName || 'Owner'
+    const member = teamMembers.find((m) => Number(m.id) === Number(userId))
+    return member ? (member.UserName || member.email_address || `User ${member.id}`) : 'Unknown Employee'
+  }
+
+  // Group customers by assigned user ID
+  const groupCustomersByAssignee = (customers) => {
+    if (!isOwner || !hasEmployees || customers.length === 0) return [{ assigneeId: null, assigneeName: '', customers }]
+    
+    const grouped = {}
+    const ordered = []
+    
+    customers.forEach((customer) => {
+      const assigneeId = customer.AssignedUserId || 'unassigned'
+      if (!grouped[assigneeId]) {
+        grouped[assigneeId] = {
+          assigneeId: customer.AssignedUserId || null,
+          assigneeName: getEmployeeNameById(customer.AssignedUserId),
+          customers: []
+        }
+        ordered.push(assigneeId)
+      }
+      grouped[assigneeId].customers.push(customer)
+    })
+    
+    return ordered.map(key => grouped[key])
+  }
+
+  // Calculate total income for a group of customers
+  const getGroupTotalIncome = (customers) => {
+    return customers.reduce((sum, customer) => sum + (parseFloat(customer.Price) || 0), 0)
   }
 
   const openPersonalItemModal = () => {
@@ -620,6 +662,7 @@ function WorkloadManager({ user }) {
 
   useEffect(() => {
     fetchCustomers()
+    fetchTeamMembers()
     fetchMessagesAndFooter()
     fetchPersonalCalendarItems()
     fetchCalendarView()
@@ -658,11 +701,13 @@ function WorkloadManager({ user }) {
 
   // Fetch and initialize user route order from Users table
   async function fetchAndInitializeUserRouteOrder() {
+    if (!ownerUserId) return
+
     try {
       const { data, error } = await supabase
         .from('Users')
         .select('RouteOrder')
-        .eq('id', user.id)
+        .eq('id', ownerUserId)
         .single()
 
       if (error) throw error
@@ -673,9 +718,9 @@ function WorkloadManager({ user }) {
       const { data: customersData } = await supabase
         .from('Customers')
         .select('id')
-        .eq('UserId', user.id)
+        .eq('UserId', ownerUserId)
 
-      if (customersData) {
+      if (customersData && isOwner) {
         const existingIds = new Set(
           routeOrderStr.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
         )
@@ -691,7 +736,7 @@ function WorkloadManager({ user }) {
           const { error: updateError } = await supabase
             .from('Users')
             .update({ RouteOrder: routeOrderStr })
-            .eq('id', user.id)
+            .eq('id', ownerUserId)
           if (updateError) throw updateError
         }
       }
@@ -759,12 +804,21 @@ function WorkloadManager({ user }) {
   }, [customers, userRouteOrder, selectedDate])
 
   async function fetchCustomers() {
+    if (!ownerUserId) return
+
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('Customers')
         .select('*')
-        .eq('UserId', user.id)
-        .order('NextClean', { ascending: true })
+        .eq('UserId', ownerUserId)
+
+      if (!isOwner && user?.id) {
+        query = query.eq('AssignedUserId', user.id)
+      }
+
+      query = query.order('NextClean', { ascending: true })
+
+      const { data, error } = await query
       
       if (error) throw error
       setCustomers(data || [])
@@ -772,6 +826,27 @@ function WorkloadManager({ user }) {
       console.error('Error fetching customers:', error.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function fetchTeamMembers() {
+    if (!isOwner || !ownerUserId) {
+      setTeamMembers([])
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('Users')
+        .select('id, UserName, email_address, TeamRole')
+        .eq('ParentUserId', ownerUserId)
+        .order('UserName', { ascending: true })
+
+      if (error) throw error
+      setTeamMembers(data || [])
+    } catch (error) {
+      console.error('Error fetching team members:', error.message)
+      setTeamMembers([])
     }
   }
 
@@ -851,17 +926,19 @@ function WorkloadManager({ user }) {
   }
 
   async function fetchMessagesAndFooter() {
+    if (!ownerUserId) return
+
     try {
       const [{ data: messagesData, error: messagesError }, { data: userData, error: userError }] = await Promise.all([
         supabase
           .from('Messages')
           .select('*')
-          .eq('UserId', user.id)
+          .eq('UserId', ownerUserId)
           .order('MessageTitle', { ascending: true }),
         supabase
           .from('Users')
-          .select('MessageFooter')
-          .eq('id', user.id)
+          .select('MessageFooter, MessageFooterIncludeEmployee, InvoiceFooterIncludeEmployee')
+          .eq('id', ownerUserId)
           .single()
       ])
 
@@ -870,6 +947,8 @@ function WorkloadManager({ user }) {
 
       setMessages(messagesData || [])
       setMessageFooter(userData?.MessageFooter || '')
+      setMessageFooterIncludeEmployee(userData?.MessageFooterIncludeEmployee || false)
+      setInvoiceFooterIncludeEmployee(userData?.InvoiceFooterIncludeEmployee || false)
     } catch (error) {
       console.error('Error fetching messages/footer:', error.message)
     }
@@ -892,11 +971,13 @@ function WorkloadManager({ user }) {
   }
 
   async function fetchCustomerPayLetter() {
+    if (!ownerUserId) return
+
     try {
       const { data, error } = await supabase
         .from('Users')
         .select('CustomerPayLetter')
-        .eq('id', user.id)
+        .eq('id', ownerUserId)
         .single()
 
       if (error) throw error
@@ -1305,7 +1386,10 @@ function WorkloadManager({ user }) {
       
       // Create history record first
       const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
-      const historyMessage = `${customer.NextServices} done, Paid ${symbol}${customer.Price}`
+      const employeeHistorySuffix = messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName
+        ? ` from ${user.UserName}`
+        : ''
+      const historyMessage = `${customer.NextServices} done, Paid ${symbol}${customer.Price}${employeeHistorySuffix}`
       await createCustomerHistory(customer.id, historyMessage)
       
       const { error } = await supabase
@@ -1347,7 +1431,10 @@ function WorkloadManager({ user }) {
       
       // Create history record first
       const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
-      const historyMessage = `${customer.NextServices} done, Not Paid ${symbol}${customer.Price}`
+      const employeeHistorySuffix = messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName
+        ? ` from ${user.UserName}`
+        : ''
+      const historyMessage = `${customer.NextServices} done, Not Paid ${symbol}${customer.Price}${employeeHistorySuffix}`
       await createCustomerHistory(customer.id, historyMessage)
       
       const newOutstanding = (parseFloat(customer.Outstanding) || 0) + (parseFloat(customer.Price) || 0)
@@ -1409,6 +1496,23 @@ function WorkloadManager({ user }) {
     }
   }
 
+  // Update customer assigned user
+  const handleAssignUserChange = async (customerId, newAssignedUserId) => {
+    try {
+      const { error } = await supabase
+        .from('Customers')
+        .update({ AssignedUserId: newAssignedUserId || null })
+        .eq('id', customerId)
+
+      if (error) throw error
+
+      fetchCustomers()
+    } catch (error) {
+      console.error('Error updating assigned user:', error.message)
+      alert('Failed to update assignment')
+    }
+  }
+
   // Send payment message via WhatsApp
   const sendPaymentMessage = (customer, message) => {
     const phone = formatPhoneForWhatsApp(customer.PhoneNumber)
@@ -1432,6 +1536,7 @@ function WorkloadManager({ user }) {
       bodyParts.push(messageContent)
     }
     
+    if (messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName) bodyParts.push(user.UserName)
     if (messageFooter) bodyParts.push(messageFooter)
 
     const text = bodyParts.join('\n')
@@ -2034,6 +2139,9 @@ function WorkloadManager({ user }) {
 
   // Handle Skip Clean
   const handleSkipClean = async (customer) => {
+    const confirmed = confirm(`Skip clean for ${customer.CompanyName || 'this customer'}?`)
+    if (!confirmed) return
+
     try {
       const weeksToAdd = parseInt(user.RouteWeeks) || 1
       const currentCleanDate = parseDateKeyToLocalDate(customer.NextClean)
@@ -2041,8 +2149,13 @@ function WorkloadManager({ user }) {
       const nextCleanDate = new Date(currentCleanDate)
       nextCleanDate.setDate(nextCleanDate.getDate() + (weeksToAdd * 7))
       
-      // Create history record
-      await createCustomerHistory(customer.id, 'Skipped this clean')
+      // Create history record with employee name if applicable
+      const isTeamMember = Boolean(user?.ParentUserId)
+      const shouldIncludeEmployee = isTeamMember && messageFooterIncludeEmployee
+      const employeeNameSuffix = shouldIncludeEmployee ? ` from ${user?.UserName || 'Employee'}` : ''
+      const historyMessage = `Skipped this clean${employeeNameSuffix}`
+      
+      await createCustomerHistory(customer.id, historyMessage)
       
       // Update customer with new NextClean date
       const { error } = await supabase
@@ -2146,7 +2259,8 @@ function WorkloadManager({ user }) {
     if (!letter && messages.length) letter = messages[0]
     
     // Create history record
-    createCustomerHistory(customer.id, `Message ${letter?.MessageTitle} sent`)
+    const wlSentSuffix = user?.ParentUserId && user?.UserName ? ` from ${user.UserName}` : ''
+    createCustomerHistory(customer.id, `Message ${letter?.MessageTitle} sent${wlSentSuffix}`)
 
     const formalName = getFormalCustomerName(customer.CustomerName)
     const bodyParts = [`Dear ${formalName}`]
@@ -2163,6 +2277,7 @@ function WorkloadManager({ user }) {
       bodyParts.push(messageContent)
     }
     
+    if (messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName) bodyParts.push(user.UserName)
     if (messageFooter) bodyParts.push(messageFooter)
 
     const text = bodyParts.join('\n')
@@ -2737,22 +2852,33 @@ function WorkloadManager({ user }) {
             <p className="empty-state">No jobs scheduled for this day.</p>
           ) : (
             <div className="customer-list">
-              {displayedDayJobs.map((customer, index) => {
-                const isSelected = selectedCustomerIds.includes(customer.id)
-
-                return (
-                  <div
-                    key={customer.id}
-                    className={`customer-row-item ${draggedCustomerId === customer.id ? 'dragging' : ''} ${dragOverIndex === index ? 'drag-over' : ''}`}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, customer.id)}
-                    onDragOver={(e) => handleDragOver(e, index)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, index)}
-                  >
-                    <div className="customer-grid-col drag-col">
-                      <div className="drag-handle">⋮⋮</div>
+              {groupCustomersByAssignee(displayedDayJobs).map((group) => (
+                <div key={group.assigneeId || 'unassigned'} className="assignee-group">
+                  {hasEmployees && (
+                    <div className="assignee-group-header">
+                      <h4>{group.assigneeName}</h4>
+                      <p className="group-income">
+                        {group.assigneeName} Income: {formatCurrency(getGroupTotalIncome(group.customers), user.SettingsCountry || 'United Kingdom')}
+                      </p>
                     </div>
+                  )}
+                  <div className="assignee-group-items">
+                    {group.customers.map((customer, index) => {
+                      const isSelected = selectedCustomerIds.includes(customer.id)
+
+                      return (
+                        <div
+                          key={customer.id}
+                          className={`customer-row-item ${hasEmployees ? 'with-assignee' : ''} ${draggedCustomerId === customer.id ? 'dragging' : ''} ${dragOverIndex === index ? 'drag-over' : ''}`}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, customer.id)}
+                          onDragOver={(e) => handleDragOver(e, index)}
+                          onDragLeave={handleDragLeave}
+                          onDrop={(e) => handleDrop(e, index)}
+                        >
+                          <div className="customer-grid-col drag-col">
+                            <div className="drag-handle">⋮⋮</div>
+                          </div>
 
                     <div className="customer-grid-col checkbox-col">
                       <label
@@ -2769,6 +2895,24 @@ function WorkloadManager({ user }) {
                         />
                       </label>
                     </div>
+
+                    {hasEmployees && (
+                      <div className="customer-grid-col assigned-to-col">
+                        <select
+                          value={customer.AssignedUserId || ''}
+                          onChange={(e) => handleAssignUserChange(customer.id, e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="assigned-dropdown"
+                        >
+                          <option value="">Unassigned</option>
+                          {teamMembers.map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {member.UserName || member.email_address || `User ${member.id}`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     <div className="customer-grid-col outstanding-col">
                       {customer.Outstanding > 0 && (
@@ -3023,7 +3167,10 @@ function WorkloadManager({ user }) {
                     </div>
                   </div>
                 )
-              })}
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -3517,6 +3664,7 @@ function WorkloadManager({ user }) {
 }
 
 function InvoiceModalContent({ user, customer, onClose }) {
+  const ownerUserId = getOwnerUserId(user)
   const [invoiceIdText, setInvoiceIdText] = useState('')
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0])
   const [services, setServices] = useState([])
@@ -3540,7 +3688,7 @@ function InvoiceModalContent({ user, customer, onClose }) {
         const { data: custIdsData, error: custErr } = await supabase
           .from('Customers')
           .select('id')
-          .eq('UserId', user.id)
+          .eq('UserId', ownerUserId)
         if (custErr) throw custErr
 
         const ids = (custIdsData || []).map((c) => c.id)

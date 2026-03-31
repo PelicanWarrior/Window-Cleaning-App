@@ -41,6 +41,7 @@ async function getFunctionErrorMessage(error, fallback) {
 
 function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest = false, onRequireAuth }) {
   const isAdmin = Boolean(user?.admin)
+  const isTeamMember = Boolean(user?.ParentUserId)
   const [activeTab, setActiveTab] = useState(initialTab)
   const [password, setPassword] = useState('')
   const [companyName, setCompanyName] = useState(user.CompanyName || '')
@@ -484,12 +485,14 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
           <button
             className={activeTab === 'myRound' ? 'active' : ''}
             onClick={() => setActiveTab('myRound')}
+            style={{ display: isTeamMember ? 'none' : 'button' }}
           >
             My Round
           </button>
           <button
             className={activeTab === 'accountLevel' ? 'active' : ''}
             onClick={() => setActiveTab('accountLevel')}
+            style={{ display: isTeamMember ? 'none' : 'button' }}
           >
             Account Level
           </button>
@@ -519,6 +522,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
+          {!isTeamMember && (<>
           <div className="settings-field">
             <label>Company Name</label>
             <input
@@ -599,6 +603,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
               VAT Registered
             </label>
           </div>
+          </>)}
         </div>
         <div className="settings-actions">
           <button className="save-btn" onClick={handleSave} disabled={saving}>
@@ -656,7 +661,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
           </>
         )}
 
-        {activeTab === 'accountLevel' && (
+        {activeTab === 'accountLevel' && !isTeamMember && (
           <>
             <div className="account-level-content">
               <div className="account-level-plans">

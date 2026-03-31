@@ -2,8 +2,11 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import './CustomerList.css'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
+import { getOwnerUserId, isOwnerUser } from '../lib/team'
 import InvoicesModal from './InvoicesModal'
 import InvoiceModalContent from './InvoiceModalNew'
+
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 function CustomerList({ user, isGuest = false, onRequireAuth }) {
   const [customers, setCustomers] = useState([])
@@ -21,6 +24,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   const [messages, setMessages] = useState([])
   const [reminderLetter, setReminderLetter] = useState(null)
   const [messageFooter, setMessageFooter] = useState('')
+  const [messageFooterIncludeEmployee, setMessageFooterIncludeEmployee] = useState(false)
   const [showSortDropdown, setShowSortDropdown] = useState(false)
   const [showCustomerModal, setShowCustomerModal] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState(null)
@@ -37,6 +41,17 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   const [showHistory, setShowHistory] = useState(false)
   const [customerHistory, setCustomerHistory] = useState([])
   const [cancelServiceModal, setCancelServiceModal] = useState({ show: false, reason: '' })
+  const [teamMembers, setTeamMembers] = useState([])
+  const [teamLoading, setTeamLoading] = useState(false)
+  const [showTeamPanel, setShowTeamPanel] = useState(false)
+  const [creatingTeamMember, setCreatingTeamMember] = useState(false)
+  const [teamMemberForm, setTeamMemberForm] = useState({
+    username: '',
+    email: '',
+    password: ''
+  })
+  const [teamError, setTeamError] = useState('')
+  const [teamMessage, setTeamMessage] = useState('')
 
   useEffect(() => {
     if (!serviceDropdownOpen) return
@@ -82,6 +97,10 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
     Notes: ''
   })
 
+  const ownerUserId = getOwnerUserId(user)
+  const isOwner = isOwnerUser(user)
+  const hasEmployees = isOwner && teamMembers.length > 0
+
   const parsePriceNumber = (value) => {
     const raw = String(value ?? '').trim()
     if (!raw) return 0
@@ -112,11 +131,15 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
 
   useEffect(() => {
     fetchCustomers()
-  }, [sortBy, filters])
+  }, [sortBy, filters, ownerUserId, isOwner, user?.id])
 
   useEffect(() => {
     fetchReminderLetterAndMessages()
-  }, [])
+  }, [ownerUserId])
+
+  useEffect(() => {
+    fetchTeamMembers()
+  }, [ownerUserId])
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -148,17 +171,19 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   }, [expandedActionRows])
 
   async function fetchReminderLetterAndMessages() {
+    if (!ownerUserId) return
+
     try {
       const [{ data: userData, error: userError }, { data: messagesData, error: messagesError }] = await Promise.all([
         supabase
           .from('Users')
-          .select('CustomerReminderLetter, MessageFooter')
-          .eq('id', user.id)
+          .select('CustomerReminderLetter, MessageFooter, MessageFooterIncludeEmployee')
+          .eq('id', ownerUserId)
           .single(),
         supabase
           .from('Messages')
           .select('*')
-          .eq('UserId', user.id)
+          .eq('UserId', ownerUserId)
       ])
 
       if (userError) throw userError
@@ -170,18 +195,46 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       }
       setMessages(messagesData || [])
       setMessageFooter(userData?.MessageFooter || '')
+      setMessageFooterIncludeEmployee(userData?.MessageFooterIncludeEmployee || false)
     } catch (error) {
       console.error('Error fetching reminder letter:', error.message)
     }
   }
 
+  async function fetchTeamMembers() {
+    if (!ownerUserId) return
+
+    try {
+      setTeamLoading(true)
+
+      const { data, error } = await supabase
+        .from('Users')
+        .select('id, UserName, email_address, ParentUserId, TeamRole')
+        .eq('ParentUserId', ownerUserId)
+        .order('UserName', { ascending: true })
+
+      if (error) throw error
+      setTeamMembers(data || [])
+    } catch (error) {
+      console.error('Error fetching team members:', error.message)
+    } finally {
+      setTeamLoading(false)
+    }
+  }
+
   async function fetchCustomers() {
+    if (!ownerUserId) return
+
     try {
       let query = supabase
         .from('Customers')
         .select('*')
-        .eq('UserId', user.id)
+        .eq('UserId', ownerUserId)
         .or('Quote.is.null,Quote.eq.false')
+
+      if (!isOwner && user?.id) {
+        query = query.eq('AssignedUserId', user.id)
+      }
 
       // Apply filters
       if (filters.CustomerName) {
@@ -263,9 +316,131 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
     }
   }
 
+  const getAssignedUserLabel = (assignedUserId) => {
+    if (!assignedUserId) return 'Unassigned'
+    if (Number(assignedUserId) === Number(ownerUserId)) return user?.UserName || 'Owner'
+
+    const matchedMember = teamMembers.find((member) => Number(member.id) === Number(assignedUserId))
+    return matchedMember?.UserName || 'Unknown user'
+  }
+
+  async function handleAssignCustomer(customerId, assignedUserId) {
+    if (!isOwner) return
+
+    try {
+      const nextAssignedId = assignedUserId ? Number(assignedUserId) : null
+
+      const { error } = await supabase
+        .from('Customers')
+        .update({ AssignedUserId: nextAssignedId })
+        .eq('id', customerId)
+        .eq('UserId', ownerUserId)
+
+      if (error) throw error
+
+      setCustomers((prev) => prev.map((customer) => (
+        Number(customer.id) === Number(customerId)
+          ? { ...customer, AssignedUserId: nextAssignedId }
+          : customer
+      )))
+    } catch (error) {
+      console.error('Error assigning customer:', error.message)
+      alert('Failed to assign customer. Please check team setup and try again.')
+    }
+  }
+
+  async function handleCreateTeamMember(e) {
+    e.preventDefault()
+    if (!isOwner || !ownerUserId) return
+
+    const username = String(teamMemberForm.username || '').trim()
+    const email = String(teamMemberForm.email || '').trim().toLowerCase()
+    const password = String(teamMemberForm.password || '').trim()
+
+    if (!username || !email || !password) {
+      setTeamError('Please provide username, email, and password.')
+      return
+    }
+
+    if (password.length < 8) {
+      setTeamError('Password must be at least 8 characters.')
+      return
+    }
+
+    try {
+      setCreatingTeamMember(true)
+      setTeamError('')
+      setTeamMessage('')
+
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw new Error(sessionError.message || 'Unable to validate your session')
+
+      const accessToken = sessionData?.session?.access_token
+      if (!accessToken) {
+        throw new Error('Your login session is missing or expired. Please log out and log in again, then retry.')
+      }
+
+      const { data, error } = await supabase.functions.invoke('create_team_member', {
+        body: {
+          ownerUserId,
+          username,
+          email,
+          password
+        },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          ...(SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY } : {})
+        }
+      })
+
+      if (error) {
+        let functionMessage = error.message || 'Unable to create team member'
+        const responseStatus = error.context?.status
+
+        if (error.context?.json) {
+          try {
+            const contextPayload = await error.context.json()
+            if (contextPayload?.error) {
+              functionMessage = contextPayload.error
+            }
+          } catch {
+            if (error.context?.text) {
+              try {
+                const contextText = await error.context.text()
+                if (contextText) {
+                  functionMessage = contextText
+                }
+              } catch {
+                // Keep fallback error message.
+              }
+            }
+          }
+        }
+
+        if (responseStatus === 401 && functionMessage.toLowerCase().includes('non-2xx')) {
+          functionMessage = 'Unauthorized request (401). Please log out, log back in, then try adding the team member again.'
+        }
+
+        throw new Error(functionMessage)
+      }
+
+      if (!data?.ok) {
+        throw new Error(data?.error || 'Unable to create team member')
+      }
+
+      setTeamMessage(`Team member ${username} created.`)
+      setTeamMemberForm({ username: '', email: '', password: '' })
+      await fetchTeamMembers()
+    } catch (error) {
+      setTeamError(error.message || 'Unable to create team member')
+    } finally {
+      setCreatingTeamMember(false)
+    }
+  }
+
   // Column order: Actions first, then selected sort column (if any), then Name + Address only
   const getColumnOrder = () => {
-    const base = ['Actions']
+    const base = hasEmployees ? ['Actions', 'Assigned To'] : []
     const columnFieldMap = {
       'Next Clean': 'Next Clean',
       'Route': 'Route',
@@ -354,6 +529,8 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   }
 
   const openExportModal = () => {
+    if (!isOwner) return
+
     const fields = getDefaultExportFields()
     const includeState = fields.reduce((acc, fieldName) => {
       acc[fieldName] = true
@@ -533,6 +710,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       bodyParts.push(messageContent)
     }
     
+    if (messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName) bodyParts.push(user.UserName)
     if (messageFooter) bodyParts.push(messageFooter)
 
     const text = bodyParts.join('\n')
@@ -541,11 +719,12 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
     
     // Add to CustomerHistory
     try {
+      const clPaySuffix = user?.ParentUserId && user?.UserName ? ` from ${user.UserName}` : ''
       const { error } = await supabase
         .from('CustomerHistory')
         .insert({
           CustomerID: customer.id,
-          Message: 'Message Pay Reminder Sent'
+          Message: `Message Pay Reminder Sent${clPaySuffix}`
         })
       
       if (error) throw error
@@ -596,7 +775,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
 
       const customerData = {
         ...newCustomer,
-        UserId: user.id,
+        UserId: ownerUserId,
         Price: parsePriceNumber(newCustomer.Price),
         Weeks: parseInt(newCustomer.Weeks) || 4,
         Outstanding: 0,
@@ -616,7 +795,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
         const { data: userData, error: userError } = await supabase
           .from('Users')
           .select('RouteOrder')
-          .eq('id', user.id)
+          .eq('id', ownerUserId)
           .single()
         
         if (userError) throw userError
@@ -628,7 +807,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
         const { error: updateError } = await supabase
           .from('Users')
           .update({ RouteOrder: updatedOrderString })
-          .eq('id', user.id)
+          .eq('id', ownerUserId)
         
         if (updateError) throw updateError
         
@@ -877,7 +1056,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       const { data: userData, error: userError } = await supabase
         .from('Users')
         .select('PayChangeLetter')
-        .eq('id', user.id)
+        .eq('id', ownerUserId)
         .single()
 
       if (userError) throw userError
@@ -936,8 +1115,9 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       }
       
       const greeting = `${createGreeting(customerData.CustomerName)}\n\n`
+      const employeeLine = (messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName) ? `\n\n${user.UserName}` : ''
       const footer = messageFooter ? `\n\n${messageFooter}` : ''
-      const fullMessage = greeting + messageText + footer
+      const fullMessage = greeting + messageText + employeeLine + footer
 
       // Format phone number for WhatsApp (same method as WorkloadManager)
       const digits = (customerData.PhoneNumber || '').replace(/\D/g, '')
@@ -1343,7 +1523,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
         }
         
         const customer = {
-          UserId: user.id,
+          UserId: ownerUserId,
           CustomerName: getValueByHeadersOrIndex(values, ['CustomerName', 'Customer Name'], 1),
           Address: getValueByHeadersOrIndex(values, ['Address'], 0),
           Address2: getValueByHeaders(values, ['Address2', 'Address 2']),
@@ -1382,7 +1562,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       const { data: existingCustomers, error: existingError } = await supabase
         .from('Customers')
         .select('id, Quote, NextClean, Price, Weeks')
-        .eq('UserId', user.id)
+        .eq('UserId', ownerUserId)
       
       if (existingError) throw existingError
 
@@ -1496,7 +1676,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
         const { data: userData, error: userError } = await supabase
           .from('Users')
           .select('RouteOrder')
-          .eq('id', user.id)
+          .eq('id', ownerUserId)
           .single()
         
         if (userError) throw userError
@@ -1509,7 +1689,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
         const { error: updateError } = await supabase
           .from('Users')
           .update({ RouteOrder: updatedOrderString })
-          .eq('id', user.id)
+          .eq('id', ownerUserId)
         
         if (updateError) throw updateError
       }
@@ -1550,22 +1730,97 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
             Find
           </button>
         )}
-        <button className="export-customers-btn" onClick={openExportModal}>
-          Export
-        </button>
+        {isOwner && (
+          <button className="export-customers-btn" onClick={openExportModal}>
+            Export
+          </button>
+        )}
       </div>
+
+      {isOwner && (
+        <div style={{ marginBottom: '1rem', border: '1px solid #d6e4ff', borderRadius: '10px', padding: '0.75rem', background: '#f8fbff' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+            <strong>Team Members ({teamMembers.length})</strong>
+            <button type="button" className="find-customer-btn" onClick={() => setShowTeamPanel((prev) => !prev)}>
+              {showTeamPanel ? 'Hide Team' : 'Manage Team'}
+            </button>
+          </div>
+
+          {showTeamPanel && (
+            <div style={{ marginTop: '0.75rem' }}>
+              {teamError && <div style={{ color: '#b42318', marginBottom: '0.5rem' }}>{teamError}</div>}
+              {teamMessage && <div style={{ color: '#027a48', marginBottom: '0.5rem' }}>{teamMessage}</div>}
+
+              <form onSubmit={handleCreateTeamMember} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                <input
+                  type="text"
+                  placeholder="Username"
+                  value={teamMemberForm.username}
+                  onChange={(e) => setTeamMemberForm((prev) => ({ ...prev, username: e.target.value }))}
+                  required
+                />
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={teamMemberForm.email}
+                  onChange={(e) => setTeamMemberForm((prev) => ({ ...prev, email: e.target.value }))}
+                  required
+                />
+                <input
+                  type="password"
+                  placeholder="Temporary password"
+                  value={teamMemberForm.password}
+                  onChange={(e) => setTeamMemberForm((prev) => ({ ...prev, password: e.target.value }))}
+                  minLength={8}
+                  required
+                />
+                <button type="submit" className="add-customer-btn" disabled={creatingTeamMember}>
+                  {creatingTeamMember ? 'Creating...' : 'Add Team Member'}
+                </button>
+              </form>
+
+              {teamLoading ? (
+                <div>Loading team...</div>
+              ) : teamMembers.length === 0 ? (
+                <div style={{ color: '#475467' }}>No team members yet.</div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '0.35rem 0.5rem' }}>Username</th>
+                      <th style={{ textAlign: 'left', padding: '0.35rem 0.5rem' }}>Email</th>
+                      <th style={{ textAlign: 'left', padding: '0.35rem 0.5rem' }}>Role</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teamMembers.map((member) => (
+                      <tr key={member.id}>
+                        <td style={{ padding: '0.35rem 0.5rem' }}>{member.UserName || '—'}</td>
+                        <td style={{ padding: '0.35rem 0.5rem' }}>{member.email_address || '—'}</td>
+                        <td style={{ padding: '0.35rem 0.5rem' }}>{member.TeamRole || 'cleaner'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {showAddForm && (
         <form onSubmit={addCustomer} className="customer-form">
           <div className="form-header">
             <h3>Add New Customer</h3>
-            <button
-              type="button"
-              className="csv-import-btn"
-              onClick={() => setShowCSVImportModal(true)}
-            >
-              📄 Import via CSV
-            </button>
+            {isOwner && (
+              <button
+                type="button"
+                className="csv-import-btn"
+                onClick={() => setShowCSVImportModal(true)}
+              >
+                📄 Import via CSV
+              </button>
+            )}
             <input
               ref={csvFileInputRef}
               type="file"
@@ -1837,6 +2092,14 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
                       value: editingCustomerId === customer.id ? editFormData.Notes : customer.Notes,
                       onChange: (e) => setEditFormData({...editFormData, Notes: e.target.value})
                     })
+                  } else if (col === 'Assigned To') {
+                    rowCells.push({
+                      key: 'Assigned To',
+                      isAssignedTo: true,
+                      assignedUserId: customer.AssignedUserId || '',
+                      assignedLabel: getAssignedUserLabel(customer.AssignedUserId),
+                      customerId: customer.id
+                    })
                   } else if (col === 'Actions') {
                     rowCells.push({
                       key: 'Actions',
@@ -1946,6 +2209,21 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
                               </div>
                             )}
                           </div>
+                        ) : cell.isAssignedTo ? (
+                          isOwner ? (
+                            <select
+                              value={cell.assignedUserId}
+                              onChange={(e) => handleAssignCustomer(cell.customerId, e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <option value="">Unassigned</option>
+                              {teamMembers.map((member) => (
+                                <option key={member.id} value={member.id}>{member.UserName || member.email_address || `User ${member.id}`}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            cell.assignedLabel
+                          )
                         ) : cell.isEditAddress ? (
                           <div style={{ display: 'grid', gap: '6px', minWidth: '200px' }}>
                             <input
@@ -2425,7 +2703,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
         </div>
       )}
 
-      {showExportModal && (
+      {isOwner && showExportModal && (
         <div className="modal-overlay simple-modal-overlay" onClick={() => setShowExportModal(false)}>
           <div className="modal-content export-customers-modal" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={() => setShowExportModal(false)}>×</button>

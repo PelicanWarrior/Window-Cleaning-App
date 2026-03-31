@@ -4,6 +4,7 @@ import './Letters.css'
 import { getCurrencyConfig } from '../lib/format'
 
 function Letters({ user }) {
+  const isTeamMember = Boolean(user?.ParentUserId)
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -12,6 +13,9 @@ function Letters({ user }) {
   const [messageFooter, setMessageFooter] = useState(user.MessageFooter || '')
   const [invoiceFooter, setInvoiceFooter] = useState(user.InvoiceFooter || '')
   const [showEditInvoiceFooter, setShowEditInvoiceFooter] = useState(false)
+  const [messageFooterIncludeEmployee, setMessageFooterIncludeEmployee] = useState(user?.MessageFooterIncludeEmployee || false)
+  const [invoiceFooterIncludeEmployee, setInvoiceFooterIncludeEmployee] = useState(user?.InvoiceFooterIncludeEmployee || false)
+  const [hasTeamMembers, setHasTeamMembers] = useState(false)
   const [selectedPayLetter, setSelectedPayLetter] = useState('')
   const [selectedReminderLetter, setSelectedReminderLetter] = useState('')
   const [selectedPayChangeLetter, setSelectedPayChangeLetter] = useState('')
@@ -27,6 +31,7 @@ function Letters({ user }) {
     fetchCustomerPayLetter()
     fetchCustomerReminderLetter()
     fetchCustomerPayChangeLetter()
+    if (!isTeamMember) fetchTeamMemberCount()
   }, [])
 
   async function fetchMessages() {
@@ -73,6 +78,20 @@ function Letters({ user }) {
       setSelectedReminderLetter(data?.CustomerReminderLetter || '')
     } catch (error) {
       console.error('Error fetching customer reminder letter:', error.message)
+    }
+  }
+
+  async function fetchTeamMemberCount() {
+    try {
+      const { data, error } = await supabase
+        .from('Users')
+        .select('id')
+        .eq('ParentUserId', user.id)
+      
+      if (error) throw error
+      setHasTeamMembers((data?.length || 0) > 0)
+    } catch (error) {
+      console.error('Error fetching team member count:', error.message)
     }
   }
 
@@ -203,12 +222,38 @@ function Letters({ user }) {
     setEditingMessage(null)
   }
 
+  async function handleToggleMessageFooterIncludeEmployee(checked) {
+    setMessageFooterIncludeEmployee(checked)
+    try {
+      const { error } = await supabase
+        .from('Users')
+        .update({ MessageFooterIncludeEmployee: checked })
+        .eq('id', user.id)
+      if (error) throw error
+    } catch (err) {
+      console.error('Error saving MessageFooterIncludeEmployee:', err.message)
+    }
+  }
+
+  async function handleToggleInvoiceFooterIncludeEmployee(checked) {
+    setInvoiceFooterIncludeEmployee(checked)
+    try {
+      const { error } = await supabase
+        .from('Users')
+        .update({ InvoiceFooterIncludeEmployee: checked })
+        .eq('id', user.id)
+      if (error) throw error
+    } catch (err) {
+      console.error('Error saving InvoiceFooterIncludeEmployee:', err.message)
+    }
+  }
+
   async function handleUpdateFooter(e) {
     e.preventDefault()
     try {
       const { error } = await supabase
         .from('Users')
-        .update({ MessageFooter: messageFooter })
+        .update({ MessageFooter: messageFooter, MessageFooterIncludeEmployee: messageFooterIncludeEmployee })
         .eq('id', user.id)
       
       if (error) throw error
@@ -224,7 +269,7 @@ function Letters({ user }) {
     try {
       const { error } = await supabase
         .from('Users')
-        .update({ InvoiceFooter: invoiceFooter })
+        .update({ InvoiceFooter: invoiceFooter, InvoiceFooterIncludeEmployee: invoiceFooterIncludeEmployee })
         .eq('id', user.id)
       
       if (error) throw error
@@ -328,15 +373,28 @@ function Letters({ user }) {
           <div className="footer-section">
             <div className="footer-header">
               <h3>Text Message Footer</h3>
+              {!isTeamMember && (
               <button 
                 className="edit-footer-btn" 
                 onClick={() => setShowEditFooter(!showEditFooter)}
               >
                 {showEditFooter ? 'Cancel' : 'Edit Footer'}
               </button>
+              )}
             </div>
             
-            {showEditFooter ? (
+            {!isTeamMember && hasTeamMembers && (
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={messageFooterIncludeEmployee}
+                  onChange={(e) => handleToggleMessageFooterIncludeEmployee(e.target.checked)}
+                />
+                Include the Employee's Name
+              </label>
+            )}
+
+            {showEditFooter && !isTeamMember ? (
               <form onSubmit={handleUpdateFooter} className="footer-form">
                 <textarea
                   value={messageFooter}
@@ -356,15 +414,28 @@ function Letters({ user }) {
           <div className="footer-section">
             <div className="footer-header">
               <h3>Invoice Footer</h3>
+              {!isTeamMember && (
               <button 
                 className="edit-footer-btn" 
                 onClick={() => setShowEditInvoiceFooter(!showEditInvoiceFooter)}
               >
                 {showEditInvoiceFooter ? 'Cancel' : 'Edit Footer'}
               </button>
+              )}
             </div>
             
-            {showEditInvoiceFooter ? (
+            {!isTeamMember && hasTeamMembers && (
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={invoiceFooterIncludeEmployee}
+                  onChange={(e) => handleToggleInvoiceFooterIncludeEmployee(e.target.checked)}
+                />
+                Include the Employee's Name
+              </label>
+            )}
+
+            {showEditInvoiceFooter && !isTeamMember ? (
               <form onSubmit={handleUpdateInvoiceFooter} className="footer-form">
                 <textarea
                   value={invoiceFooter}
@@ -385,13 +456,13 @@ function Letters({ user }) {
       
       {activeTab === 'Messages' && (
         <>
-          {!showAddForm && (
+          {!showAddForm && !isTeamMember && (
             <button className="add-message-btn" onClick={() => setShowAddForm(true)}>
               + New Message
             </button>
           )}
 
-          {showAddForm && (
+          {showAddForm && !isTeamMember && (
             <form onSubmit={handleSubmit} className="message-form">
               <h3>{editingMessage ? 'Edit Message' : 'New Message'}</h3>
               <input
@@ -446,6 +517,7 @@ function Letters({ user }) {
                   <div key={message.id} className="message-card">
                     <h4>{message.MessageTitle}</h4>
                     <p className="message-content">{message.Message}</p>
+                    {!isTeamMember && (
                     <div className="message-actions">
                       <button 
                         onClick={() => handleEdit(message)}
@@ -460,6 +532,7 @@ function Letters({ user }) {
                         Delete
                       </button>
                     </div>
+                    )}
                   </div>
                 ))}
               </div>
