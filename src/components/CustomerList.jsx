@@ -3,7 +3,16 @@ import { supabase } from '../lib/supabase'
 import './CustomerList.css'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
 import { getOwnerUserId, isOwnerUser } from '../lib/team'
-import { formatCacheTimestamp, getOfflineCacheKey, isLikelyOfflineError, readOfflineCache, writeOfflineCache } from '../lib/offlineCache'
+import {
+  flushOfflineMutationQueue,
+  formatCacheTimestamp,
+  getOfflineCacheKey,
+  isLikelyOfflineError,
+  queueOfflineMutation,
+  readOfflineCache,
+  readOfflineMutationQueue,
+  writeOfflineCache
+} from '../lib/offlineCache'
 import InvoicesModal from './InvoicesModal'
 import InvoiceModalContent from './InvoiceModalNew'
 
@@ -105,6 +114,82 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   const customerCacheKey = ownerUserId
     ? getOfflineCacheKey('customers', ownerUserId, isOwner ? 'owner' : `employee-${user?.id || 'unknown'}`)
     : null
+  const customerMutationQueueKey = ownerUserId
+    ? getOfflineCacheKey('customer-mutations', ownerUserId, isOwner ? 'owner' : `employee-${user?.id || 'unknown'}`)
+    : null
+  const syncingMutationsRef = useRef(false)
+
+  const refreshPendingMutations = () => {
+    if (!customerMutationQueueKey) return 0
+    return readOfflineMutationQueue(customerMutationQueueKey).length
+  }
+
+  const applyQueuedCustomerMutation = async (mutation) => {
+    if (!mutation?.type) return
+
+    if (mutation.type === 'update') {
+      const { error } = await supabase
+        .from('Customers')
+        .update(mutation.changes || {})
+        .eq('id', mutation.customerId)
+        .eq('UserId', ownerUserId)
+      if (error) throw error
+      return
+    }
+
+    if (mutation.type === 'delete') {
+      const { error } = await supabase
+        .from('Customers')
+        .delete()
+        .eq('id', mutation.customerId)
+        .eq('UserId', ownerUserId)
+      if (error) throw error
+      return
+    }
+
+    if (mutation.type === 'insert') {
+      const { data: insertedRows, error } = await supabase
+        .from('Customers')
+        .insert([mutation.customerData])
+        .select('id')
+
+      if (error) throw error
+
+      const insertedCustomerId = insertedRows?.[0]?.id
+      if (!insertedCustomerId) return
+
+      if (mutation.includeRouteOrderAndWindowsService) {
+        const { data: userData, error: userError } = await supabase
+          .from('Users')
+          .select('RouteOrder')
+          .eq('id', ownerUserId)
+          .single()
+        if (!userError) {
+          const currentOrder = userData?.RouteOrder ? userData.RouteOrder.split(',').map((id) => parseInt(id, 10)).filter((id) => !Number.isNaN(id)) : []
+          const updatedOrderString = [...currentOrder, insertedCustomerId].join(',')
+          await supabase
+            .from('Users')
+            .update({ RouteOrder: updatedOrderString })
+            .eq('id', ownerUserId)
+        }
+
+        await supabase
+          .from('CustomerPrices')
+          .insert([{ CustomerID: insertedCustomerId, Price: mutation.windowsPrice || 0, Service: 'Windows' }])
+      }
+    }
+  }
+
+  const queueCustomerMutation = (mutation, queuedMessage) => {
+    if (!customerMutationQueueKey) return false
+
+    queueOfflineMutation(customerMutationQueueKey, mutation)
+    const pendingCount = refreshPendingMutations()
+    if (queuedMessage) {
+      alert(`${queuedMessage} It will sync automatically when internet returns. Pending sync: ${pendingCount}.`)
+    }
+    return true
+  }
 
   const hasActiveFilters = () => Object.values(filters).some((value) => String(value || '').trim() !== '')
 
@@ -198,6 +283,31 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   useEffect(() => {
     fetchTeamMembers()
   }, [ownerUserId])
+
+  useEffect(() => {
+    if (!customerMutationQueueKey || syncingMutationsRef.current) return
+
+    const syncQueuedMutations = async () => {
+      if (syncingMutationsRef.current) return
+      syncingMutationsRef.current = true
+
+      try {
+        const result = await flushOfflineMutationQueue(customerMutationQueueKey, applyQueuedCustomerMutation)
+        if (result.processed > 0) {
+          fetchCustomers()
+        }
+      } finally {
+        syncingMutationsRef.current = false
+      }
+    }
+
+    syncQueuedMutations()
+    window.addEventListener('online', syncQueuedMutations)
+    return () => {
+      window.removeEventListener('online', syncQueuedMutations)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerMutationQueueKey, ownerUserId])
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -417,6 +527,27 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
           : customer
       )))
     } catch (error) {
+      const nextAssignedId = assignedUserId ? Number(assignedUserId) : null
+      if (isLikelyOfflineError(error)) {
+        const queued = queueCustomerMutation(
+          {
+            type: 'update',
+            customerId,
+            changes: { AssignedUserId: nextAssignedId }
+          },
+          'Customer assignment saved offline.'
+        )
+
+        if (queued) {
+          setCustomers((prev) => prev.map((customer) => (
+            Number(customer.id) === Number(customerId)
+              ? { ...customer, AssignedUserId: nextAssignedId }
+              : customer
+          )))
+          return
+        }
+      }
+
       console.error('Error assigning customer:', error.message)
       alert('Failed to assign customer. Please check team setup and try again.')
     }
@@ -913,6 +1044,37 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       setShowAddForm(false)
       fetchCustomers()
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueCustomerMutation(
+          {
+            type: 'insert',
+            customerData,
+            includeRouteOrderAndWindowsService: true,
+            windowsPrice: parsePriceNumber(newCustomer.Price)
+          },
+          'New customer saved offline.'
+        )
+
+        if (queued) {
+          setNewCustomer({
+            CustomerName: '',
+            Address: '',
+            Address2: '',
+            Address3: '',
+            Postcode: '',
+            PhoneNumber: '',
+            EmailAddress: '',
+            Price: '',
+            Weeks: '',
+            Route: '',
+            NextClean: '',
+            Notes: ''
+          })
+          setShowAddForm(false)
+          return
+        }
+      }
+
       console.error('Error adding customer:', error.message)
     }
   }
@@ -929,6 +1091,21 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       if (error) throw error
       fetchCustomers()
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueCustomerMutation(
+          {
+            type: 'delete',
+            customerId: id
+          },
+          'Customer deletion saved offline.'
+        )
+
+        if (queued) {
+          setCustomers((prev) => prev.filter((customer) => Number(customer.id) !== Number(id)))
+          return
+        }
+      }
+
       console.error('Error deleting customer:', error.message)
     }
   }
@@ -958,24 +1135,26 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   }
 
   async function handleSaveEdit(id) {
+    const updatePayload = {
+      CustomerName: editFormData.CustomerName,
+      Address: editFormData.Address,
+      Address2: editFormData.Address2,
+      Address3: editFormData.Address3,
+      Postcode: editFormData.Postcode,
+      PhoneNumber: editFormData.PhoneNumber,
+      EmailAddress: editFormData.EmailAddress,
+      Price: parsePriceNumber(editFormData.Price),
+      Weeks: parseInt(editFormData.Weeks) || 4,
+      Route: editFormData.Route,
+      Notes: editFormData.Notes,
+      Outstanding: parseFloat(editFormData.Outstanding) || 0,
+      NextClean: editFormData.NextClean
+    }
+
     try {
       const { error } = await supabase
         .from('Customers')
-        .update({
-          CustomerName: editFormData.CustomerName,
-          Address: editFormData.Address,
-          Address2: editFormData.Address2,
-          Address3: editFormData.Address3,
-          Postcode: editFormData.Postcode,
-          PhoneNumber: editFormData.PhoneNumber,
-          EmailAddress: editFormData.EmailAddress,
-          Price: parsePriceNumber(editFormData.Price),
-          Weeks: parseInt(editFormData.Weeks) || 4,
-          Route: editFormData.Route,
-          Notes: editFormData.Notes,
-          Outstanding: parseFloat(editFormData.Outstanding) || 0,
-          NextClean: editFormData.NextClean
-        })
+        .update(updatePayload)
         .eq('id', id)
       
       if (error) throw error
@@ -984,6 +1163,28 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       setEditFormData({})
       fetchCustomers()
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueCustomerMutation(
+          {
+            type: 'update',
+            customerId: id,
+            changes: updatePayload
+          },
+          'Customer update saved offline.'
+        )
+
+        if (queued) {
+          setCustomers((prev) => prev.map((customer) => (
+            Number(customer.id) === Number(id)
+              ? { ...customer, ...updatePayload }
+              : customer
+          )))
+          setEditingCustomerId(null)
+          setEditFormData({})
+          return
+        }
+      }
+
       console.error('Error updating customer:', error.message)
     }
   }
@@ -1118,6 +1319,27 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       
       fetchCustomers() // Refresh the customer list
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueCustomerMutation(
+          {
+            type: 'update',
+            customerId: selectedCustomer.id,
+            changes: { Price: newPrice }
+          },
+          'Price change saved offline.'
+        )
+
+        if (queued) {
+          setChangePriceModal({ show: false, price: '' })
+          setCustomers((prev) => prev.map((customer) => (
+            Number(customer.id) === Number(selectedCustomer.id)
+              ? { ...customer, Price: newPrice }
+              : customer
+          )))
+          return
+        }
+      }
+
       console.error('Error updating price:', error.message)
       alert('Failed to update price. Please try again.')
     }
@@ -1211,26 +1433,28 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   }
 
   async function handleModalSave() {
+    const updatePayload = {
+      CustomerName: modalEditData.CustomerName,
+      Address: modalEditData.Address,
+      Address2: modalEditData.Address2,
+      Address3: modalEditData.Address3,
+      Postcode: modalEditData.Postcode,
+      PhoneNumber: modalEditData.PhoneNumber,
+      EmailAddress: modalEditData.EmailAddress,
+      Price: modalEditData.Price,
+      Weeks: modalEditData.Weeks,
+      NextClean: modalEditData.NextClean,
+      Outstanding: modalEditData.Outstanding,
+      Route: modalEditData.Route,
+      VAT: modalEditData.VAT,
+      PrefferedDays: formatPreferredDays(preferredDaysSelected),
+      Notes: modalEditData.Notes
+    }
+
     try {
       const { error } = await supabase
         .from('Customers')
-        .update({
-          CustomerName: modalEditData.CustomerName,
-          Address: modalEditData.Address,
-          Address2: modalEditData.Address2,
-          Address3: modalEditData.Address3,
-          Postcode: modalEditData.Postcode,
-          PhoneNumber: modalEditData.PhoneNumber,
-          EmailAddress: modalEditData.EmailAddress,
-          Price: modalEditData.Price,
-          Weeks: modalEditData.Weeks,
-          NextClean: modalEditData.NextClean,
-          Outstanding: modalEditData.Outstanding,
-          Route: modalEditData.Route,
-          VAT: modalEditData.VAT,
-          PrefferedDays: formatPreferredDays(preferredDaysSelected),
-          Notes: modalEditData.Notes
-        })
+        .update(updatePayload)
         .eq('id', selectedCustomer.id)
       
       if (error) throw error
@@ -1240,6 +1464,28 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       setIsEditingModal(false)
       fetchCustomers() // Refresh the customer list
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueCustomerMutation(
+          {
+            type: 'update',
+            customerId: selectedCustomer.id,
+            changes: updatePayload
+          },
+          'Customer changes saved offline.'
+        )
+
+        if (queued) {
+          setSelectedCustomer((prev) => ({ ...prev, ...updatePayload }))
+          setCustomers((prev) => prev.map((customer) => (
+            Number(customer.id) === Number(selectedCustomer.id)
+              ? { ...customer, ...updatePayload }
+              : customer
+          )))
+          setIsEditingModal(false)
+          return
+        }
+      }
+
       console.error('Error updating customer:', error.message)
       alert('Failed to update customer. Please try again.')
     }
@@ -1346,6 +1592,24 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       alert(`${service.Service} added to next clean!`)
       fetchCustomers() // Refresh customer list
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueCustomerMutation(
+          {
+            type: 'update',
+            customerId: selectedCustomer.id,
+            changes: {
+              NextServices: `${(selectedCustomer?.NextServices || '').trim() ? `${selectedCustomer.NextServices}, ` : ''}${service.Service}`,
+              Price: (parseFloat(selectedCustomer?.Price) || 0) + (parseFloat(service.Price) || 0)
+            }
+          },
+          'Service update saved offline.'
+        )
+
+        if (queued) {
+          return
+        }
+      }
+
       console.error('Error adding to next clean:', error.message)
       alert('Failed to add to next clean. Please try again.')
     }
@@ -1386,6 +1650,27 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       setExpandedActionRows(prev => ({...prev, [customerId]: false}))
       fetchCustomers()
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueCustomerMutation(
+          {
+            type: 'update',
+            customerId,
+            changes: { Outstanding: 0 }
+          },
+          'Mark as paid saved offline.'
+        )
+
+        if (queued) {
+          setExpandedActionRows(prev => ({...prev, [customerId]: false}))
+          setCustomers((prev) => prev.map((customer) => (
+            Number(customer.id) === Number(customerId)
+              ? { ...customer, Outstanding: 0 }
+              : customer
+          )))
+          return
+        }
+      }
+
       console.error('Error marking as paid:', error.message)
       alert('Error marking as paid: ' + error.message)
     }
@@ -1423,6 +1708,28 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       setShowCustomerModal(false)
       fetchCustomers()
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueCustomerMutation(
+          {
+            type: 'update',
+            customerId: selectedCustomer.id,
+            changes: { NextClean: null }
+          },
+          'Cancel service saved offline.'
+        )
+
+        if (queued) {
+          setCancelServiceModal({ show: false, reason: '' })
+          setShowCustomerModal(false)
+          setCustomers((prev) => prev.map((customer) => (
+            Number(customer.id) === Number(selectedCustomer.id)
+              ? { ...customer, NextClean: null }
+              : customer
+          )))
+          return
+        }
+      }
+
       console.error('Error cancelling service:', error.message)
       alert('Error cancelling service: ' + error.message)
     }

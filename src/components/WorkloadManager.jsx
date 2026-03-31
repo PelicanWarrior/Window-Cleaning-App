@@ -3,7 +3,15 @@ import { supabase } from '../lib/supabase'
 import './WorkloadManager.css'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
 import { getOwnerUserId, isOwnerUser } from '../lib/team'
-import { formatCacheTimestamp, getOfflineCacheKey, isLikelyOfflineError, readOfflineCache, writeOfflineCache } from '../lib/offlineCache'
+import {
+  flushOfflineMutationQueue,
+  formatCacheTimestamp,
+  getOfflineCacheKey,
+  isLikelyOfflineError,
+  queueOfflineMutation,
+  readOfflineCache,
+  writeOfflineCache
+} from '../lib/offlineCache'
 import InvoiceModal from './InvoiceModal'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import axios from 'axios'
@@ -69,6 +77,10 @@ function WorkloadManager({ user }) {
   const workloadCustomerCacheKey = ownerUserId
     ? getOfflineCacheKey('workload-customers', ownerUserId, isOwner ? 'owner' : `employee-${user?.id || 'unknown'}`)
     : null
+  const workloadMutationQueueKey = ownerUserId
+    ? getOfflineCacheKey('workload-customer-mutations', ownerUserId, isOwner ? 'owner' : `employee-${user?.id || 'unknown'}`)
+    : null
+  const syncingMutationsRef = useRef(false)
   const [personalCalendarItems, setPersonalCalendarItems] = useState([])
   const [showPersonalItemModal, setShowPersonalItemModal] = useState(false)
   const [savingPersonalItem, setSavingPersonalItem] = useState(false)
@@ -81,6 +93,39 @@ function WorkloadManager({ user }) {
   const [importPersonalError, setImportPersonalError] = useState('')
   const [importPersonalDuplicateCount, setImportPersonalDuplicateCount] = useState(0)
   const [importPersonalAssumedYearCount, setImportPersonalAssumedYearCount] = useState(0)
+
+  const applyQueuedCustomerMutation = async (mutation) => {
+    if (!mutation?.type) return
+
+    if (mutation.type === 'update') {
+      const { error } = await supabase
+        .from('Customers')
+        .update(mutation.changes || {})
+        .eq('id', mutation.customerId)
+        .eq('UserId', ownerUserId)
+      if (error) throw error
+      return
+    }
+
+    if (mutation.type === 'delete') {
+      const { error } = await supabase
+        .from('Customers')
+        .delete()
+        .eq('id', mutation.customerId)
+        .eq('UserId', ownerUserId)
+      if (error) throw error
+    }
+  }
+
+  const queueWorkloadCustomerMutation = (mutation, queuedMessage) => {
+    if (!workloadMutationQueueKey) return false
+
+    queueOfflineMutation(workloadMutationQueueKey, mutation)
+    if (queuedMessage) {
+      alert(`${queuedMessage} It will sync automatically when internet returns.`)
+    }
+    return true
+  }
   useEffect(() => {
     if (!serviceDropdownOpen) return
 
@@ -677,6 +722,32 @@ function WorkloadManager({ user }) {
     fetchCalendarPosition()
     fetchCalendarViewMode()
   }, [user])
+
+  useEffect(() => {
+    if (!workloadMutationQueueKey || syncingMutationsRef.current) return
+
+    const syncQueuedMutations = async () => {
+      if (syncingMutationsRef.current) return
+      syncingMutationsRef.current = true
+
+      try {
+        const result = await flushOfflineMutationQueue(workloadMutationQueueKey, applyQueuedCustomerMutation)
+        if (result.processed > 0) {
+          fetchCustomers()
+        }
+      } finally {
+        syncingMutationsRef.current = false
+      }
+    }
+
+    syncQueuedMutations()
+    window.addEventListener('online', syncQueuedMutations)
+
+    return () => {
+      window.removeEventListener('online', syncQueuedMutations)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workloadMutationQueueKey, ownerUserId])
 
   useEffect(() => {
     setSelectedLetterAll('')
@@ -1367,15 +1438,24 @@ function WorkloadManager({ user }) {
         .update(updateObj)
         .eq('id', customerId)
 
-      if (updateError) {
-        console.error('Update error:', updateError)
-        throw updateError
-      }
+      if (updateError) throw updateError
       
       console.log('Update successful, refreshing customers')
       // Refresh customers list
       await fetchCustomers()
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        queueWorkloadCustomerMutation(
+          {
+            type: 'update',
+            customerId,
+            changes: { NextServices: 'Windows' }
+          },
+          'Service sync saved offline.'
+        )
+        return
+      }
+
       console.error('Error syncing customer price:', error)
     }
   }
@@ -1398,6 +1478,8 @@ function WorkloadManager({ user }) {
 
   // Handle Done and Paid
   const handleDoneAndPaid = async (customer) => {
+    let nextDateValue = ''
+
     try {
       const currentWorkDate = parseDateKeyToLocalDate(selectedDate) || new Date(currentDate)
       const weeksToAdd = parseInt(customer.Weeks) || 0
@@ -1412,10 +1494,12 @@ function WorkloadManager({ user }) {
       const historyMessage = `${customer.NextServices} done, Paid ${symbol}${customer.Price}${employeeHistorySuffix}`
       await createCustomerHistory(customer.id, historyMessage)
       
+      nextDateValue = toLocalDateKey(nextCleanDate)
+
       const { error } = await supabase
         .from('Customers')
         .update({ 
-          NextClean: toLocalDateKey(nextCleanDate)
+          NextClean: nextDateValue
         })
         .eq('id', customer.id)
       
@@ -1437,12 +1521,35 @@ function WorkloadManager({ user }) {
       // Always sync price and services after marking as done
       await syncCustomerPriceAndServices(customer.id)
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueWorkloadCustomerMutation(
+          {
+            type: 'update',
+            customerId: customer.id,
+            changes: { NextClean: nextDateValue }
+          },
+          'Done & paid saved offline.'
+        )
+
+        if (queued) {
+          setCustomers((prev) => prev.map((row) => (
+            Number(row.id) === Number(customer.id)
+              ? { ...row, NextClean: nextDateValue }
+              : row
+          )))
+          return
+        }
+      }
+
       console.error('Error updating customer:', error.message)
     }
   }
 
   // Handle Done and Not Paid
   const handleDoneAndNotPaid = async (customer) => {
+    let nextDateValue = ''
+    let newOutstanding = parseFloat(customer.Outstanding) || 0
+
     try {
       const currentWorkDate = parseDateKeyToLocalDate(selectedDate) || new Date(currentDate)
       const weeksToAdd = parseInt(customer.Weeks) || 0
@@ -1457,12 +1564,14 @@ function WorkloadManager({ user }) {
       const historyMessage = `${customer.NextServices} done, Not Paid ${symbol}${customer.Price}${employeeHistorySuffix}`
       await createCustomerHistory(customer.id, historyMessage)
       
-      const newOutstanding = (parseFloat(customer.Outstanding) || 0) + (parseFloat(customer.Price) || 0)
+      newOutstanding = (parseFloat(customer.Outstanding) || 0) + (parseFloat(customer.Price) || 0)
       
+      nextDateValue = toLocalDateKey(nextCleanDate)
+
       const { error } = await supabase
         .from('Customers')
         .update({ 
-          NextClean: toLocalDateKey(nextCleanDate),
+          NextClean: nextDateValue,
           Outstanding: newOutstanding
         })
         .eq('id', customer.id)
@@ -1487,6 +1596,26 @@ function WorkloadManager({ user }) {
       // Always sync price and services after marking as done
       await syncCustomerPriceAndServices(customer.id)
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueWorkloadCustomerMutation(
+          {
+            type: 'update',
+            customerId: customer.id,
+            changes: { NextClean: nextDateValue, Outstanding: newOutstanding }
+          },
+          'Done & not paid saved offline.'
+        )
+
+        if (queued) {
+          setCustomers((prev) => prev.map((row) => (
+            Number(row.id) === Number(customer.id)
+              ? { ...row, NextClean: nextDateValue, Outstanding: newOutstanding }
+              : row
+          )))
+          return
+        }
+      }
+
       console.error('Error updating customer:', error.message)
     }
   }
@@ -1511,6 +1640,28 @@ function WorkloadManager({ user }) {
       setEditingPriceValue('')
       fetchCustomers()
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueWorkloadCustomerMutation(
+          {
+            type: 'update',
+            customerId,
+            changes: { Price: parseFloat(newPrice) }
+          },
+          'Price update saved offline.'
+        )
+
+        if (queued) {
+          setEditingPriceCustomerId(null)
+          setEditingPriceValue('')
+          setCustomers((prev) => prev.map((row) => (
+            Number(row.id) === Number(customerId)
+              ? { ...row, Price: parseFloat(newPrice) }
+              : row
+          )))
+          return
+        }
+      }
+
       console.error('Error updating price:', error.message)
       alert('Failed to update price')
     }
@@ -1528,6 +1679,26 @@ function WorkloadManager({ user }) {
 
       fetchCustomers()
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueWorkloadCustomerMutation(
+          {
+            type: 'update',
+            customerId,
+            changes: { AssignedUserId: newAssignedUserId || null }
+          },
+          'Assignment update saved offline.'
+        )
+
+        if (queued) {
+          setCustomers((prev) => prev.map((row) => (
+            Number(row.id) === Number(customerId)
+              ? { ...row, AssignedUserId: newAssignedUserId || null }
+              : row
+          )))
+          return
+        }
+      }
+
       console.error('Error updating assigned user:', error.message)
       alert('Failed to update assignment')
     }
@@ -1579,6 +1750,27 @@ function WorkloadManager({ user }) {
       setExpandedDatePickers(prev => ({...prev, [customer.id]: false}))
       fetchCustomers()
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueWorkloadCustomerMutation(
+          {
+            type: 'update',
+            customerId: customer.id,
+            changes: { NextClean: newDate }
+          },
+          'Move date saved offline.'
+        )
+
+        if (queued) {
+          setExpandedDatePickers(prev => ({...prev, [customer.id]: false}))
+          setCustomers((prev) => prev.map((row) => (
+            Number(row.id) === Number(customer.id)
+              ? { ...row, NextClean: newDate }
+              : row
+          )))
+          return
+        }
+      }
+
       console.error('Error moving date:', error.message)
     }
   }
@@ -1607,6 +1799,30 @@ function WorkloadManager({ user }) {
       setBulkDatePickerOpen(false)
       fetchCustomers()
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        targetCustomers
+          .filter((customer) => customer.NextClean)
+          .forEach((customer) => {
+            queueWorkloadCustomerMutation(
+              {
+                type: 'update',
+                customerId: customer.id,
+                changes: { NextClean: newDate }
+              },
+              null
+            )
+          })
+
+        setCustomers((prev) => prev.map((row) => {
+          const match = targetCustomers.find((customer) => Number(customer.id) === Number(row.id))
+          if (!match || !match.NextClean) return row
+          return { ...row, NextClean: newDate }
+        }))
+        setBulkDatePickerOpen(false)
+        alert('Bulk date move saved offline. It will sync automatically when internet returns.')
+        return
+      }
+
       console.error('Error bulk moving dates:', error.message)
     }
   }
@@ -1641,10 +1857,11 @@ function WorkloadManager({ user }) {
             if (!currentNextClean) return
             const newNextClean = new Date(currentNextClean)
             newNextClean.setDate(newNextClean.getDate() + days)
+            const nextDateValue = toLocalDateKey(newNextClean)
 
             const { error } = await supabase
               .from('Customers')
-              .update({ NextClean: toLocalDateKey(newNextClean) })
+              .update({ NextClean: nextDateValue })
               .eq('id', customer.id)
 
             if (error) throw error
@@ -1653,6 +1870,39 @@ function WorkloadManager({ user }) {
 
       fetchCustomers()
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        targetCustomers
+          .filter((customer) => customer.NextClean)
+          .forEach((customer) => {
+            const currentNextClean = parseDateKeyToLocalDate(customer.NextClean)
+            if (!currentNextClean) return
+            const newNextClean = new Date(currentNextClean)
+            newNextClean.setDate(newNextClean.getDate() + days)
+
+            queueWorkloadCustomerMutation(
+              {
+                type: 'update',
+                customerId: customer.id,
+                changes: { NextClean: toLocalDateKey(newNextClean) }
+              },
+              null
+            )
+          })
+
+        setCustomers((prev) => prev.map((row) => {
+          const source = targetCustomers.find((customer) => Number(customer.id) === Number(row.id))
+          if (!source || !source.NextClean) return row
+          const currentNextClean = parseDateKeyToLocalDate(source.NextClean)
+          if (!currentNextClean) return row
+          const nextCleanDate = new Date(currentNextClean)
+          nextCleanDate.setDate(nextCleanDate.getDate() + days)
+          return { ...row, NextClean: toLocalDateKey(nextCleanDate) }
+        }))
+
+        alert('Bulk move saved offline. It will sync automatically when internet returns.')
+        return
+      }
+
       console.error('Error bulk moving dates:', error.message)
     }
   }
@@ -1974,26 +2224,28 @@ function WorkloadManager({ user }) {
   }
 
   async function handleModalSave() {
+    const updatePayload = {
+      CustomerName: modalEditData.CustomerName,
+      Address: modalEditData.Address,
+      Address2: modalEditData.Address2,
+      Address3: modalEditData.Address3,
+      Postcode: modalEditData.Postcode,
+      PhoneNumber: modalEditData.PhoneNumber,
+      EmailAddress: modalEditData.EmailAddress,
+      Price: modalEditData.Price,
+      Weeks: modalEditData.Weeks,
+      NextClean: modalEditData.NextClean,
+      Outstanding: modalEditData.Outstanding,
+      Route: modalEditData.Route,
+      VAT: modalEditData.VAT,
+      PrefferedDays: formatPreferredDays(preferredDaysSelected),
+      Notes: modalEditData.Notes
+    }
+
     try {
       const { error } = await supabase
         .from('Customers')
-        .update({
-          CustomerName: modalEditData.CustomerName,
-          Address: modalEditData.Address,
-          Address2: modalEditData.Address2,
-          Address3: modalEditData.Address3,
-          Postcode: modalEditData.Postcode,
-          PhoneNumber: modalEditData.PhoneNumber,
-          EmailAddress: modalEditData.EmailAddress,
-          Price: modalEditData.Price,
-          Weeks: modalEditData.Weeks,
-          NextClean: modalEditData.NextClean,
-          Outstanding: modalEditData.Outstanding,
-          Route: modalEditData.Route,
-          VAT: modalEditData.VAT,
-          PrefferedDays: formatPreferredDays(preferredDaysSelected),
-          Notes: modalEditData.Notes
-        })
+        .update(updatePayload)
         .eq('id', selectedCustomer.id)
       
       if (error) throw error
@@ -2009,6 +2261,28 @@ function WorkloadManager({ user }) {
       setIsEditingModal(false)
       fetchCustomers() // Refresh the customer list
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueWorkloadCustomerMutation(
+          {
+            type: 'update',
+            customerId: selectedCustomer.id,
+            changes: updatePayload
+          },
+          'Customer changes saved offline.'
+        )
+
+        if (queued) {
+          setSelectedCustomer({ ...modalEditData, PrefferedDays: formatPreferredDays(preferredDaysSelected) })
+          setOrderedCustomers((prev) => prev.map((row) => (
+            Number(row.id) === Number(selectedCustomer.id)
+              ? { ...row, ...updatePayload }
+              : row
+          )))
+          setIsEditingModal(false)
+          return
+        }
+      }
+
       console.error('Error updating customer:', error.message)
       alert('Failed to update customer. Please try again.')
     }
@@ -2115,6 +2389,22 @@ function WorkloadManager({ user }) {
       alert(`${service.Service} added to next clean!`)
       fetchCustomers() // Refresh customer list
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueWorkloadCustomerMutation(
+          {
+            type: 'update',
+            customerId: selectedCustomer.id,
+            changes: {
+              NextServices: `${(selectedCustomer?.NextServices || '').trim() ? `${selectedCustomer.NextServices}, ` : ''}${service.Service}`,
+              Price: (parseFloat(selectedCustomer?.Price) || 0) + (parseFloat(service.Price) || 0)
+            }
+          },
+          'Service update saved offline.'
+        )
+
+        if (queued) return
+      }
+
       console.error('Error adding to next clean:', error.message)
       alert('Failed to add to next clean. Please try again.')
     }
@@ -2152,6 +2442,28 @@ function WorkloadManager({ user }) {
       setShowCustomerModal(false)
       fetchCustomers()
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const queued = queueWorkloadCustomerMutation(
+          {
+            type: 'update',
+            customerId: selectedCustomer.id,
+            changes: { NextClean: null }
+          },
+          'Cancel service saved offline.'
+        )
+
+        if (queued) {
+          setCancelServiceModal({ show: false, reason: '' })
+          setShowCustomerModal(false)
+          setCustomers((prev) => prev.map((row) => (
+            Number(row.id) === Number(selectedCustomer.id)
+              ? { ...row, NextClean: null }
+              : row
+          )))
+          return
+        }
+      }
+
       console.error('Error cancelling service:', error.message)
       alert('Error cancelling service: ' + error.message)
     }
@@ -2168,6 +2480,7 @@ function WorkloadManager({ user }) {
       if (!currentCleanDate) return
       const nextCleanDate = new Date(currentCleanDate)
       nextCleanDate.setDate(nextCleanDate.getDate() + (weeksToAdd * 7))
+      const nextDateValue = toLocalDateKey(nextCleanDate)
       
       // Create history record with employee name if applicable
       const isTeamMember = Boolean(user?.ParentUserId)
@@ -2180,13 +2493,39 @@ function WorkloadManager({ user }) {
       // Update customer with new NextClean date
       const { error } = await supabase
         .from('Customers')
-        .update({ NextClean: toLocalDateKey(nextCleanDate) })
+        .update({ NextClean: nextDateValue })
         .eq('id', customer.id)
       
       if (error) throw error
       
       fetchCustomers()
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const currentCleanDate = parseDateKeyToLocalDate(customer.NextClean)
+        if (currentCleanDate) {
+          const nextCleanDate = new Date(currentCleanDate)
+          nextCleanDate.setDate(nextCleanDate.getDate() + ((parseInt(user.RouteWeeks) || 1) * 7))
+          const nextDateValue = toLocalDateKey(nextCleanDate)
+          const queued = queueWorkloadCustomerMutation(
+            {
+              type: 'update',
+              customerId: customer.id,
+              changes: { NextClean: nextDateValue }
+            },
+            'Skip clean saved offline.'
+          )
+
+          if (queued) {
+            setCustomers((prev) => prev.map((row) => (
+              Number(row.id) === Number(customer.id)
+                ? { ...row, NextClean: nextDateValue }
+                : row
+            )))
+            return
+          }
+        }
+      }
+
       console.error('Error skipping clean:', error.message)
       alert('Error skipping clean: ' + error.message)
     }
@@ -2257,6 +2596,37 @@ function WorkloadManager({ user }) {
       setShowCustomerModal(false)
       fetchCustomers()
     } catch (error) {
+      if (isLikelyOfflineError(error)) {
+        const selectedServiceObjects = bookJobModal.services.filter((s) => bookJobModal.selectedServices.includes(s.id))
+        const totalPrice = selectedServiceObjects.reduce((sum, s) => sum + (parseFloat(s.Price) || 0), 0)
+        const serviceNames = selectedServiceObjects.map((s) => s.Service).join(', ')
+
+        const queued = queueWorkloadCustomerMutation(
+          {
+            type: 'update',
+            customerId: bookJobModal.customer.id,
+            changes: {
+              NextClean: bookJobModal.selectedDate,
+              Price: totalPrice,
+              NextServices: serviceNames,
+              Quote: false
+            }
+          },
+          'Booked job saved offline.'
+        )
+
+        if (queued) {
+          setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
+          setShowCustomerModal(false)
+          setCustomers((prev) => prev.map((row) => (
+            Number(row.id) === Number(bookJobModal.customer.id)
+              ? { ...row, NextClean: bookJobModal.selectedDate, Price: totalPrice, NextServices: serviceNames, Quote: false }
+              : row
+          )))
+          return
+        }
+      }
+
       console.error('Error booking job:', error.message)
       alert('Error booking job: ' + error.message)
     }
