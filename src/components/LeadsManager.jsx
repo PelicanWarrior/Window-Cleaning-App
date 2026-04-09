@@ -10,6 +10,7 @@ const statusOptions = [
   'sent_e3',
   'replied',
   'registered',
+  'registered_with_customers',
   'won',
   'closed'
 ]
@@ -127,6 +128,36 @@ Gavin Grainger
 Business Owner
 ${APP_URL}`
     }
+  },
+  registered_with_customers: {
+    nextStatus: 'registered_with_customers',
+    sequenceStep: 'registered_with_customers_nudge',
+    followUpDays: 14,
+    subject: () => 'Great progress so far',
+    body: (lead) => {
+      const greeting = lead.owner_name?.trim()
+        ? `Hi ${lead.owner_name.trim()},`
+        : 'Hi there,'
+
+      return `${greeting}
+Great progress so far - I can see you've registered and already added a few customers, which is exactly the right start.
+
+Once you keep building from here, Pelican becomes much more useful day-to-day for:
+- planning recurring work
+- tracking completed jobs and payments
+- keeping all customer details in one place
+
+If you'd like, I can help you with the next step and get the rest of your round set up faster.
+
+Just reply and let me know if you want a hand.
+
+You can log back in here: ${APP_URL}
+
+Thanks,
+Gavin Grainger
+Business Owner
+${APP_URL}`
+    }
   }
 }
 
@@ -138,6 +169,7 @@ function toIsoDateFromNow(daysToAdd) {
 
 function buildEditableLeadPayload(lead) {
   return {
+    business_name: (lead.business_name || '').trim(),
     owner_name: (lead.owner_name || '').trim() || null,
     email: (lead.email || '').trim() || null,
     phone: (lead.phone || '').trim() || null,
@@ -202,13 +234,23 @@ function LeadsManager({ user }) {
     setStatusMessage('')
 
     try {
-      const { data, error } = await supabase
-        .from('Leads')
-        .select('*')
-        .order('lead_id', { ascending: true })
+      const PAGE_SIZE = 1000
+      let allLeads = []
+      let from = 0
+      while (true) {
+        const { data, error } = await supabase
+          .from('Leads')
+          .select('*')
+          .order('lead_id', { ascending: true })
+          .range(from, from + PAGE_SIZE - 1)
 
-      if (error) throw error
-      setLeads(data || [])
+        if (error) throw error
+        if (!data || data.length === 0) break
+        allLeads = allLeads.concat(data)
+        if (data.length < PAGE_SIZE) break
+        from += PAGE_SIZE
+      }
+      setLeads(allLeads)
     } catch (error) {
       console.error('Error loading leads:', error.message)
       setStatusMessage(`Could not load leads: ${error.message}`)
@@ -320,6 +362,12 @@ function LeadsManager({ user }) {
   }
 
   async function saveLead(lead) {
+    const businessName = (lead.business_name || '').trim()
+    if (!businessName) {
+      setStatusMessage('Business name is required')
+      return
+    }
+
     setSavingLeadId(lead.id)
     setStatusMessage('')
 
@@ -407,8 +455,12 @@ function LeadsManager({ user }) {
     const today = toIsoDateFromNow(0)
 
     return leads.filter((lead) => {
-      if (activeListTab === 'followup' && (lead.next_follow_up || '') !== today) {
-        return false
+      if (activeListTab === 'followup') {
+        const followUpDate = (lead.next_follow_up || '').trim()
+        const isClosed = (lead.status || '') === 'closed'
+        if (!followUpDate || followUpDate > today || isClosed) {
+          return false
+        }
       }
 
       if (activeListTab === 'leads' && (lead.status || 'new') !== 'new') {
@@ -471,6 +523,13 @@ function LeadsManager({ user }) {
           onClick={() => setActiveListTab('followup')}
         >
           Follow-Up
+        </button>
+        <button
+          type="button"
+          className={`leads-inner-tab ${activeListTab === 'all' ? 'active' : ''}`}
+          onClick={() => setActiveListTab('all')}
+        >
+          All Leads
         </button>
       </div>
 
@@ -609,7 +668,12 @@ function LeadsManager({ user }) {
                   <td>
                     <div className="business-cell">
                       <div className="business-title-row">
-                        <strong>{lead.business_name}</strong>
+                        <input
+                          type="text"
+                          className="business-name-input"
+                          value={lead.business_name || ''}
+                          onChange={(e) => handleFieldChange(lead.id, 'business_name', e.target.value)}
+                        />
                         <button
                           type="button"
                           className="save-mini-btn"

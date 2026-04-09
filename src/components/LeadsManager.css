@@ -173,6 +173,11 @@
   gap: 0.4rem;
 }
 
+.business-name-input {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+
 .save-mini-btn {
   border: none;
   border-radius: 4px;

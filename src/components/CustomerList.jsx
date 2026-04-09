@@ -644,7 +644,11 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
 
   // Column order: Actions first, then selected sort column (if any), then Name + Address only
   const getColumnOrder = () => {
-    const base = hasEmployees ? ['Actions', 'Assigned To'] : []
+    const base = !isOwner
+      ? []
+      : hasEmployees
+        ? ['Actions', 'Assigned To']
+        : ['Actions']
     const columnFieldMap = {
       'Next Clean': 'Next Clean',
       'Route': 'Route',
