@@ -73,6 +73,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
   const [systemSubject, setSystemSubject] = useState('')
   const [systemMessage, setSystemMessage] = useState('')
   const [systemMessageStatus, setSystemMessageStatus] = useState('')
+  const [appVersion, setAppVersion] = useState(APP_VERSION)
 
   useEffect(() => {
     setActiveTab(initialTab)
@@ -102,6 +103,36 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
       fetchAccountLevel()
       fetchCustomerCount()
       fetchUserLevels()
+    }
+  }, [activeTab])
+
+  useEffect(() => {
+    if (activeTab !== 'system') return
+
+    let cancelled = false
+
+    const loadVersion = async () => {
+      try {
+        const response = await fetch(`/version.txt?t=${Date.now()}`, { cache: 'no-store' })
+        if (!response.ok) throw new Error(`version fetch failed (${response.status})`)
+
+        const latestVersion = (await response.text()).trim()
+        if (!cancelled && latestVersion) {
+          setAppVersion(latestVersion)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAppVersion(APP_VERSION)
+        }
+      }
+    }
+
+    loadVersion()
+    const versionRefreshTimer = window.setInterval(loadVersion, 5000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(versionRefreshTimer)
     }
   }, [activeTab])
 
@@ -758,7 +789,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
             <div className="system-content">
               <div className="system-card">
                 <h4 className="system-title">Application Version</h4>
-                <p className="system-version">{APP_VERSION}</p>
+                <p className="system-version">{appVersion}</p>
               </div>
 
               <div className="system-card">

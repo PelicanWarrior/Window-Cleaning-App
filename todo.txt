@@ -3,3 +3,6 @@ Window Cleaning App - TODO List
 1. Add upload pictures.
 2. Add a platinum level £14.99.
 3. Allow up to 10 users per level, except platinum which is infinite.
+4. Add GoCardless
+5. Update the invoicing and emailing
+6. attach version.txt to version in the app

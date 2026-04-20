@@ -1,3 +1,1 @@
-import versionText from '../../version.txt?raw'
-
-export const APP_VERSION = versionText.trim()
+export const APP_VERSION = 'Unknown Version'

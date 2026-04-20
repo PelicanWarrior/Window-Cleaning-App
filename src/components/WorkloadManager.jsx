@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import './WorkloadManager.css'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
+import { openMessageViaMethod } from '../lib/contactDelivery'
+import { createInvoiceAttachment } from '../lib/invoiceAttachment'
 import { getOwnerUserId, isOwnerUser } from '../lib/team'
 import {
   flushOfflineMutationQueue,
@@ -13,6 +15,8 @@ import {
   writeOfflineCache
 } from '../lib/offlineCache'
 import InvoiceModal from './InvoiceModal'
+import SendMessageMethodModal from './SendMessageMethodModal'
+import CustomerDetailsModal from './CustomerDetailsModal'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import axios from 'axios'
 import Tesseract from 'tesseract.js'
@@ -36,6 +40,8 @@ function WorkloadManager({ user }) {
   const [bulkDatePickerOpen, setBulkDatePickerOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [customerPayLetter, setCustomerPayLetter] = useState(null)
+  const [quoteTurnedIntoJobLetter, setQuoteTurnedIntoJobLetter] = useState(null)
+  const [sendMessageModal, setSendMessageModal] = useState({ show: false, customer: null, subject: '', body: '', historyMessage: '' })
   const [userRouteOrder, setUserRouteOrder] = useState('')
   const [orderedCustomers, setOrderedCustomers] = useState([])
   const [draggedCustomerId, setDraggedCustomerId] = useState(null)
@@ -63,6 +69,10 @@ function WorkloadManager({ user }) {
   const [editServiceData, setEditServiceData] = useState({})
   const [showHistory, setShowHistory] = useState(false)
   const [customerHistory, setCustomerHistory] = useState([])
+  const [showInvoices, setShowInvoices] = useState(false)
+  const [customerInvoices, setCustomerInvoices] = useState([])
+  const [invoiceActionMenuId, setInvoiceActionMenuId] = useState(null)
+  const [invoiceDetailsModal, setInvoiceDetailsModal] = useState({ show: false, invoice: null, items: [] })
   const [cancelServiceModal, setCancelServiceModal] = useState({ show: false, reason: '' })
   const [bookJobModal, setBookJobModal] = useState({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
   const [invoiceModal, setInvoiceModal] = useState({ show: false, customer: null })
@@ -153,6 +163,16 @@ function WorkloadManager({ user }) {
       document.removeEventListener('touchstart', handleOutsideMenuClick)
     }
   }, [mobileMenuOpenCustomerId])
+
+  useEffect(() => {
+    if (showCustomerModal) return
+    setShowServices(false)
+    setShowHistory(false)
+    setShowInvoices(false)
+    setCustomerInvoices([])
+    setInvoiceActionMenuId(null)
+    setInvoiceDetailsModal({ show: false, invoice: null, items: [] })
+  }, [showCustomerModal])
 
   const getFullAddress = (customer) => {
     const parts = [
@@ -247,6 +267,8 @@ function WorkloadManager({ user }) {
     const member = teamMembers.find((m) => Number(m.id) === Number(userId))
     return member ? (member.UserName || member.email_address || `User ${member.id}`) : 'Unknown Employee'
   }
+
+  const currentAccountLabel = user?.UserName || user?.email_address || 'Current Account'
 
   // Group customers by assigned user ID
   const groupCustomersByAssignee = (customers) => {
@@ -717,6 +739,7 @@ function WorkloadManager({ user }) {
     fetchPersonalCalendarItems()
     fetchCalendarView()
     fetchCustomerPayLetter()
+    fetchQuoteTurnedIntoJobLetter()
     fetchAndInitializeUserRouteOrder()
     fetchCalendarDate()
     fetchCalendarPosition()
@@ -1075,6 +1098,23 @@ function WorkloadManager({ user }) {
       setCustomerPayLetter(data?.CustomerPayLetter || null)
     } catch (error) {
       console.error('Error fetching customer pay letter:', error.message)
+    }
+  }
+
+  async function fetchQuoteTurnedIntoJobLetter() {
+    if (!ownerUserId) return
+
+    try {
+      const { data, error } = await supabase
+        .from('Users')
+        .select('QuoteTurnedIntoJobLetter')
+        .eq('id', ownerUserId)
+        .single()
+
+      if (error) throw error
+      setQuoteTurnedIntoJobLetter(data?.QuoteTurnedIntoJobLetter || null)
+    } catch (error) {
+      console.error('Error fetching quote turned into job letter:', error.message)
     }
   }
 
@@ -1511,10 +1551,12 @@ function WorkloadManager({ user }) {
       if (customerPayLetter) {
         const paymentMessage = messages.find((m) => String(m.id) === String(customerPayLetter))
         if (paymentMessage) {
-          const shouldSend = window.confirm(`Send message "${paymentMessage.MessageTitle}" to ${customer.CustomerName}?`)
-          if (shouldSend) {
-            sendPaymentMessage(customer, paymentMessage)
-          }
+          openSendMethodModal({
+            customer,
+            subject: paymentMessage.MessageTitle,
+            body: buildPaymentMessageBody(customer, paymentMessage),
+            historyMessage: `Message ${paymentMessage.MessageTitle} sent`
+          })
         }
       }
       
@@ -1586,10 +1628,12 @@ function WorkloadManager({ user }) {
         if (paymentMessage) {
           // Update customer object with new outstanding amount for message
           const updatedCustomer = { ...customer, Outstanding: newOutstanding }
-          const shouldSend = window.confirm(`Send message "${paymentMessage.MessageTitle}" to ${customer.CustomerName}?`)
-          if (shouldSend) {
-            sendPaymentMessage(updatedCustomer, paymentMessage)
-          }
+          openSendMethodModal({
+            customer: updatedCustomer,
+            subject: paymentMessage.MessageTitle,
+            body: buildPaymentMessageBody(updatedCustomer, paymentMessage),
+            historyMessage: `Message ${paymentMessage.MessageTitle} sent`
+          })
         }
       }
       
@@ -1704,14 +1748,7 @@ function WorkloadManager({ user }) {
     }
   }
 
-  // Send payment message via WhatsApp
-  const sendPaymentMessage = (customer, message) => {
-    const phone = formatPhoneForWhatsApp(customer.PhoneNumber)
-    if (!phone) {
-      alert('This customer does not have a valid phone number.')
-      return
-    }
-
+  const buildPaymentMessageBody = (customer, message) => {
     const formalName = getFormalCustomerName(customer.CustomerName)
     const bodyParts = [`Dear ${formalName}`]
     
@@ -1730,9 +1767,61 @@ function WorkloadManager({ user }) {
     if (messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName) bodyParts.push(user.UserName)
     if (messageFooter) bodyParts.push(messageFooter)
 
-    const text = bodyParts.join('\n')
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
-    window.open(url, '_blank')
+    return bodyParts.join('\n')
+  }
+
+  const closeSendMessageModal = () => {
+    setSendMessageModal({ show: false, customer: null, subject: '', body: '', historyMessage: '' })
+  }
+
+  const openSendMethodModal = ({ customer, subject, body, historyMessage }) => {
+    setSendMessageModal({
+      show: true,
+      customer,
+      subject: subject || 'Message',
+      body: body || '',
+      historyMessage: historyMessage || 'Message sent'
+    })
+  }
+
+  const handleSendMessageModalConfirm = async (method, selectedInvoice) => {
+    let attachment = null
+    if (selectedInvoice) {
+      const attachmentResult = await createInvoiceAttachment({
+        invoice: selectedInvoice,
+        customer: sendMessageModal.customer,
+        user
+      })
+
+      if (!attachmentResult.ok) {
+        alert(attachmentResult.error || 'Unable to prepare invoice attachment.')
+        return
+      }
+
+      attachment = {
+        blob: attachmentResult.blob,
+        filename: attachmentResult.filename
+      }
+    }
+
+    const result = await openMessageViaMethod({
+      method,
+      customer: sendMessageModal.customer,
+      subject: sendMessageModal.subject,
+      body: sendMessageModal.body,
+      attachment
+    })
+
+    if (!result.ok) {
+      alert(result.error)
+      return
+    }
+
+    if (sendMessageModal.customer?.id) {
+      await createCustomerHistory(sendMessageModal.customer.id, `${sendMessageModal.historyMessage} via ${method}`)
+    }
+
+    closeSendMessageModal()
   }
 
   // Handle Move Date to specific date
@@ -2223,6 +2312,166 @@ function WorkloadManager({ user }) {
     }
   }
 
+  async function fetchCustomerInvoices(customerId) {
+    try {
+      const { data: invoicesData, error: invoicesError } = await supabase
+        .from('CustomerInvoices')
+        .select('*')
+        .eq('CustomerID', customerId)
+        .order('InvoiceDate', { ascending: false })
+
+      if (invoicesError) throw invoicesError
+
+      const invoicesList = invoicesData || []
+      if (invoicesList.length === 0) {
+        setCustomerInvoices([])
+        return
+      }
+
+      const invoiceIds = invoicesList.map((inv) => inv.id)
+      const { data: invoiceItems, error: itemsError } = await supabase
+        .from('CustomerInvoiceJobs')
+        .select('InvoiceID, Price')
+        .in('InvoiceID', invoiceIds)
+
+      if (itemsError) throw itemsError
+
+      const totalsByInvoiceId = (invoiceItems || []).reduce((acc, row) => {
+        const key = row.InvoiceID
+        acc[key] = (acc[key] || 0) + (parseFloat(row.Price) || 0)
+        return acc
+      }, {})
+
+      const overviewRows = invoicesList.map((inv) => ({
+        ...inv,
+        totalAmount: totalsByInvoiceId[inv.id] || 0
+      }))
+
+      setCustomerInvoices(overviewRows)
+    } catch (error) {
+      console.error('Error fetching customer invoices:', error.message)
+      alert('Failed to load invoices for this customer.')
+    }
+  }
+
+  async function fetchInvoiceItems(invoiceId) {
+    const { data, error } = await supabase
+      .from('CustomerInvoiceJobs')
+      .select('*')
+      .eq('InvoiceID', invoiceId)
+      .order('id', { ascending: true })
+
+    if (error) throw error
+    return data || []
+  }
+
+  const downloadBlob = (blob, filename) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  const buildCustomerInvoicePdfBlob = (invoiceRecord, invoiceItems) => {
+    const jsPDF = typeof window !== 'undefined' && window.jspdf ? window.jspdf.jsPDF : null
+    if (!jsPDF) {
+      throw new Error('PDF generation library not loaded')
+    }
+
+    const doc = new jsPDF()
+    const lineHeight = 8
+    let y = 15
+    const currencySymbol = getCurrencyConfig(user.SettingsCountry || 'United Kingdom').symbol
+    const addressLines = [selectedCustomer?.Address, selectedCustomer?.Address2, selectedCustomer?.Address3, selectedCustomer?.Postcode].filter(Boolean)
+
+    if (user.CompanyName) {
+      doc.setFontSize(18)
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const companyNameWidth = doc.getTextWidth(user.CompanyName)
+      const centerX = (pageWidth - companyNameWidth) / 2
+      doc.text(user.CompanyName, centerX, y)
+      y += lineHeight + 4
+    }
+
+    doc.setFontSize(14)
+    doc.text(selectedCustomer?.CustomerName || 'Customer', 15, y)
+    y += lineHeight
+    doc.setFontSize(12)
+    addressLines.forEach((line) => {
+      doc.text(line, 15, y)
+      y += lineHeight
+    })
+
+    y += 4
+    doc.text(`Invoice Number: ${invoiceRecord.InvoiceID}`, 15, y)
+    y += lineHeight
+    doc.text(`Invoice Date: ${formatDateByCountry(invoiceRecord.InvoiceDate, user.SettingsCountry || 'United Kingdom')}`, 15, y)
+    y += lineHeight + 4
+
+    doc.setFontSize(14)
+    doc.text('For the following Services:', 15, y)
+    y += lineHeight
+    doc.setFontSize(12)
+
+    let maxServiceWidth = doc.getTextWidth('Total Amount:')
+    invoiceItems.forEach((item) => {
+      const width = doc.getTextWidth(item.Service || '')
+      if (width > maxServiceWidth) maxServiceWidth = width
+    })
+
+    const leftX = 15
+    const rightX = leftX + maxServiceWidth + 10
+    let total = 0
+    invoiceItems.forEach((item) => {
+      const price = parseFloat(item.Price) || 0
+      total += price
+      doc.text(item.Service || 'Service', leftX, y)
+      doc.text(`${currencySymbol}${price.toFixed(2)}`, rightX, y)
+      y += lineHeight
+    })
+
+    y += 4
+    doc.setFontSize(14)
+    doc.text('Total Amount:', leftX, y)
+    doc.text(`${currencySymbol}${total.toFixed(2)}`, rightX, y)
+
+    if (user.InvoiceFooter) {
+      y += lineHeight + 4
+      doc.setFontSize(11)
+      doc.setTextColor(100, 100, 100)
+      const footerLines = doc.splitTextToSize(user.InvoiceFooter, 170)
+      doc.text(footerLines, 15, y)
+      doc.setTextColor(0, 0, 0)
+    }
+
+    return doc.output('blob')
+  }
+
+  async function handleDownloadCustomerInvoice(invoiceRecord) {
+    try {
+      const invoiceItems = await fetchInvoiceItems(invoiceRecord.id)
+      const blob = buildCustomerInvoicePdfBlob(invoiceRecord, invoiceItems)
+      downloadBlob(blob, `Invoice-${invoiceRecord.InvoiceID}.pdf`)
+    } catch (error) {
+      console.error('Error downloading invoice:', error.message)
+      alert('Failed to download invoice.')
+    }
+  }
+
+  async function handleViewCustomerInvoice(invoiceRecord) {
+    try {
+      const invoiceItems = await fetchInvoiceItems(invoiceRecord.id)
+      setInvoiceDetailsModal({ show: true, invoice: invoiceRecord, items: invoiceItems })
+    } catch (error) {
+      console.error('Error loading invoice details:', error.message)
+      alert('Failed to load invoice details.')
+    }
+  }
+
   async function handleModalSave() {
     const updatePayload = {
       CustomerName: modalEditData.CustomerName,
@@ -2232,6 +2481,7 @@ function WorkloadManager({ user }) {
       Postcode: modalEditData.Postcode,
       PhoneNumber: modalEditData.PhoneNumber,
       EmailAddress: modalEditData.EmailAddress,
+      PrefferedContact: modalEditData.PrefferedContact || null,
       Price: modalEditData.Price,
       Weeks: modalEditData.Weeks,
       NextClean: modalEditData.NextClean,
@@ -2591,6 +2841,23 @@ function WorkloadManager({ user }) {
         })
       
       if (historyError) throw historyError
+
+      if (quoteTurnedIntoJobLetter) {
+        const convertedMessage = messages.find((m) => String(m.id) === String(quoteTurnedIntoJobLetter))
+        if (convertedMessage) {
+          const convertedCustomer = {
+            ...bookJobModal.customer,
+            Outstanding: totalPrice,
+            Price: totalPrice
+          }
+          openSendMethodModal({
+            customer: convertedCustomer,
+            subject: convertedMessage.MessageTitle,
+            body: buildPaymentMessageBody(convertedCustomer, convertedMessage),
+            historyMessage: `Message ${convertedMessage.MessageTitle} sent`
+          })
+        }
+      }
       
       setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
       setShowCustomerModal(false)
@@ -2633,12 +2900,6 @@ function WorkloadManager({ user }) {
   }
 
   const handleSendWhatsApp = (customer) => {
-    const phone = formatPhoneForWhatsApp(customer.PhoneNumber)
-    if (!phone) {
-      alert('This customer does not have a valid phone number.')
-      return
-    }
-
     if (!messages.length) {
       alert('No letters available. Please create a letter first.')
       return
@@ -2647,32 +2908,13 @@ function WorkloadManager({ user }) {
     const selectedId = selectedLetters[customer.id] ?? messages[0]?.id
     let letter = messages.find((m) => String(m.id) === String(selectedId))
     if (!letter && messages.length) letter = messages[0]
-    
-    // Create history record
-    const wlSentSuffix = user?.ParentUserId && user?.UserName ? ` from ${user.UserName}` : ''
-    createCustomerHistory(customer.id, `Message ${letter?.MessageTitle} sent${wlSentSuffix}`)
 
-    const formalName = getFormalCustomerName(customer.CustomerName)
-    const bodyParts = [`Dear ${formalName}`]
-    
-    if (letter?.Message) {
-      let messageContent = letter.Message
-      // Replace currency placeholder dynamically based on user country
-      if (letter.IncludePrice) {
-        const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
-        if (messageContent.includes(symbol)) {
-          messageContent = messageContent.replaceAll(symbol, `${symbol}${customer.Outstanding}`)
-        }
-      }
-      bodyParts.push(messageContent)
-    }
-    
-    if (messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName) bodyParts.push(user.UserName)
-    if (messageFooter) bodyParts.push(messageFooter)
-
-    const text = bodyParts.join('\n')
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
-    window.open(url, '_blank')
+    openSendMethodModal({
+      customer,
+      subject: letter?.MessageTitle || 'Message',
+      body: buildPaymentMessageBody(customer, letter),
+      historyMessage: `Message ${letter?.MessageTitle || 'template'} sent`
+    })
   }
 
   // Generate calendar days
@@ -3301,6 +3543,7 @@ function WorkloadManager({ user }) {
                           className="assigned-dropdown"
                         >
                           <option value="">Unassigned</option>
+                          <option value={ownerUserId || ''}>{currentAccountLabel}</option>
                           {teamMembers.map((member) => (
                             <option key={member.id} value={member.id}>
                               {member.UserName || member.email_address || `User ${member.id}`}
@@ -3580,6 +3823,13 @@ function WorkloadManager({ user }) {
         />
       )}
 
+      <SendMessageMethodModal
+        isOpen={sendMessageModal.show}
+        customer={sendMessageModal.customer}
+        onCancel={closeSendMessageModal}
+        onSend={handleSendMessageModalConfirm}
+      />
+
       {showPersonalItemModal && isAdmin && (
         <div className="modal-overlay" onClick={closePersonalItemModal}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -3696,257 +3946,25 @@ function WorkloadManager({ user }) {
         </div>
       )}
 
-      {showCustomerModal && selectedCustomer && (
-        <div className="modal-overlay" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); setShowHistory(false); }}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); setShowHistory(false); }}>×</button>
-            <h3>{showHistory ? 'Customer History' : showServices ? 'Customer Services' : 'Customer Details'}</h3>
-            
-            <div className="modal-actions">
-              {isEditingModal ? (
-                <>
-                  <button className="modal-save-btn" onClick={handleModalSave}>Save</button>
-                  <button className="modal-cancel-btn" onClick={() => setIsEditingModal(false)}>Cancel</button>
-                </>
-              ) : (
-                <>
-                  {!showServices && !showHistory && <button className="modal-edit-btn" onClick={() => { setIsEditingModal(true); setModalEditData({...selectedCustomer}); setPreferredDaysSelected(parsePreferredDays(selectedCustomer.PrefferedDays)); }}>Edit</button>}
-                  <button className="modal-services-btn" onClick={() => { setShowServices(!showServices); setShowHistory(false); if (!showServices) fetchCustomerServices(selectedCustomer.id); }}>{showServices ? 'Customer Details' : 'Services'}</button>
-                  <button className="modal-history-btn" onClick={() => { setShowHistory(!showHistory); setShowServices(false); if (!showHistory) fetchCustomerHistory(selectedCustomer.id); }}>{showHistory ? 'Customer Details' : 'History'}</button>
-                </>
-              )}
-            </div>
-            
-            {!showServices && !showHistory ? (
-              // Customer Details View
-              isEditingModal ? (
-                <div className="details-grid-edit">
-                  <div className="full-width"><strong>Name:</strong> <input type="text" value={modalEditData.CustomerName} onChange={(e) => setModalEditData({...modalEditData, CustomerName: e.target.value})} className="modal-input" /></div>
-                  <div className="full-width address-section">
-                    <strong>Address:</strong>
-                    <input type="text" value={modalEditData.Address} onChange={(e) => setModalEditData({...modalEditData, Address: e.target.value})} className="modal-input" placeholder="Address Line 1" />
-                    <input type="text" value={modalEditData.Address2} onChange={(e) => setModalEditData({...modalEditData, Address2: e.target.value})} className="modal-input" placeholder="Address Line 2" />
-                    <input type="text" value={modalEditData.Address3} onChange={(e) => setModalEditData({...modalEditData, Address3: e.target.value})} className="modal-input" placeholder="Address Line 3" />
-                  </div>
-                  <div><strong>Postcode:</strong> <input type="text" value={modalEditData.Postcode} onChange={(e) => setModalEditData({...modalEditData, Postcode: e.target.value})} className="modal-input" /></div>
-                  <div><strong>Phone:</strong> <input type="tel" value={modalEditData.PhoneNumber} onChange={(e) => setModalEditData({...modalEditData, PhoneNumber: e.target.value})} className="modal-input" /></div>
-                  <div><strong>Email:</strong> <input type="email" value={modalEditData.EmailAddress} onChange={(e) => setModalEditData({...modalEditData, EmailAddress: e.target.value})} className="modal-input" /></div>
-                  <div><strong>Route:</strong> <input type="text" value={modalEditData.Route} onChange={(e) => setModalEditData({...modalEditData, Route: e.target.value})} className="modal-input" /></div>
-                  <div className="inline-fields">
-                    <div className="inline-field"><strong>Price:</strong> <input type="number" value={modalEditData.Price} onChange={(e) => setModalEditData({...modalEditData, Price: e.target.value})} className="modal-input" /></div>
-                    <div className="inline-field"><strong>Weeks:</strong> <input type="number" value={modalEditData.Weeks} onChange={(e) => setModalEditData({...modalEditData, Weeks: e.target.value})} className="modal-input" /></div>
-                  </div>
-                  <div><strong>Next Clean:</strong> <input type="date" value={modalEditData.NextClean} onChange={(e) => setModalEditData({...modalEditData, NextClean: e.target.value})} className="modal-input" /></div>
-                  <div><strong>Outstanding:</strong> {formatCurrency(selectedCustomer.Outstanding, user.SettingsCountry || 'United Kingdom')}</div>
-                  <div><strong>VAT Registered:</strong> <input type="checkbox" checked={modalEditData.VAT || false} onChange={(e) => setModalEditData({...modalEditData, VAT: e.target.checked})} /></div>
-                  <div className="full-width">
-                    <strong>Preferred Days:</strong>
-                    <div className="days-checkboxes">
-                      {daysOfWeek.map((day, index) => (
-                        <label key={day} style={{ marginRight: '1rem', display: 'inline-flex', alignItems: 'center' }}>
-                          <input 
-                            type="checkbox" 
-                            checked={preferredDaysSelected[day] || false}
-                            onChange={(e) => setPreferredDaysSelected({...preferredDaysSelected, [day]: e.target.checked})}
-                            style={{ marginRight: '0.5rem', cursor: 'pointer' }}
-                          />
-                          {dayShortcuts[index]}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="full-width"><strong>Notes:</strong> <textarea value={modalEditData.Notes} onChange={(e) => { setModalEditData({...modalEditData, Notes: e.target.value}); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'; }} className="modal-input" style={{ minHeight: '40px', maxHeight: '200px', overflow: 'hidden', resize: 'none' }} /></div>
-                </div>
-              ) : (
-                <>
-                <div className="details-grid">
-                  <div><strong>Name:</strong> {selectedCustomer.CustomerName}</div>
-                  <div><strong>Address:</strong> {getFullAddress(selectedCustomer)}</div>
-                  <div><strong>Phone:</strong> {selectedCustomer.PhoneNumber || '—'}</div>
-                  <div><strong>Email:</strong> {selectedCustomer.EmailAddress || '—'}</div>
-                  <div><strong>Price:</strong> {formatCurrency(selectedCustomer.Price, user.SettingsCountry || 'United Kingdom')}</div>
-                  <div><strong>Weeks:</strong> {selectedCustomer.Weeks}</div>
-                  <div><strong>{isQuoteCustomer(selectedCustomer) ? 'Quotation Booked:' : 'Next Clean:'}</strong> {formatDateByCountry(selectedCustomer.NextClean, user.SettingsCountry || 'United Kingdom')}</div>
-                  <div><strong>Outstanding:</strong> {formatCurrency(selectedCustomer.Outstanding, user.SettingsCountry || 'United Kingdom')}</div>
-                  <div><strong>Route:</strong> {selectedCustomer.Route || '—'}</div>
-                  <div><strong>VAT Registered:</strong> {selectedCustomer.VAT ? 'Yes' : 'No'}</div>
-                  <div className="full-width"><strong>Preferred Days:</strong> {selectedCustomer.PrefferedDays || '—'}</div>
-                  <div className="full-width"><strong>Notes:</strong> <div className="notes-display">{selectedCustomer.Notes || '—'}</div></div>
-                </div>
-                <button 
-                  className="cancel-service-btn"
-                  onClick={() => setCancelServiceModal({ show: true, reason: '' })}
-                  title={isQuoteCustomer(selectedCustomer) ? "Cancel this quote" : "Cancel this customer's service"}
-                >
-                  {isQuoteCustomer(selectedCustomer) ? 'Cancel Quote' : 'Cancel Service'}
-                </button>
-                {isQuoteCustomer(selectedCustomer) && (
-                  <button 
-                    className="book-job-btn"
-                    onClick={() => handleBookJob(selectedCustomer)}
-                    title="Convert quote to job"
-                  >
-                    Book Job
-                  </button>
-                )}
-                </>
-              )
-            ) : showHistory ? (
-
-              // History View
-
-              <div className="history-list">
-
-                {customerHistory.length > 0 ? (
-
-                  <table className="history-table">
-
-                    <thead>
-
-                      <tr>
-
-                        <th>Date</th>
-
-                        <th>Message</th>
-
-                      </tr>
-
-                    </thead>
-
-                    <tbody>
-
-                      {customerHistory.map((entry, index) => (
-
-                        <tr key={index}>
-
-                          <td>{formatDateByCountry(entry.created_at, user.SettingsCountry || 'United Kingdom')}</td>
-
-                          <td>{entry.Message}</td>
-
-                        </tr>
-
-                      ))}
-
-                    </tbody>
-
-                  </table>
-
-                ) : (
-
-                  <p>No history found for this customer.</p>
-
-                )}
-
-              </div>
-
-            ) : (
-
-              // Services View
-              <div className="services-list">
-                {!isAddingService ? (
-                  <button className="add-service-btn" onClick={() => setIsAddingService(true)}>+ Add Service</button>
-                ) : (
-                  <div className="new-service-form">
-                    <div className="service-form-row">
-                      <div>
-                        <label><strong>Service:</strong></label>
-                        <input 
-                          type="text" 
-                          value={newServiceData.Service} 
-                          onChange={(e) => setNewServiceData({...newServiceData, Service: e.target.value})} 
-                          className="modal-input"
-                          placeholder="e.g., Windows, Gutters"
-                        />
-                      </div>
-                      <div>
-                        <label><strong>Price:</strong></label>
-                        <input 
-                          type="number" 
-                          value={newServiceData.Price} 
-                          onChange={(e) => setNewServiceData({...newServiceData, Price: e.target.value})} 
-                          className="modal-input"
-                          placeholder="0"
-                        />
-                      </div>
-                      <div>
-                        <label><strong>Description:</strong></label>
-                        <input 
-                          type="text" 
-                          value={newServiceData.Description} 
-                          onChange={(e) => setNewServiceData({...newServiceData, Description: e.target.value})} 
-                          className="modal-input"
-                          placeholder="Optional"
-                        />
-                      </div>
-                    </div>
-                    <div className="service-form-actions">
-                      <button className="modal-save-btn" onClick={handleAddService}>Save</button>
-                      <button className="modal-cancel-btn" onClick={() => { setIsAddingService(false); setNewServiceData({ Service: '', Price: '', Description: '' }); }}>Cancel</button>
-                    </div>
-                  </div>
-                )}
-                
-                {customerServices.length > 0 && (
-                  <table className="services-table">
-                    <thead>
-                      <tr>
-                        <th>Service</th>
-                        <th>Price</th>
-                        <th>Description</th>
-                        <th className="actions-col">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {customerServices.map((service) => (
-                        editingServiceId === service.id ? (
-                          <tr key={service.id} className="editing-row">
-                            <td><input type="text" value={editServiceData.Service} onChange={(e) => setEditServiceData({...editServiceData, Service: e.target.value})} className="modal-input" /></td>
-                            <td><input type="number" value={editServiceData.Price} onChange={(e) => setEditServiceData({...editServiceData, Price: e.target.value})} className="modal-input" /></td>
-                            <td><input type="text" value={editServiceData.Description} onChange={(e) => setEditServiceData({...editServiceData, Description: e.target.value})} className="modal-input" /></td>
-                            <td>
-                              <button className="service-save-btn" onClick={() => handleEditService(service.id)}>✓</button>
-                              <button className="service-cancel-btn" onClick={() => { setEditingServiceId(null); setEditServiceData({}); }}>✕</button>
-                            </td>
-                          </tr>
-                        ) : (
-                          <tr key={service.id}>
-                            <td>{service.Service}</td>
-                            <td>{formatCurrency(service.Price, user.SettingsCountry || 'United Kingdom')}</td>
-                            <td>{service.Description || '—'}</td>
-                            <td className="actions-col">
-                              <button className="service-actions-btn" onClick={() => setServiceDropdownOpen(serviceDropdownOpen === service.id ? null : service.id)}>⋮</button>
-                              {serviceDropdownOpen === service.id && (
-                                <div
-                                  className="service-actions-dropdown"
-                                  ref={(element) => {
-                                    if (element) {
-                                      serviceDropdownRefs.current[service.id] = element
-                                    } else {
-                                      delete serviceDropdownRefs.current[service.id]
-                                    }
-                                  }}
-                                >
-                                  <button onClick={() => { setEditingServiceId(service.id); setEditServiceData({...service}); setServiceDropdownOpen(null); }}>Edit</button>
-                                  <button onClick={() => { handleDeleteService(service.id); setServiceDropdownOpen(null); }}>Delete</button>
-                                  <button onClick={() => { handleAddToNextClean(service); setServiceDropdownOpen(null); }}>Add to Next Clean</button>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-                
-                {customerServices.length === 0 && !isAddingService && (
-                  <p>No services found for this customer.</p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <CustomerDetailsModal
+        isOpen={showCustomerModal && Boolean(selectedCustomer)}
+        customer={selectedCustomer}
+        user={user}
+        onClose={() => {
+          setShowCustomerModal(false)
+          setSelectedCustomer(null)
+        }}
+        onCustomerUpdated={(updatedCustomer) => {
+          setSelectedCustomer(updatedCustomer)
+          setOrderedCustomers((prev) => prev.map((row) => (
+            Number(row.id) === Number(updatedCustomer.id) ? { ...row, ...updatedCustomer } : row
+          )))
+          fetchCustomers()
+        }}
+        onRequestCancelService={() => setCancelServiceModal({ show: true, reason: '' })}
+        onRequestBookJob={() => selectedCustomer && handleBookJob(selectedCustomer)}
+        isQuote={Boolean(selectedCustomer?.Quote)}
+      />
 
       {cancelServiceModal.show && selectedCustomer && (
         <div className="modal-overlay" onClick={() => setCancelServiceModal({ show: false, reason: '' })}>
@@ -4065,7 +4083,7 @@ function InvoiceModalContent({ user, customer, onClose }) {
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0])
   const [services, setServices] = useState([])
   const [items, setItems] = useState([{ mode: 'select', ServiceId: '', Service: '', Price: 0 }])
-  const [showSendOptions, setShowSendOptions] = useState(false)
+  const [savingInvoice, setSavingInvoice] = useState(false)
   const [savedInvoiceData, setSavedInvoiceData] = useState(null)
   const currencySymbol = getCurrencyConfig(user.SettingsCountry || 'United Kingdom').symbol
   const jsPDFRef = typeof window !== 'undefined' && window.jspdf ? window.jspdf.jsPDF : null
@@ -4471,7 +4489,9 @@ function InvoiceModalContent({ user, customer, onClose }) {
     }
   }
 
-  const handleSave = async () => {
+  const handleSave = async ({ shouldDownload }) => {
+    if (savingInvoice) return
+
     if (!invoiceIdText) {
       alert('Please enter an Invoice ID')
       return
@@ -4485,102 +4505,64 @@ function InvoiceModalContent({ user, customer, onClose }) {
       return
     }
 
-    // Create invoice header
-    const { data: invData, error: invErr } = await supabase
-      .from('CustomerInvoices')
-      .insert({
-        CustomerID: customer.id,
-        InvoiceID: invoiceIdText,
-        InvoiceDate: invoiceDate
-      })
-      .select()
+    setSavingInvoice(true)
 
-    if (invErr) {
-      alert('Failed to create invoice: ' + invErr.message)
-      return
-    }
+    try {
+      // Create invoice header
+      const { data: invData, error: invErr } = await supabase
+        .from('CustomerInvoices')
+        .insert({
+          CustomerID: customer.id,
+          InvoiceID: invoiceIdText,
+          InvoiceDate: invoiceDate
+        })
+        .select()
 
-    const invoiceRow = Array.isArray(invData) ? invData[0] : invData
-    const invoicePk = invoiceRow?.id
+      if (invErr) {
+        alert('Failed to create invoice: ' + invErr.message)
+        return
+      }
 
-    // Save service items
-    const itemsPayload = validItems.map((it) => ({
-      InvoiceID: invoicePk,
-      Service: it.Service,
-      Price: parseInt(it.Price) || 0,
-    }))
-    
-    const { error: jobsErr } = await supabase
-      .from('CustomerInvoiceJobs')
-      .insert(itemsPayload)
-      
-    if (jobsErr) {
-      alert('Failed to save invoice items: ' + jobsErr.message)
-      return
-    }
+      const invoiceRow = Array.isArray(invData) ? invData[0] : invData
+      const invoicePk = invoiceRow?.id
 
-    // Save data for PDF generation
-    setSavedInvoiceData({
-      invoiceId: invoiceIdText,
-      invoiceDate: invoiceDate,
-      items: validItems
-    })
+      // Save service items
+      const itemsPayload = validItems.map((it) => ({
+        InvoiceID: invoicePk,
+        Service: it.Service,
+        Price: parseFloat(it.Price) || 0,
+      }))
 
-    // Generate and download PDF directly
-    setTimeout(() => {
-      generateAndDownloadPDF({
+      const { error: jobsErr } = await supabase
+        .from('CustomerInvoiceJobs')
+        .insert(itemsPayload)
+
+      if (jobsErr) {
+        alert('Failed to save invoice items: ' + jobsErr.message)
+        return
+      }
+
+      setSavedInvoiceData({
         invoiceId: invoiceIdText,
-        invoiceDate: invoiceDate,
+        invoiceDate,
         items: validItems
       })
+
+      if (shouldDownload) {
+        generateAndDownloadPDF({
+          invoiceId: invoiceIdText,
+          invoiceDate,
+          items: validItems
+        })
+      }
+
       onClose()
-    }, 100)
+    } finally {
+      setSavingInvoice(false)
+    }
   }
 
   const addressLines = [customer.Address, customer.Address2, customer.Address3, customer.Postcode].filter(Boolean)
-
-  if (showSendOptions) {
-    return (
-      <div className="modal-overlay" onClick={() => onClose()}>
-        <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-          <button className="modal-close" onClick={() => onClose()}>×</button>
-          <h3>Send Invoice?</h3>
-          
-          <div className="modal-buttons" style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
-            {customer.PhoneNumber && (
-              <button className="modal-ok-btn" onClick={sendViaText}>Send via Text</button>
-            )}
-            {customer.EmailAddress && (
-              <>
-                <button className="modal-ok-btn" onClick={sendViaEmail} disabled={false}>Send via Email</button>
-                <button className="modal-ok-btn" onClick={() => {
-                  const email = customer.EmailAddress
-                  const total = savedInvoiceData?.items?.reduce((sum, it) => sum + (parseFloat(it.Price) || 0), 0) || 0
-                  const itemsLines = (savedInvoiceData?.items || []).map(
-                    (it) => `${it.Service} - ${currencySymbol}${(parseFloat(it.Price) || 0).toFixed(2)}`
-                  )
-                  const bodyLines = [
-                    `Invoice ${savedInvoiceData?.invoiceId ?? ''}`,
-                    `Customer: ${customer.CustomerName}`,
-                    `Invoice Date: ${formatDateByCountry(savedInvoiceData?.invoiceDate ?? invoiceDate, user.SettingsCountry || 'United Kingdom')}`,
-                    '',
-                    'Items:',
-                    ...itemsLines,
-                    `Total: ${currencySymbol}${total.toFixed(2)}`,
-                  ]
-                  const subject = `Invoice ${savedInvoiceData?.invoiceId ?? invoiceIdText}`
-                  const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyLines.join('\n'))}`
-                  navigator.clipboard?.writeText(mailto)
-                  alert('Email link copied. If the app did not open, paste this into your browser.')
-                }}>Copy Email Link</button>
-              </>
-            )}
-            <button className="modal-cancel-btn" onClick={() => onClose()}>Do not Send</button>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -4677,7 +4659,8 @@ function InvoiceModalContent({ user, customer, onClose }) {
         </div>
 
         <div className="modal-buttons">
-          <button className="modal-ok-btn" onClick={handleSave}>Save</button>
+          <button className="modal-ok-btn" onClick={() => handleSave({ shouldDownload: false })} disabled={savingInvoice}>{savingInvoice ? 'Saving...' : 'Save and Exit'}</button>
+          <button className="modal-ok-btn" onClick={() => handleSave({ shouldDownload: true })} disabled={savingInvoice}>{savingInvoice ? 'Saving...' : 'Save and Download'}</button>
           <button className="modal-cancel-btn" onClick={onClose}>Cancel</button>
         </div>
       </div>

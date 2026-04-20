@@ -7,6 +7,7 @@ const statusOptions = [
   'queued',
   'sent_e1',
   'sent_e2',
+  'not_replied',
   'sent_e3',
   'replied',
   'registered',
@@ -73,9 +74,9 @@ ${APP_URL}`
     }
   },
   sent_e2: {
-    nextStatus: 'sent_e3',
+    nextStatus: 'not_replied',
     sequenceStep: 'email_3',
-    followUpDays: 7,
+    followUpDays: null,
     subject: () => 'Close this out?',
     body: (lead) => {
       const greeting = lead.owner_name?.trim()
@@ -269,7 +270,8 @@ function LeadsManager({ user }) {
   async function handleStatusChange(lead, value) {
     const updatedLead = {
       ...lead,
-      status: value
+      status: value,
+      next_follow_up: value === 'not_replied' ? '' : lead.next_follow_up
     }
 
     setLeads((prev) => prev.map((row) => {
@@ -413,7 +415,9 @@ function LeadsManager({ user }) {
 
     window.open(gmailUrl, '_blank', 'noopener,noreferrer')
 
-    const nextFollowUp = toIsoDateFromNow(step.followUpDays)
+    const nextFollowUp = Number.isFinite(step.followUpDays)
+      ? toIsoDateFromNow(step.followUpDays)
+      : null
     const payload = {
       ...buildEditableLeadPayload(lead),
       status: step.nextStatus,
@@ -448,6 +452,36 @@ function LeadsManager({ user }) {
     } finally {
       setSavingLeadId(null)
     }
+  }
+
+  async function handleSendNextEmailClick(lead) {
+    const recipient = (lead.email || '').trim().toLowerCase()
+
+    if (recipient) {
+      const duplicateLeads = leads.filter((row) => {
+        if (row.id === lead.id) return false
+        return (row.email || '').trim().toLowerCase() === recipient
+      })
+
+      if (duplicateLeads.length > 0) {
+        const sampleIds = duplicateLeads
+          .map((row) => row.lead_id)
+          .filter(Boolean)
+          .slice(0, 3)
+          .join(', ')
+        const idsNote = sampleIds ? `\nMatching lead(s): ${sampleIds}` : ''
+        const shouldSend = window.confirm(
+          `There is a duplicate email address on another lead. Do you still want to send?${idsNote}`
+        )
+
+        if (!shouldSend) {
+          setStatusMessage('Email send cancelled (duplicate email detected).')
+          return
+        }
+      }
+    }
+
+    await sendNextEmail(lead)
   }
 
   const filteredLeads = useMemo(() => {
@@ -722,7 +756,7 @@ function LeadsManager({ user }) {
                       <button
                         type="button"
                         className="send-next-icon-btn"
-                        onClick={() => sendNextEmail(lead)}
+                        onClick={() => handleSendNextEmailClick(lead)}
                         disabled={savingLeadId === lead.id}
                         title="Send next email"
                         aria-label="Send next email"

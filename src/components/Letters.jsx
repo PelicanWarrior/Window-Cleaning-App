@@ -5,6 +5,7 @@ import { getCurrencyConfig } from '../lib/format'
 
 function Letters({ user }) {
   const isTeamMember = Boolean(user?.ParentUserId)
+  const ownerUserId = user?.ParentUserId || user?.id
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -19,6 +20,9 @@ function Letters({ user }) {
   const [selectedPayLetter, setSelectedPayLetter] = useState('')
   const [selectedReminderLetter, setSelectedReminderLetter] = useState('')
   const [selectedPayChangeLetter, setSelectedPayChangeLetter] = useState('')
+  const [selectedQuoteBookedInLetter, setSelectedQuoteBookedInLetter] = useState('')
+  const [selectedQuoteTurnedIntoJobLetter, setSelectedQuoteTurnedIntoJobLetter] = useState('')
+  const [quoteTurnedIntoJobIncludeBookedServices, setQuoteTurnedIntoJobIncludeBookedServices] = useState(false)
   const [activeTab, setActiveTab] = useState('Messages')
   const [formData, setFormData] = useState({
     MessageTitle: '',
@@ -27,19 +31,22 @@ function Letters({ user }) {
   })
 
   useEffect(() => {
+    if (!ownerUserId) return
     fetchMessages()
     fetchCustomerPayLetter()
     fetchCustomerReminderLetter()
     fetchCustomerPayChangeLetter()
+    fetchQuoteBookedInLetter()
+    fetchQuoteTurnedIntoJobLetter()
     if (!isTeamMember) fetchTeamMemberCount()
-  }, [])
+  }, [ownerUserId])
 
   async function fetchMessages() {
     try {
       const { data, error } = await supabase
         .from('Messages')
         .select('*')
-        .eq('UserId', user.id)
+        .eq('UserId', ownerUserId)
         .order('id', { ascending: true })
       
       if (error) throw error
@@ -56,7 +63,7 @@ function Letters({ user }) {
       const { data, error } = await supabase
         .from('Users')
         .select('CustomerPayLetter')
-        .eq('id', user.id)
+        .eq('id', ownerUserId)
         .single()
       
       if (error) throw error
@@ -71,7 +78,7 @@ function Letters({ user }) {
       const { data, error } = await supabase
         .from('Users')
         .select('CustomerReminderLetter')
-        .eq('id', user.id)
+        .eq('id', ownerUserId)
         .single()
       
       if (error) throw error
@@ -100,7 +107,7 @@ function Letters({ user }) {
       const { data, error } = await supabase
         .from('Users')
         .select('PayChangeLetter')
-        .eq('id', user.id)
+        .eq('id', ownerUserId)
         .single()
       
       if (error) throw error
@@ -110,13 +117,50 @@ function Letters({ user }) {
     }
   }
 
+  async function fetchQuoteBookedInLetter() {
+    try {
+      const { data, error } = await supabase
+        .from('Users')
+        .select('QuoteBookedInLetter')
+        .eq('id', ownerUserId)
+        .single()
+
+      if (error) throw error
+      setSelectedQuoteBookedInLetter(data?.QuoteBookedInLetter || '')
+    } catch (error) {
+      console.error('Error fetching quote booked in letter:', error.message)
+      if (String(error.message || '').toLowerCase().includes('quotebookedinletter')) {
+        alert('Quote defaults are not available in Supabase yet. Please run the latest database migration to add QuoteBookedInLetter and QuoteTurnedIntoJobLetter.')
+      }
+    }
+  }
+
+  async function fetchQuoteTurnedIntoJobLetter() {
+    try {
+      const { data, error } = await supabase
+        .from('Users')
+        .select('QuoteTurnedIntoJobLetter, QuoteTurnedIntoJobIncludeBookedServices')
+        .eq('id', ownerUserId)
+        .single()
+
+      if (error) throw error
+      setSelectedQuoteTurnedIntoJobLetter(data?.QuoteTurnedIntoJobLetter || '')
+      setQuoteTurnedIntoJobIncludeBookedServices(Boolean(data?.QuoteTurnedIntoJobIncludeBookedServices))
+    } catch (error) {
+      console.error('Error fetching quote turned into job letter:', error.message)
+      if (String(error.message || '').toLowerCase().includes('quoteturnedintojobletter')) {
+        alert('Quote defaults are not available in Supabase yet. Please run the latest database migration to add QuoteBookedInLetter, QuoteTurnedIntoJobLetter and QuoteTurnedIntoJobIncludeBookedServices.')
+      }
+    }
+  }
+
   async function handlePayLetterChange(letterId) {
     setSelectedPayLetter(letterId)
     try {
       const { error } = await supabase
         .from('Users')
         .update({ CustomerPayLetter: letterId })
-        .eq('id', user.id)
+        .eq('id', ownerUserId)
       
       if (error) throw error
     } catch (error) {
@@ -130,7 +174,7 @@ function Letters({ user }) {
       const { error } = await supabase
         .from('Users')
         .update({ CustomerReminderLetter: letterId })
-        .eq('id', user.id)
+        .eq('id', ownerUserId)
       
       if (error) throw error
     } catch (error) {
@@ -144,11 +188,65 @@ function Letters({ user }) {
       const { error } = await supabase
         .from('Users')
         .update({ PayChangeLetter: letterId })
-        .eq('id', user.id)
+        .eq('id', ownerUserId)
       
       if (error) throw error
     } catch (error) {
       console.error('Error updating pay change letter:', error.message)
+    }
+  }
+
+  async function handleQuoteBookedInLetterChange(letterId) {
+    const previousValue = selectedQuoteBookedInLetter
+    setSelectedQuoteBookedInLetter(letterId)
+    try {
+      const { error } = await supabase
+        .from('Users')
+        .update({ QuoteBookedInLetter: letterId || null })
+        .eq('id', ownerUserId)
+
+      if (error) throw error
+      await fetchQuoteBookedInLetter()
+    } catch (error) {
+      setSelectedQuoteBookedInLetter(previousValue)
+      console.error('Error updating quote booked in letter:', error.message)
+      alert('Could not save "When a Quote is booked in" default to Supabase. If this is a new field, run the latest migration first.')
+    }
+  }
+
+  async function handleQuoteTurnedIntoJobLetterChange(letterId) {
+    const previousValue = selectedQuoteTurnedIntoJobLetter
+    setSelectedQuoteTurnedIntoJobLetter(letterId)
+    try {
+      const { error } = await supabase
+        .from('Users')
+        .update({ QuoteTurnedIntoJobLetter: letterId || null })
+        .eq('id', ownerUserId)
+
+      if (error) throw error
+      await fetchQuoteTurnedIntoJobLetter()
+    } catch (error) {
+      setSelectedQuoteTurnedIntoJobLetter(previousValue)
+      console.error('Error updating quote turned into job letter:', error.message)
+      alert('Could not save "When a Quote is Turned into a Job" default to Supabase. If this is a new field, run the latest migration first.')
+    }
+  }
+
+  async function handleQuoteTurnedIntoJobIncludeBookedServicesChange(checked) {
+    const previousValue = quoteTurnedIntoJobIncludeBookedServices
+    setQuoteTurnedIntoJobIncludeBookedServices(checked)
+    try {
+      const { error } = await supabase
+        .from('Users')
+        .update({ QuoteTurnedIntoJobIncludeBookedServices: checked })
+        .eq('id', ownerUserId)
+
+      if (error) throw error
+      await fetchQuoteTurnedIntoJobLetter()
+    } catch (error) {
+      setQuoteTurnedIntoJobIncludeBookedServices(previousValue)
+      console.error('Error updating quote turned into job include booked services:', error.message)
+      alert('Could not save "Include the Booked Services" option to Supabase. If this is a new field, run the latest migration first.')
     }
   }
 
@@ -364,6 +462,58 @@ function Letters({ user }) {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="quote-booked-in-letter-section">
+            <label htmlFor="quoteBookedInLetterSelect" className="quote-booked-in-letter-label">
+              This message will be offered when a quote is booked in
+            </label>
+            <select
+              id="quoteBookedInLetterSelect"
+              value={selectedQuoteBookedInLetter || ''}
+              onChange={(e) => handleQuoteBookedInLetterChange(e.target.value)}
+              className="quote-booked-in-letter-select"
+            >
+              <option value="">Select a message...</option>
+              {messages.map((message) => (
+                <option key={message.id} value={message.id}>
+                  {message.MessageTitle}
+                </option>
+              ))}
+            </select>
+            <p style={{ marginTop: '0.5rem', marginBottom: 0 }}>
+              Will include the phrase The quote is booked in for (Quote Date)
+            </p>
+          </div>
+
+          <div className="quote-turned-job-letter-section">
+            <label htmlFor="quoteTurnedIntoJobLetterSelect" className="quote-turned-job-letter-label">
+              This message will be offered when a quote is turned into a job
+            </label>
+            <select
+              id="quoteTurnedIntoJobLetterSelect"
+              value={selectedQuoteTurnedIntoJobLetter || ''}
+              onChange={(e) => handleQuoteTurnedIntoJobLetterChange(e.target.value)}
+              className="quote-turned-job-letter-select"
+            >
+              <option value="">Select a message...</option>
+              {messages.map((message) => (
+                <option key={message.id} value={message.id}>
+                  {message.MessageTitle}
+                </option>
+              ))}
+            </select>
+            <p style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>
+              Includes the phrase The job is booked for (Job date)
+            </p>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+              <input
+                type="checkbox"
+                checked={quoteTurnedIntoJobIncludeBookedServices}
+                onChange={(e) => handleQuoteTurnedIntoJobIncludeBookedServicesChange(e.target.checked)}
+              />
+              Include the Booked Services
+            </label>
           </div>
         </>
       )}

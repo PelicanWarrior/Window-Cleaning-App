@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import './CustomerList.css'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
+import { openMessageViaMethod } from '../lib/contactDelivery'
+import { createInvoiceAttachment } from '../lib/invoiceAttachment'
 import { getOwnerUserId, isOwnerUser } from '../lib/team'
 import {
   flushOfflineMutationQueue,
@@ -15,10 +17,13 @@ import {
 } from '../lib/offlineCache'
 import InvoicesModal from './InvoicesModal'
 import InvoiceModalContent from './InvoiceModalNew'
+import SendMessageMethodModal from './SendMessageMethodModal'
+import CustomerDetailsModal from './CustomerDetailsModal'
 
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 function CustomerList({ user, isGuest = false, onRequireAuth }) {
+  const isTeamMember = Boolean(user?.ParentUserId)
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
   const [offlineCacheInfo, setOfflineCacheInfo] = useState({ usingCache: false, savedAt: null })
@@ -77,6 +82,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   const [invoiceModal, setInvoiceModal] = useState({ show: false, customer: null })
   const [invoicesListModal, setInvoicesListModal] = useState({ show: false, customer: null })
   const [changePriceModal, setChangePriceModal] = useState({ show: false, price: '' })
+  const [sendMessageModal, setSendMessageModal] = useState({ show: false, customer: null, subject: '', body: '', historyMessage: '' })
   const [showCSVImportModal, setShowCSVImportModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportFields, setExportFields] = useState([])
@@ -715,6 +721,68 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
     return parts.join(', ')
   }
 
+  const closeSendMessageModal = () => {
+    setSendMessageModal({ show: false, customer: null, subject: '', body: '', historyMessage: '' })
+  }
+
+  const openSendMethodModal = ({ customer, subject, body, historyMessage }) => {
+    setSendMessageModal({
+      show: true,
+      customer,
+      subject: subject || 'Message',
+      body: body || '',
+      historyMessage: historyMessage || 'Message sent'
+    })
+  }
+
+  const addCustomerHistoryEntry = async (customerId, message) => {
+    try {
+      await supabase.from('CustomerHistory').insert({ CustomerID: customerId, Message: message })
+    } catch (error) {
+      console.error('Error adding customer history entry:', error.message)
+    }
+  }
+
+  const handleSendMessageModalConfirm = async (method, selectedInvoice) => {
+    let attachment = null
+    if (selectedInvoice) {
+      const attachmentResult = await createInvoiceAttachment({
+        invoice: selectedInvoice,
+        customer: sendMessageModal.customer,
+        user
+      })
+
+      if (!attachmentResult.ok) {
+        alert(attachmentResult.error || 'Unable to prepare invoice attachment.')
+        return
+      }
+
+      attachment = {
+        blob: attachmentResult.blob,
+        filename: attachmentResult.filename
+      }
+    }
+
+    const result = await openMessageViaMethod({
+      method,
+      customer: sendMessageModal.customer,
+      subject: sendMessageModal.subject,
+      body: sendMessageModal.body,
+      attachment
+    })
+
+    if (!result.ok) {
+      alert(result.error)
+      return
+    }
+
+    if (sendMessageModal.customer?.id) {
+      await addCustomerHistoryEntry(sendMessageModal.customer.id, `${sendMessageModal.historyMessage} via ${method}`)
+    }
+
+    closeSendMessageModal()
+  }
+
   const getDefaultExportFields = () => {
     const excludedFields = new Set(['Quote', 'NextServices', 'UserId', 'id'])
     const fallbackFields = [
@@ -897,12 +965,6 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       return
     }
 
-    const phone = formatPhoneForWhatsApp(customer.PhoneNumber)
-    if (!phone) {
-      alert('This customer does not have a valid phone number.')
-      return
-    }
-
     const formalName = getFormalCustomerName(customer.CustomerName)
     const bodyParts = [`Dear ${formalName}`]
     
@@ -921,26 +983,14 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
     if (messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName) bodyParts.push(user.UserName)
     if (messageFooter) bodyParts.push(messageFooter)
 
-    const text = bodyParts.join('\n')
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
-    window.open(url, '_blank')
-    
-    // Add to CustomerHistory
-    try {
-      const clPaySuffix = user?.ParentUserId && user?.UserName ? ` from ${user.UserName}` : ''
-      const { error } = await supabase
-        .from('CustomerHistory')
-        .insert({
-          CustomerID: customer.id,
-          Message: `Message Pay Reminder Sent${clPaySuffix}`
-        })
-      
-      if (error) throw error
-    } catch (error) {
-      console.error('Error adding to history:', error.message)
-    }
-    
-    // Close the dropdown after sending
+    openSendMethodModal({
+      customer,
+      subject: reminderLetter.MessageTitle || 'Pay Reminder',
+      body: bodyParts.join('\n'),
+      historyMessage: 'Message Pay Reminder Sent'
+    })
+
+    // Close the dropdown after opening send options
     setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
   }
 
@@ -1314,12 +1364,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
 
       setChangePriceModal({ show: false, price: '' })
       
-      // Ask if user wants to notify customer
-      const notifyCustomer = window.confirm('Notify Customer of Price Change?')
-      
-      if (notifyCustomer) {
-        await handleNotifyPriceChange(selectedCustomer.id, newPrice)
-      }
+      await handleNotifyPriceChange(selectedCustomer.id, newPrice)
       
       fetchCustomers() // Refresh the customer list
     } catch (error) {
@@ -1368,7 +1413,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       // Get the message text from Messages table
       const { data: messageData, error: messageError } = await supabase
         .from('Messages')
-        .select('Message')
+        .select('Message, MessageTitle')
         .eq('id', userData.PayChangeLetter)
         .single()
 
@@ -1377,16 +1422,11 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       // Get customer details
       const { data: customerData, error: customerError } = await supabase
         .from('Customers')
-        .select('PhoneNumber, CustomerName')
+        .select('id, PhoneNumber, EmailAddress, CustomerName, PrefferedContact')
         .eq('id', customerId)
         .single()
 
       if (customerError) throw customerError
-
-      if (!customerData?.PhoneNumber) {
-        alert('Customer does not have a phone number.')
-        return
-      }
 
       // Replace currency symbol with currency symbol + new price
       const currencySymbol = getCurrencyConfig(user.SettingsCountry || 'United Kingdom').symbol
@@ -1418,18 +1458,12 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       const footer = messageFooter ? `\n\n${messageFooter}` : ''
       const fullMessage = greeting + messageText + employeeLine + footer
 
-      // Format phone number for WhatsApp (same method as WorkloadManager)
-      const digits = (customerData.PhoneNumber || '').replace(/\D/g, '')
-      let phoneNumber = digits
-      // If UK local (starts with 0 and length 11), convert to +44
-      if (digits.length === 11 && digits.startsWith('0')) {
-        phoneNumber = `44${digits.slice(1)}`
-      }
-      
-      const encodedMessage = encodeURIComponent(fullMessage)
-      const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodedMessage}`
-      
-      window.open(whatsappUrl, '_blank')
+      openSendMethodModal({
+        customer: customerData,
+        subject: messageData.MessageTitle || 'Price Change',
+        body: fullMessage,
+        historyMessage: 'Price change notification sent'
+      })
     } catch (error) {
       console.error('Error sending price change notification:', error.message)
       alert('Failed to send notification. Please try again.')
@@ -1445,6 +1479,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       Postcode: modalEditData.Postcode,
       PhoneNumber: modalEditData.PhoneNumber,
       EmailAddress: modalEditData.EmailAddress,
+      PrefferedContact: modalEditData.PrefferedContact || null,
       Price: modalEditData.Price,
       Weeks: modalEditData.Weeks,
       NextClean: modalEditData.NextClean,
@@ -2555,7 +2590,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
                                   </>
                                 ) : (
                                   <>
-                                    {reminderLetter && (
+                                    {!isTeamMember && (
                                       <button
                                         className="reminder-btn"
                                         onClick={() => sendReminderMessage(customer)}
@@ -2668,303 +2703,24 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
         )}
       </div>
 
-      {showCustomerModal && selectedCustomer && (
-        <div className="modal-overlay customer-details-overlay" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); setShowHistory(false); }}>
-          <div
-            className="modal-content customer-modal-main"
-            style={{
-              width: 'min(96vw, 820px)',
-              maxWidth: '820px',
-              maxHeight: '88vh',
-              overflowY: 'auto',
-              overflowX: 'hidden',
-              padding: '1rem 1.25rem',
-              boxSizing: 'border-box'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button className="modal-close" onClick={() => { setShowCustomerModal(false); setIsEditingModal(false); setShowServices(false); setShowHistory(false); }}>×</button>
-            <h3>{showHistory ? 'Customer History' : showServices ? 'Customer Services' : 'Customer Details'}</h3>
-            
-            <div
-              className="modal-actions customer-modal-actions"
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '0.75rem',
-                marginBottom: '1rem',
-                paddingBottom: '0.9rem',
-                borderBottom: '1px solid rgba(21, 101, 192, 0.2)'
-              }}
-            >
-              {isEditingModal ? (
-                <>
-                  <button className="modal-save-btn customer-modal-action-btn" style={{ minWidth: '88px' }} onClick={handleModalSave}>Save</button>
-                  <button className="modal-cancel-btn customer-modal-action-btn" style={{ minWidth: '88px' }} onClick={() => setIsEditingModal(false)}>Cancel</button>
-                </>
-              ) : (
-                <>
-                  {!showServices && !showHistory && <button className="modal-edit-btn customer-modal-action-btn" style={{ minWidth: '88px' }} onClick={() => { setIsEditingModal(true); setModalEditData({...selectedCustomer}); setPreferredDaysSelected(parsePreferredDays(selectedCustomer.PrefferedDays)); }}>Edit</button>}
-                  <button className="modal-services-btn customer-modal-action-btn" style={{ minWidth: '96px' }} onClick={() => { setShowServices(!showServices); setShowHistory(false); if (!showServices) fetchCustomerServices(selectedCustomer.id); }}>{showServices ? 'Customer Details' : 'Services'}</button>
-                  <button className="modal-history-btn customer-modal-action-btn" style={{ minWidth: '96px' }} onClick={() => { setShowHistory(!showHistory); setShowServices(false); if (!showHistory) fetchCustomerHistory(selectedCustomer.id); }}>{showHistory ? 'Customer Details' : 'History'}</button>
-                </>
-              )}
-            </div>
-            
-            {!showServices && !showHistory ? (
-              // Customer Details View
-              isEditingModal ? (
-                <div className="details-grid-edit customer-edit-form">
-                  <div className="full-width customer-edit-field">
-                    <label className="customer-edit-label">Name</label>
-                    <input type="text" value={modalEditData.CustomerName} onChange={(e) => setModalEditData({...modalEditData, CustomerName: e.target.value})} className="modal-input" />
-                  </div>
-                  <div className="full-width address-section customer-edit-field">
-                    <label className="customer-edit-label">Address</label>
-                    <input type="text" value={modalEditData.Address} onChange={(e) => setModalEditData({...modalEditData, Address: e.target.value})} className="modal-input" placeholder="Address Line 1" />
-                    <input type="text" value={modalEditData.Address2} onChange={(e) => setModalEditData({...modalEditData, Address2: e.target.value})} className="modal-input" placeholder="Address Line 2" />
-                    <input type="text" value={modalEditData.Address3} onChange={(e) => setModalEditData({...modalEditData, Address3: e.target.value})} className="modal-input" placeholder="Address Line 3" />
-                  </div>
-                  <div className="customer-edit-field">
-                    <label className="customer-edit-label">Postcode</label>
-                    <input type="text" value={modalEditData.Postcode} onChange={(e) => setModalEditData({...modalEditData, Postcode: e.target.value})} className="modal-input" />
-                  </div>
-                  <div className="customer-edit-field">
-                    <label className="customer-edit-label">Phone</label>
-                    <input type="tel" value={modalEditData.PhoneNumber} onChange={(e) => setModalEditData({...modalEditData, PhoneNumber: e.target.value})} className="modal-input" />
-                  </div>
-                  <div className="customer-edit-field">
-                    <label className="customer-edit-label">Email</label>
-                    <input type="email" value={modalEditData.EmailAddress} onChange={(e) => setModalEditData({...modalEditData, EmailAddress: e.target.value})} className="modal-input" />
-                  </div>
-                  <div className="customer-edit-field">
-                    <label className="customer-edit-label">Route</label>
-                    <input type="text" value={modalEditData.Route} onChange={(e) => setModalEditData({...modalEditData, Route: e.target.value})} className="modal-input" />
-                  </div>
-                  <div className="inline-fields full-width">
-                    <div className="inline-field customer-edit-field">
-                      <label className="customer-edit-label">Price</label>
-                      <input type="number" value={modalEditData.Price} onChange={(e) => setModalEditData({...modalEditData, Price: e.target.value})} className="modal-input" />
-                    </div>
-                    <div className="inline-field customer-edit-field">
-                      <label className="customer-edit-label">Weeks</label>
-                      <input type="number" value={modalEditData.Weeks} onChange={(e) => setModalEditData({...modalEditData, Weeks: e.target.value})} className="modal-input" />
-                    </div>
-                  </div>
-                  <div className="customer-edit-field">
-                    <label className="customer-edit-label">Next Clean</label>
-                    <input type="date" value={modalEditData.NextClean} onChange={(e) => setModalEditData({...modalEditData, NextClean: e.target.value})} className="modal-input" />
-                  </div>
-                  <div className="customer-edit-field">
-                    <label className="customer-edit-label">Outstanding</label>
-                    <input type="number" value={modalEditData.Outstanding} onChange={(e) => setModalEditData({...modalEditData, Outstanding: e.target.value})} className="modal-input" />
-                  </div>
-                  <div className="customer-edit-field customer-edit-checkbox full-width">
-                    <label className="customer-edit-label">VAT Registered</label>
-                    <input type="checkbox" checked={modalEditData.VAT || false} onChange={(e) => setModalEditData({...modalEditData, VAT: e.target.checked})} />
-                  </div>
-                  <div className="full-width customer-edit-field">
-                    <label className="customer-edit-label">Preferred Days</label>
-                    <div className="days-checkboxes">
-                      {daysOfWeek.map((day, index) => (
-                        <label key={day} className="day-checkbox-item">
-                          <input 
-                            type="checkbox" 
-                            checked={preferredDaysSelected[day] || false}
-                            onChange={(e) => setPreferredDaysSelected({...preferredDaysSelected, [day]: e.target.checked})}
-                            style={{ cursor: 'pointer' }}
-                          />
-                          {dayShortcuts[index]}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="full-width customer-edit-field">
-                    <label className="customer-edit-label">Notes</label>
-                    <textarea value={modalEditData.Notes} onChange={(e) => { setModalEditData({...modalEditData, Notes: e.target.value}); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px'; }} className="modal-input" style={{ minHeight: '40px', maxHeight: '200px', overflow: 'hidden', resize: 'none' }} />
-                  </div>
-                </div>
-              ) : (
-                <>
-                <div className="details-grid">
-                  <div><strong>Name:</strong> {selectedCustomer.CustomerName}</div>
-                  <div><strong>Address:</strong> {getFullAddress(selectedCustomer)}</div>
-                  <div><strong>Phone:</strong> {selectedCustomer.PhoneNumber || '—'}</div>
-                  <div><strong>Email:</strong> {selectedCustomer.EmailAddress || '—'}</div>
-                  <div><strong>Price:</strong> {formatCurrency(selectedCustomer.Price, user.SettingsCountry || 'United Kingdom')}</div>
-                  <div><strong>Weeks:</strong> {selectedCustomer.Weeks}</div>
-                  <div><strong>Next Clean:</strong> {formatDateByCountry(selectedCustomer.NextClean, user.SettingsCountry || 'United Kingdom')}</div>
-                  <div><strong>Outstanding:</strong> {formatCurrency(selectedCustomer.Outstanding, user.SettingsCountry || 'United Kingdom')}</div>
-                  <div><strong>Route:</strong> {selectedCustomer.Route || '—'}</div>
-                  <div><strong>VAT Registered:</strong> {selectedCustomer.VAT ? 'Yes' : 'No'}</div>
-                  <div className="full-width"><strong>Preferred Days:</strong> {selectedCustomer.PrefferedDays || '—'}</div>
-                  <div className="full-width"><strong>Notes:</strong> <div className="notes-display">{selectedCustomer.Notes || '—'}</div></div>
-                </div>
-                <button 
-                  className="cancel-service-btn"
-                  onClick={() => setCancelServiceModal({ show: true, reason: '' })}
-                  title="Cancel this customer's service"
-                >
-                  Cancel Service
-                </button>
-                </>
-              )
-            ) : showHistory ? (
-
-              // History View
-
-              <div className="history-list">
-
-                {customerHistory.length > 0 ? (
-
-                  <table className="history-table">
-
-                    <thead>
-
-                      <tr>
-
-                        <th>Date</th>
-
-                        <th>Message</th>
-
-                      </tr>
-
-                    </thead>
-
-                    <tbody>
-
-                      {customerHistory.map((entry, index) => (
-
-                        <tr key={index}>
-
-                          <td>{formatDateByCountry(entry.created_at, user.SettingsCountry || 'United Kingdom')}</td>
-
-                          <td>{entry.Message}</td>
-
-                        </tr>
-
-                      ))}
-
-                    </tbody>
-
-                  </table>
-
-                ) : (
-
-                  <p>No history found for this customer.</p>
-
-                )}
-
-              </div>
-
-            ) : (
-
-              // Services View
-              <div className="services-list">
-                {!isAddingService ? (
-                  <button className="add-service-btn" onClick={() => setIsAddingService(true)}>+ Add Service</button>
-                ) : (
-                  <div className="new-service-form">
-                    <div className="service-form-row">
-                      <div>
-                        <label><strong>Service:</strong></label>
-                        <input 
-                          type="text" 
-                          value={newServiceData.Service} 
-                          onChange={(e) => setNewServiceData({...newServiceData, Service: e.target.value})} 
-                          className="modal-input"
-                          placeholder="e.g., Windows, Gutters"
-                        />
-                      </div>
-                      <div>
-                        <label><strong>Price:</strong></label>
-                        <input 
-                          type="number" 
-                          value={newServiceData.Price} 
-                          onChange={(e) => setNewServiceData({...newServiceData, Price: e.target.value})} 
-                          className="modal-input"
-                          placeholder="0"
-                        />
-                      </div>
-                      <div>
-                        <label><strong>Description:</strong></label>
-                        <input 
-                          type="text" 
-                          value={newServiceData.Description} 
-                          onChange={(e) => setNewServiceData({...newServiceData, Description: e.target.value})} 
-                          className="modal-input"
-                          placeholder="Optional"
-                        />
-                      </div>
-                    </div>
-                    <div className="service-form-actions">
-                      <button className="modal-save-btn" onClick={handleAddService}>Save</button>
-                      <button className="modal-cancel-btn" onClick={() => { setIsAddingService(false); setNewServiceData({ Service: '', Price: '', Description: '' }); }}>Cancel</button>
-                    </div>
-                  </div>
-                )}
-                
-                {customerServices.length > 0 && (
-                  <table className="services-table">
-                    <thead>
-                      <tr>
-                        <th>Service</th>
-                        <th>Price</th>
-                        <th>Description</th>
-                        <th className="actions-col">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {customerServices.map((service) => (
-                        editingServiceId === service.id ? (
-                          <tr key={service.id} className="editing-row">
-                            <td><input type="text" value={editServiceData.Service} onChange={(e) => setEditServiceData({...editServiceData, Service: e.target.value})} className="modal-input" /></td>
-                            <td><input type="number" value={editServiceData.Price} onChange={(e) => setEditServiceData({...editServiceData, Price: e.target.value})} className="modal-input" /></td>
-                            <td><input type="text" value={editServiceData.Description} onChange={(e) => setEditServiceData({...editServiceData, Description: e.target.value})} className="modal-input" /></td>
-                            <td>
-                              <button className="service-save-btn" onClick={() => handleEditService(service.id)}>✓</button>
-                              <button className="service-cancel-btn" onClick={() => { setEditingServiceId(null); setEditServiceData({}); }}>✕</button>
-                            </td>
-                          </tr>
-                        ) : (
-                          <tr key={service.id}>
-                            <td>{service.Service}</td>
-                            <td>{formatCurrency(service.Price, user.SettingsCountry || 'United Kingdom')}</td>
-                            <td>{service.Description || '—'}</td>
-                            <td className="actions-col">
-                              <button className="service-actions-btn" onClick={() => setServiceDropdownOpen(serviceDropdownOpen === service.id ? null : service.id)}>⋮</button>
-                              {serviceDropdownOpen === service.id && (
-                                <div
-                                  className="service-actions-dropdown"
-                                  ref={(element) => {
-                                    if (element) {
-                                      serviceDropdownRefs.current[service.id] = element
-                                    } else {
-                                      delete serviceDropdownRefs.current[service.id]
-                                    }
-                                  }}
-                                >
-                                  <button onClick={() => { setEditingServiceId(service.id); setEditServiceData({...service}); setServiceDropdownOpen(null); }}>Edit</button>
-                                  <button onClick={() => { handleDeleteService(service.id); setServiceDropdownOpen(null); }}>Delete</button>
-                                  <button onClick={() => { handleAddToNextClean(service); setServiceDropdownOpen(null); }}>Add to Next Clean</button>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-                
-                {customerServices.length === 0 && !isAddingService && (
-                  <p>No services found for this customer.</p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <CustomerDetailsModal
+        isOpen={showCustomerModal && Boolean(selectedCustomer)}
+        customer={selectedCustomer}
+        user={user}
+        onClose={() => {
+          setShowCustomerModal(false)
+          setSelectedCustomer(null)
+        }}
+        onCustomerUpdated={(updatedCustomer) => {
+          setSelectedCustomer(updatedCustomer)
+          setCustomers((prev) => prev.map((row) => (
+            Number(row.id) === Number(updatedCustomer.id) ? { ...row, ...updatedCustomer } : row
+          )))
+          fetchCustomers()
+        }}
+        onRequestCancelService={() => setCancelServiceModal({ show: true, reason: '' })}
+        isQuote={false}
+      />
 
       {cancelServiceModal.show && selectedCustomer && (
         <div className="modal-overlay simple-modal-overlay" onClick={() => setCancelServiceModal({ show: false, reason: '' })}>
@@ -3043,6 +2799,13 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
           onClose={() => setInvoiceModal({ show: false, customer: null })}
         />
       )}
+
+      <SendMessageMethodModal
+        isOpen={sendMessageModal.show}
+        customer={sendMessageModal.customer}
+        onCancel={closeSendMessageModal}
+        onSend={handleSendMessageModalConfirm}
+      />
 
       {showCSVImportModal && (
         <div className="modal-overlay simple-modal-overlay" onClick={() => setShowCSVImportModal(false)}>

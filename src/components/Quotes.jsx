@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatDateByCountry, formatCurrency, getCurrencyConfig } from '../lib/format'
+import { openMessageViaMethod } from '../lib/contactDelivery'
+import { createInvoiceAttachment } from '../lib/invoiceAttachment'
+import SendMessageMethodModal from './SendMessageMethodModal'
 import './Quotes.css'
 
 function Quotes({ user }) {
@@ -36,7 +39,16 @@ function Quotes({ user }) {
   const [showHistory, setShowHistory] = useState(false)
   const [customerHistory, setCustomerHistory] = useState([])
   const [bookJobModal, setBookJobModal] = useState(createEmptyBookJobModal())
+  const [bookJobServiceData, setBookJobServiceData] = useState({ Service: '', Price: '', Description: '' })
+  const [bookJobSavingService, setBookJobSavingService] = useState(false)
   const [routeOptions, setRouteOptions] = useState([])
+  const [messages, setMessages] = useState([])
+  const [quoteBookedInLetter, setQuoteBookedInLetter] = useState('')
+  const [quoteTurnedIntoJobLetter, setQuoteTurnedIntoJobLetter] = useState('')
+  const [quoteTurnedIntoJobIncludeBookedServices, setQuoteTurnedIntoJobIncludeBookedServices] = useState(false)
+  const [messageFooter, setMessageFooter] = useState('')
+  const [messageFooterIncludeEmployee, setMessageFooterIncludeEmployee] = useState(false)
+  const [sendMessageModal, setSendMessageModal] = useState({ show: false, customer: null, subject: '', body: '', historyMessage: '' })
 
   useEffect(() => {
     if (!serviceDropdownOpen) return
@@ -56,6 +68,7 @@ function Quotes({ user }) {
     Postcode: '',
     PhoneNumber: '',
     EmailAddress: '',
+    PrefferedContact: '',
     Notes: '',
     QuoteDate: ''
   })
@@ -67,6 +80,11 @@ function Quotes({ user }) {
   useEffect(() => {
     if (user?.id) fetchRouteOptions()
   }, [user])
+
+  useEffect(() => {
+    if (user?.id) fetchMessagingDefaults()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
 
   const fetchRouteOptions = async () => {
     try {
@@ -93,7 +111,7 @@ function Quotes({ user }) {
     try {
       const { data, error } = await supabase
         .from('Customers')
-        .select('id, CustomerName, Address, Address2, Address3, Postcode, PhoneNumber, EmailAddress, Notes, NextClean, Price, Weeks, Route, Outstanding')
+        .select('id, CustomerName, Address, Address2, Address3, Postcode, PhoneNumber, EmailAddress, PrefferedContact, Notes, NextClean, Price, Weeks, Route, Outstanding')
         .eq('UserId', user.id)
         .eq('Quote', true)
         .order('CustomerName', { ascending: true })
@@ -104,6 +122,312 @@ function Quotes({ user }) {
       console.error('Error fetching quotes:', err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchMessagingDefaults = async () => {
+    const ownerUserId = user?.ParentUserId || user?.id
+    if (!ownerUserId) return
+
+    try {
+      const { data: messagesData, error: messagesError } = await supabase
+        .from('Messages')
+        .select('*')
+        .eq('UserId', ownerUserId)
+        .order('MessageTitle', { ascending: true })
+
+      if (messagesError) throw messagesError
+      setMessages(messagesData || [])
+
+      // Try new columns first. If migration is not yet applied, fall back gracefully.
+      const { data: userData, error: userError } = await supabase
+        .from('Users')
+        .select('QuoteBookedInLetter, QuoteTurnedIntoJobLetter, QuoteTurnedIntoJobIncludeBookedServices, MessageFooter, MessageFooterIncludeEmployee')
+        .eq('id', ownerUserId)
+        .single()
+
+      if (userError) {
+        const { data: fallbackUserData, error: fallbackUserError } = await supabase
+          .from('Users')
+          .select('MessageFooter, MessageFooterIncludeEmployee')
+          .eq('id', ownerUserId)
+          .single()
+
+        if (fallbackUserError) throw fallbackUserError
+
+        setQuoteBookedInLetter('')
+        setQuoteTurnedIntoJobLetter('')
+        setQuoteTurnedIntoJobIncludeBookedServices(false)
+        setMessageFooter(fallbackUserData?.MessageFooter || '')
+        setMessageFooterIncludeEmployee(Boolean(fallbackUserData?.MessageFooterIncludeEmployee))
+        return
+      }
+
+      setQuoteBookedInLetter(userData?.QuoteBookedInLetter || '')
+      setQuoteTurnedIntoJobLetter(userData?.QuoteTurnedIntoJobLetter || '')
+      setQuoteTurnedIntoJobIncludeBookedServices(Boolean(userData?.QuoteTurnedIntoJobIncludeBookedServices))
+      setMessageFooter(userData?.MessageFooter || '')
+      setMessageFooterIncludeEmployee(Boolean(userData?.MessageFooterIncludeEmployee))
+    } catch (err) {
+      console.error('Error fetching quote message defaults:', err.message)
+    }
+  }
+
+  const formatPhoneForWhatsApp = (raw) => {
+    const digits = (raw || '').replace(/\D/g, '')
+    if (!digits) return ''
+    if (digits.length === 11 && digits.startsWith('0')) return `44${digits.slice(1)}`
+    return digits
+  }
+
+  const getFormalCustomerName = (rawName) => {
+    const name = (rawName || '').trim()
+    if (!name) return 'Customer'
+
+    const connectorMatch = name.match(/^(\S+)\s*(&|and)\s+(\S+)/i)
+    if (connectorMatch) {
+      const [, first, connector, second] = connectorMatch
+      return `${first} ${connector.trim()} ${second}`
+    }
+
+    const firstToken = name.split(/\s+/)[0]
+    return firstToken || 'Customer'
+  }
+
+  const formatDateShort = (dateValue) => {
+    if (!dateValue) return ''
+    const source = String(dateValue).includes('T') ? String(dateValue).split('T')[0] : String(dateValue)
+    const match = source.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (!match) return ''
+
+    const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+  }
+
+  const buildBookedServicesTableLines = (services = []) => {
+    if (!services.length) return []
+
+    const rows = services.map((service) => ({
+      name: String(service?.Service || '').trim() || 'Service',
+      price: formatCurrency(parseFloat(service?.Price) || 0, user.SettingsCountry || 'United Kingdom')
+    }))
+
+    const nameWidth = Math.max(...rows.map((row) => row.name.length))
+    const priceWidth = Math.max(...rows.map((row) => row.price.length))
+
+    return rows.map((row) => `${row.name.padEnd(nameWidth)} | ${row.price.padStart(priceWidth)}`)
+  }
+
+  const findMessageTemplate = (preferredId, fallbackTitles = []) => {
+    if (!messages.length) return null
+
+    if (preferredId) {
+      const preferred = messages.find((m) => String(m.id) === String(preferredId))
+      if (preferred) return preferred
+    }
+
+    const normalizedTitles = fallbackTitles
+      .map((title) => String(title || '').trim().toLowerCase())
+      .filter(Boolean)
+
+    if (!normalizedTitles.length) return null
+
+    return messages.find((m) => normalizedTitles.includes(String(m.MessageTitle || '').trim().toLowerCase())) || null
+  }
+
+  const buildTemplateMessageBody = (customer, messageTemplate, options = {}) => {
+    const {
+      includePriceAmount = null,
+      quoteDateValue = '',
+      jobDateValue = '',
+      jobIsOneOff = false,
+      recurrenceWeeks = null,
+      includeBookedServices = false,
+      bookedServices = [],
+      totalPrice = null
+    } = options
+
+    const formalName = getFormalCustomerName(customer?.CustomerName)
+    const bodyParts = [`Dear ${formalName}`]
+
+    if (messageTemplate?.Message) {
+      let messageContent = messageTemplate.Message
+
+      if (messageTemplate.IncludePrice) {
+        const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+        const amount = includePriceAmount == null
+          ? (parseFloat(customer?.Outstanding) || 0)
+          : (parseFloat(includePriceAmount) || 0)
+        if (messageContent.includes(symbol)) {
+          messageContent = messageContent.replaceAll(symbol, `${symbol}${amount}`)
+        }
+      }
+
+      bodyParts.push(messageContent)
+    }
+
+    if (includeBookedServices && bookedServices.length > 0) {
+      bodyParts.push('Booked Services:')
+      const tableLines = buildBookedServicesTableLines(bookedServices)
+      tableLines.forEach((line) => bodyParts.push(line))
+      const computedTotal = totalPrice == null
+        ? bookedServices.reduce((sum, service) => sum + (parseFloat(service?.Price) || 0), 0)
+        : totalPrice
+      bodyParts.push(`TOTAL: ${formatCurrency(computedTotal, user.SettingsCountry || 'United Kingdom')}`)
+    }
+
+    const quoteDateText = formatDateShort(quoteDateValue)
+    if (quoteDateText) {
+      bodyParts.push(`The quote is booked in for ${quoteDateText}`)
+    }
+
+    const jobDateText = formatDateShort(jobDateValue)
+    if (jobDateText) {
+      let bookingPhrase = `The job is booked for ${jobDateText}`
+      if (jobIsOneOff) {
+        bookingPhrase += ' and is a one off clean'
+      } else {
+        const weeksValue = parseInt(recurrenceWeeks, 10)
+        if (Number.isFinite(weeksValue) && weeksValue > 0) {
+          bookingPhrase += ` and will continue every ${weeksValue} weeks`
+        }
+      }
+      bodyParts.push(bookingPhrase)
+    }
+
+    if (messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName) bodyParts.push(user.UserName)
+    if (messageFooter) bodyParts.push(messageFooter)
+
+    return bodyParts.join('\n')
+  }
+
+  const createCustomerHistoryEntry = async (customerId, historyMessage) => {
+    try {
+      await supabase.from('CustomerHistory').insert({ CustomerID: customerId, Message: historyMessage })
+    } catch (historyError) {
+      console.error('Error writing WhatsApp message history:', historyError.message)
+    }
+  }
+
+  const buildQuoteBookedInFallbackBody = (customer, quoteDateValue = '') => {
+    const formalName = getFormalCustomerName(customer?.CustomerName)
+    const bodyParts = [`Dear ${formalName}`]
+    const quoteDateText = formatDateShort(quoteDateValue)
+    if (quoteDateText) {
+      bodyParts.push(`The quote is booked in for ${quoteDateText}`)
+    } else {
+      bodyParts.push('The quote is booked in.')
+    }
+
+    if (messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName) bodyParts.push(user.UserName)
+    if (messageFooter) bodyParts.push(messageFooter)
+
+    return bodyParts.join('\n')
+  }
+
+  const closeSendMessageModal = () => {
+    setSendMessageModal({ show: false, customer: null, subject: '', body: '', historyMessage: '' })
+  }
+
+  const openSendMethodModal = ({ customer, subject, body, historyMessage }) => {
+    setSendMessageModal({
+      show: true,
+      customer,
+      subject: subject || 'Message',
+      body: body || '',
+      historyMessage: historyMessage || 'Message sent'
+    })
+  }
+
+  const handleSendMessageModalConfirm = async (method, selectedInvoice) => {
+    let attachment = null
+    if (selectedInvoice) {
+      const attachmentResult = await createInvoiceAttachment({
+        invoice: selectedInvoice,
+        customer: sendMessageModal.customer,
+        user
+      })
+
+      if (!attachmentResult.ok) {
+        alert(attachmentResult.error || 'Unable to prepare invoice attachment.')
+        return
+      }
+
+      attachment = {
+        blob: attachmentResult.blob,
+        filename: attachmentResult.filename
+      }
+    }
+
+    const result = await openMessageViaMethod({
+      method,
+      customer: sendMessageModal.customer,
+      subject: sendMessageModal.subject,
+      body: sendMessageModal.body,
+      attachment
+    })
+
+    if (!result.ok) {
+      alert(result.error)
+      return
+    }
+
+    if (sendMessageModal.customer?.id) {
+      await createCustomerHistoryEntry(sendMessageModal.customer.id, `${sendMessageModal.historyMessage} via ${method}`)
+    }
+
+    closeSendMessageModal()
+  }
+
+  const closeBookJobModal = () => {
+    setBookJobModal(createEmptyBookJobModal())
+    setBookJobServiceData({ Service: '', Price: '', Description: '' })
+    setBookJobSavingService(false)
+  }
+
+  const handleBookJobAddService = async () => {
+    if (!bookJobModal.customer?.id) return
+
+    const serviceName = String(bookJobServiceData.Service || '').trim()
+    if (!serviceName) {
+      alert('Please enter a service name')
+      return
+    }
+
+    setBookJobSavingService(true)
+    try {
+      const { data: insertedService, error } = await supabase
+        .from('CustomerPrices')
+        .insert({
+          CustomerID: bookJobModal.customer.id,
+          Service: serviceName,
+          Price: parseFloat(bookJobServiceData.Price) || 0,
+          Description: String(bookJobServiceData.Description || '').trim()
+        })
+        .select('*')
+        .single()
+
+      if (error) throw error
+
+      setBookJobModal((prev) => {
+        const nextServices = [...prev.services, insertedService]
+        const nextSelected = insertedService?.id
+          ? [...new Set([...prev.selectedServices, insertedService.id])]
+          : prev.selectedServices
+
+        return {
+          ...prev,
+          services: nextServices,
+          selectedServices: nextSelected
+        }
+      })
+
+      setBookJobServiceData({ Service: '', Price: '', Description: '' })
+    } catch (error) {
+      console.error('Error adding service in book job modal:', error.message)
+      alert('Failed to add service. Please try again.')
+    } finally {
+      setBookJobSavingService(false)
     }
   }
 
@@ -149,6 +473,7 @@ function Quotes({ user }) {
           Postcode: modalEditData.Postcode,
           PhoneNumber: modalEditData.PhoneNumber,
           EmailAddress: modalEditData.EmailAddress,
+          PrefferedContact: modalEditData.PrefferedContact,
           Price: modalEditData.Price,
           Weeks: modalEditData.Weeks,
           NextClean: modalEditData.NextClean,
@@ -250,6 +575,7 @@ function Quotes({ user }) {
         Postcode: quoteData.Postcode,
         PhoneNumber: quoteData.PhoneNumber,
         EmailAddress: quoteData.EmailAddress,
+        PrefferedContact: quoteData.PrefferedContact || null,
         Notes: quoteData.Notes,
         NextClean: quoteData.QuoteDate || null,
         Price: 0,
@@ -278,6 +604,24 @@ function Quotes({ user }) {
           })
       }
 
+      if (insertData) {
+        const bookedInTemplate = findMessageTemplate(quoteBookedInLetter, [
+          'When a Quote is booked in',
+          'Quote booked in'
+        ])
+
+        openSendMethodModal({
+          customer: insertData,
+          subject: bookedInTemplate?.MessageTitle || 'Quote booked in',
+          body: bookedInTemplate
+            ? buildTemplateMessageBody(insertData, bookedInTemplate, { quoteDateValue: payload.NextClean })
+            : buildQuoteBookedInFallbackBody(insertData, payload.NextClean),
+          historyMessage: bookedInTemplate
+            ? `Message ${bookedInTemplate.MessageTitle} sent`
+            : 'Quote booked in message sent'
+        })
+      }
+
       await fetchQuotes()
       setQuoteData({
         CustomerName: '',
@@ -287,6 +631,7 @@ function Quotes({ user }) {
         Postcode: '',
         PhoneNumber: '',
         EmailAddress: '',
+        PrefferedContact: '',
         Notes: '',
         QuoteDate: ''
       })
@@ -308,21 +653,6 @@ function Quotes({ user }) {
       
       if (error) throw error
       
-      if (!services || services.length === 0) {
-        alert('You need to add at least 1 service')
-        // Open the customer modal and navigate to services tab
-        setSelectedQuote(customer)
-        setModalEditData({ ...customer })
-        setShowQuoteModal(true)
-        setShowServices(true)
-        setShowHistory(false)
-        setIsEditingModal(false)
-        setServiceDropdownOpen(null)
-        setEditingServiceId(null)
-        setIsAddingService(false)
-        return
-      }
-      
       // Show date and service picker modal
       const customerRoute = String(customer.Route || '').trim()
       const customerWeeks = Number.isFinite(parseInt(customer.Weeks, 10)) ? parseInt(customer.Weeks, 10) : 4
@@ -338,6 +668,8 @@ function Quotes({ user }) {
         oneOff: customerWeeks === 0,
         weeks: customerWeeks === 0 ? 4 : customerWeeks
       })
+      setBookJobServiceData({ Service: '', Price: '', Description: '' })
+      setBookJobSavingService(false)
     } catch (error) {
       console.error('Error checking services:', error.message)
       alert('Error checking services: ' + error.message)
@@ -391,8 +723,30 @@ function Quotes({ user }) {
         })
       
       if (historyError) throw historyError
+
+      const turnedTemplate = findMessageTemplate(quoteTurnedIntoJobLetter, [
+        'When a Quote is Turned into a Job',
+        'Quote turned into a job'
+      ])
+
+      openSendMethodModal({
+        customer: bookJobModal.customer,
+        subject: turnedTemplate?.MessageTitle || 'Quote turned into a job',
+        body: buildTemplateMessageBody(bookJobModal.customer, turnedTemplate || null, {
+          includePriceAmount: totalPrice,
+          jobDateValue: bookJobModal.selectedDate,
+          jobIsOneOff: bookJobModal.oneOff,
+          recurrenceWeeks: resolvedWeeks,
+          includeBookedServices: quoteTurnedIntoJobIncludeBookedServices,
+          bookedServices: selectedServiceObjects,
+          totalPrice
+        }),
+        historyMessage: turnedTemplate
+          ? `Message ${turnedTemplate.MessageTitle} sent`
+          : 'Quote turned into a job message sent'
+      })
       
-      setBookJobModal(createEmptyBookJobModal())
+      closeBookJobModal()
       setShowQuoteModal(false)
       fetchRouteOptions()
       fetchQuotes()
@@ -482,6 +836,19 @@ function Quotes({ user }) {
                 onChange={(e) => handleChange('EmailAddress', e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="form-row">
+            <label>Preferred Contact</label>
+            <select
+              value={quoteData.PrefferedContact}
+              onChange={(e) => handleChange('PrefferedContact', e.target.value)}
+            >
+              <option value="">Select preferred contact</option>
+              <option value="E-Mail">E-Mail</option>
+              <option value="Text">Text</option>
+              <option value="Phone">Phone</option>
+            </select>
           </div>
 
           <div className="form-row">
@@ -581,6 +948,7 @@ function Quotes({ user }) {
                   <div><strong>Postcode:</strong> <input type="text" value={modalEditData.Postcode} onChange={(e) => setModalEditData({...modalEditData, Postcode: e.target.value})} className="modal-input" /></div>
                   <div><strong>Phone:</strong> <input type="tel" value={modalEditData.PhoneNumber} onChange={(e) => setModalEditData({...modalEditData, PhoneNumber: e.target.value})} className="modal-input" /></div>
                   <div><strong>Email:</strong> <input type="email" value={modalEditData.EmailAddress} onChange={(e) => setModalEditData({...modalEditData, EmailAddress: e.target.value})} className="modal-input" /></div>
+                  <div><strong>Preferred Contact:</strong> <select value={modalEditData.PrefferedContact || ''} onChange={(e) => setModalEditData({...modalEditData, PrefferedContact: e.target.value})} className="modal-input"><option value="">Select preferred contact</option><option value="E-Mail">E-Mail</option><option value="Text">Text</option><option value="Phone">Phone</option></select></div>
                   <div><strong>Price:</strong> <input type="number" value={modalEditData.Price} onChange={(e) => setModalEditData({...modalEditData, Price: e.target.value})} className="modal-input" /></div>
                   <div><strong>Weeks:</strong> <input type="number" value={modalEditData.Weeks} onChange={(e) => setModalEditData({...modalEditData, Weeks: e.target.value})} className="modal-input" /></div>
                   <div><strong>Quote Date:</strong> <input type="date" value={modalEditData.NextClean || ''} onChange={(e) => setModalEditData({...modalEditData, NextClean: e.target.value})} className="modal-input" /></div>
@@ -595,6 +963,7 @@ function Quotes({ user }) {
                   <div><strong>Address:</strong> {[selectedQuote.Address, selectedQuote.Address2, selectedQuote.Address3, selectedQuote.Postcode].filter(Boolean).join(', ')}</div>
                   <div><strong>Phone:</strong> {selectedQuote.PhoneNumber || '—'}</div>
                   <div><strong>Email:</strong> {selectedQuote.EmailAddress || '—'}</div>
+                  <div><strong>Preferred Contact:</strong> {selectedQuote.PrefferedContact || '—'}</div>
                   <div><strong>Price:</strong> {formatCurrency(selectedQuote.Price || 0, user.SettingsCountry || 'United Kingdom')}</div>
                   <div><strong>Weeks:</strong> {selectedQuote.Weeks || '—'}</div>
                   <div><strong>Quote Date:</strong> {selectedQuote.NextClean ? formatDateByCountry(selectedQuote.NextClean, user.SettingsCountry || 'United Kingdom') : '—'}</div>
@@ -765,7 +1134,7 @@ function Quotes({ user }) {
       )}
 
       {bookJobModal.show && bookJobModal.customer && (
-        <div className="modal-overlay" onClick={() => setBookJobModal(createEmptyBookJobModal())}>
+        <div className="modal-overlay" onClick={closeBookJobModal}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>Book Job for {bookJobModal.customer.CustomerName}</h3>
             <div className="modal-form">
@@ -825,6 +1194,41 @@ function Quotes({ user }) {
                   />
                 </div>
               </div>
+
+              <label style={{ marginTop: '1rem' }}>Add Service:</label>
+              <div className="book-job-add-service-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '0.5rem' }}>
+                <input
+                  type="text"
+                  value={bookJobServiceData.Service}
+                  onChange={(e) => setBookJobServiceData((prev) => ({ ...prev, Service: e.target.value }))}
+                  className="modal-input"
+                  placeholder="Service name"
+                />
+                <input
+                  type="number"
+                  value={bookJobServiceData.Price}
+                  onChange={(e) => setBookJobServiceData((prev) => ({ ...prev, Price: e.target.value }))}
+                  className="modal-input"
+                  placeholder="Price"
+                />
+              </div>
+              <input
+                type="text"
+                value={bookJobServiceData.Description}
+                onChange={(e) => setBookJobServiceData((prev) => ({ ...prev, Description: e.target.value }))}
+                className="modal-input"
+                placeholder="Description (optional)"
+                style={{ marginTop: '0.5rem' }}
+              />
+              <button
+                type="button"
+                onClick={handleBookJobAddService}
+                className="modal-ok-btn"
+                style={{ marginTop: '0.5rem', width: 'fit-content' }}
+                disabled={bookJobSavingService}
+              >
+                {bookJobSavingService ? 'Adding...' : 'Add Service'}
+              </button>
               
               {bookJobModal.services.length > 0 && (
                 <>
@@ -869,6 +1273,10 @@ function Quotes({ user }) {
                   )}
                 </>
               )}
+
+              {bookJobModal.services.length === 0 && (
+                <p style={{ marginTop: '1rem' }}>Add at least one service, then select it to continue.</p>
+              )}
             </div>
             <div className="modal-buttons">
               <button 
@@ -878,7 +1286,7 @@ function Quotes({ user }) {
                 Save
               </button>
               <button 
-                onClick={() => setBookJobModal(createEmptyBookJobModal())}
+                onClick={closeBookJobModal}
                 className="modal-cancel-btn"
               >
                 Cancel
@@ -887,6 +1295,13 @@ function Quotes({ user }) {
           </div>
         </div>
       )}
+
+      <SendMessageMethodModal
+        isOpen={sendMessageModal.show}
+        customer={sendMessageModal.customer}
+        onCancel={closeSendMessageModal}
+        onSend={handleSendMessageModalConfirm}
+      />
     </div>
   )
 }
