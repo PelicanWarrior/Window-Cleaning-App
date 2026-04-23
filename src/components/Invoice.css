@@ -45,3 +45,9 @@
   margin-top: 8px;
   color: #555;
 }
+
+.invoice-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatCurrency, getCountryUpdateFields, getUserCountry } from '../lib/format'
 import { APP_VERSION } from '../config/appVersion'
+import { getFunctionErrorMessage, startGoCardlessConnect } from '../lib/gocardless'
 import './Settings.css'
 
 const COUNTRY_OPTIONS = [
@@ -18,26 +19,6 @@ const COUNTRY_OPTIONS = [
 ]
 
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-async function getFunctionErrorMessage(error, fallback) {
-  if (error?.context) {
-    try {
-      const json = await error.context.json()
-      if (json?.error) return json.error
-      if (json?.message) return json.message
-      return JSON.stringify(json)
-    } catch {
-      try {
-        const text = await error.context.text()
-        if (text) return text
-      } catch {
-        // ignore
-      }
-    }
-  }
-
-  return error?.message || fallback
-}
 
 function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest = false, onRequireAuth }) {
   const isAdmin = Boolean(user?.admin)
@@ -69,6 +50,8 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
   const [portalLoading, setPortalLoading] = useState(false)
   const [portalError, setPortalError] = useState('')
   const [connectionStatus, setConnectionStatus] = useState('')
+  const [goCardlessLoading, setGoCardlessLoading] = useState(false)
+  const [goCardlessError, setGoCardlessError] = useState('')
   const [currentAccountLevelId, setCurrentAccountLevelId] = useState(user.AccountLevel || null)
   const [systemSubject, setSystemSubject] = useState('')
   const [systemMessage, setSystemMessage] = useState('')
@@ -404,6 +387,24 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
     }
   }
 
+  const handleConnectGoCardless = async () => {
+    if (isGuest) {
+      onRequireAuth?.()
+      return
+    }
+
+    setGoCardlessError('')
+    try {
+      setGoCardlessLoading(true)
+      const data = await startGoCardlessConnect(user.id)
+      window.location.assign(data.url)
+    } catch (err) {
+      setGoCardlessError(err.message || 'Unable to start GoCardless connection')
+    } finally {
+      setGoCardlessLoading(false)
+    }
+  }
+
   const handleSave = async () => {
     if (isGuest) {
       onRequireAuth?.()
@@ -526,6 +527,13 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
             style={{ display: isTeamMember ? 'none' : 'button' }}
           >
             Account Level
+          </button>
+          <button
+            className={activeTab === 'payments' ? 'active' : ''}
+            onClick={() => setActiveTab('payments')}
+            style={{ display: isTeamMember ? 'none' : 'button' }}
+          >
+            Payments
           </button>
           <button
             className={activeTab === 'system' ? 'active' : ''}
@@ -777,6 +785,44 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
                   )}
                 </>
               )}
+            </div>
+            <div className="settings-actions">
+              <button className="cancel-btn" onClick={onClose}>Close</button>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'payments' && !isTeamMember && (
+          <>
+            <div className="payments-content">
+              <div className="payments-card">
+                <h4 className="payments-title">GoCardless</h4>
+                <p className="payments-note">
+                  Connect GoCardless so you can request Direct Debit mandates from customer records and collect invoice payments from inside the app.
+                </p>
+                <div className="payments-status-row">
+                  <span className={`payments-badge ${user?.GoCardlessConnected ? 'connected' : 'disconnected'}`}>
+                    {user?.GoCardlessConnected ? 'Connected' : 'Not connected'}
+                  </span>
+                  {user?.GoCardlessOrganisationId && (
+                    <span className="payments-meta">Organisation: {user.GoCardlessOrganisationId}</span>
+                  )}
+                </div>
+                {goCardlessError && <p className="account-level-error">{goCardlessError}</p>}
+                {user?.GoCardlessConnectionStatus && (
+                  <p className="payments-meta">Status: {user.GoCardlessConnectionStatus}</p>
+                )}
+                <button
+                  className="payments-connect-btn"
+                  onClick={handleConnectGoCardless}
+                  disabled={goCardlessLoading}
+                >
+                  {goCardlessLoading ? 'Opening GoCardless...' : user?.GoCardlessConnected ? 'Reconnect GoCardless' : 'Connect GoCardless'}
+                </button>
+                <p className="payments-help">
+                  After connecting, use the customer details view to request a Direct Debit mandate, then use invoice creation to collect via GoCardless.
+                </p>
+              </div>
             </div>
             <div className="settings-actions">
               <button className="cancel-btn" onClick={onClose}>Close</button>

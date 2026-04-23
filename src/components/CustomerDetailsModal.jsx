@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
+import { createGoCardlessFlow, syncGoCardlessMandateStatus, syncGoCardlessBillingRequest } from '../lib/gocardless'
 import './CustomerList.css'
 
 function CustomerDetailsModal({
@@ -29,6 +30,7 @@ function CustomerDetailsModal({
   const [editServiceData, setEditServiceData] = useState({})
   const [serviceDropdownOpen, setServiceDropdownOpen] = useState(null)
   const [preferredDaysSelected, setPreferredDaysSelected] = useState({})
+  const [goCardlessLoading, setGoCardlessLoading] = useState(false)
 
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
   const dayShortcuts = ['Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat', 'Sun']
@@ -61,6 +63,16 @@ function CustomerDetailsModal({
     .join(', ') || '—'
 
   const invoiceDetailsTotal = invoiceDetailsModal.items.reduce((sum, item) => sum + (parseFloat(item.Price) || 0), 0)
+
+  const formatGoCardlessStatusLabel = (status, hasMandate) => {
+    const normalized = String(status || '').trim().toLowerCase()
+    if (hasMandate && (!normalized || normalized === 'pending_submission')) return 'Set Up'
+    if (!normalized) return 'Not set up'
+    return normalized
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  }
 
   function parsePreferredDays(preferredDaysString) {
     if (!preferredDaysString) return {}
@@ -406,6 +418,110 @@ function CustomerDetailsModal({
     }
   }
 
+  const handleSetupGoCardlessMandate = async () => {
+    if (!user?.GoCardlessConnected) {
+      alert('Connect GoCardless first in Settings > Payments.')
+      return
+    }
+
+    try {
+      setGoCardlessLoading(true)
+      const data = await createGoCardlessFlow({
+        userId: user.id,
+        customerId: customer.id,
+      })
+      window.location.assign(data.url)
+    } catch (error) {
+      alert(error.message || 'Unable to start GoCardless mandate setup.')
+    } finally {
+      setGoCardlessLoading(false)
+    }
+  }
+
+  const handleSyncGoCardlessStatus = async () => {
+    if (!user?.GoCardlessConnected) {
+      alert('Connect GoCardless first in Settings > Payments.')
+      return
+    }
+
+    if (!customer?.GoCardlessMandateId) {
+      alert('Customer does not have a mandate to sync.')
+      return
+    }
+
+    try {
+      setGoCardlessLoading(true)
+      const result = await syncGoCardlessMandateStatus({
+        userId: user.id,
+        customerId: customer.id,
+      })
+      alert(`Mandate status: ${formatGoCardlessStatusLabel(result.mandateStatus, true)}`)
+      // Update customer object with synced status
+      const updatedCustomer = {
+        ...customer,
+        GoCardlessMandateStatus: result.mandateStatus,
+      }
+      if (onCustomerUpdated) {
+        onCustomerUpdated(updatedCustomer)
+      }
+    } catch (error) {
+      alert(error.message || 'Unable to sync mandate status.')
+    } finally {
+      setGoCardlessLoading(false)
+    }
+  }
+
+  const handleSyncGoCardlessBillingRequest = async () => {
+    if (!user?.GoCardlessConnected) {
+      alert('Connect GoCardless first in Settings > Payments.')
+      return
+    }
+
+    const billingRequestId = customer?.GoCardlessBillingRequestId
+    if (!billingRequestId) {
+      alert('Customer does not have a billing request ID to sync.')
+      return
+    }
+
+    try {
+      setGoCardlessLoading(true)
+      const result = await syncGoCardlessBillingRequest({
+        userId: user.id,
+        billingRequestId: billingRequestId,
+      })
+
+      let finalMandateStatus = result.mandateStatus || 'pending_submission'
+      let finalMandateId = result.mandateId
+
+      // If we got a mandate ID, do a direct mandate status check to get the real live status
+      if (result.mandateId) {
+        try {
+          const statusResult = await syncGoCardlessMandateStatus({
+            userId: user.id,
+            customerId: customer.id,
+          })
+          finalMandateStatus = statusResult.mandateStatus || finalMandateStatus
+        } catch {
+          // use status from billing request sync as fallback
+        }
+      }
+
+      alert(`Sync complete. Mandate status: ${formatGoCardlessStatusLabel(finalMandateStatus, Boolean(finalMandateId))}`)
+      const updatedCustomer = {
+        ...customer,
+        GoCardlessMandateId: finalMandateId,
+        GoCardlessMandateStatus: finalMandateStatus,
+      }
+      if (onCustomerUpdated) {
+        onCustomerUpdated(updatedCustomer)
+      }
+    } catch (error) {
+      alert(error.message || 'Unable to sync billing request.')
+    } finally {
+      setGoCardlessLoading(false)
+    }
+  }
+
   const closeModal = () => {
     setIsEditingModal(false)
     setShowServices(false)
@@ -613,9 +729,43 @@ function CustomerDetailsModal({
                   <div><strong>Outstanding:</strong> {formatCurrency(customer.Outstanding, user.SettingsCountry || 'United Kingdom')}</div>
                   <div><strong>Route:</strong> {customer.Route || '—'}</div>
                   <div><strong>VAT Registered:</strong> {customer.VAT ? 'Yes' : 'No'}</div>
+                  <div><strong>GoCardless:</strong> {formatGoCardlessStatusLabel(customer.GoCardlessMandateStatus, Boolean(customer.GoCardlessMandateId))}</div>
                   <div className="full-width"><strong>Preferred Days:</strong> {customer.PrefferedDays || '—'}</div>
                   <div className="full-width"><strong>Notes:</strong> <div className="notes-display">{customer.Notes || '—'}</div></div>
                 </div>
+
+                <button
+                  className="modal-save-btn customer-modal-action-btn"
+                  onClick={handleSetupGoCardlessMandate}
+                  disabled={goCardlessLoading}
+                  style={{ marginTop: '0.85rem', minWidth: '180px' }}
+                >
+                  {goCardlessLoading ? 'Opening GoCardless...' : customer.GoCardlessMandateId ? 'Refresh Direct Debit Setup' : 'Set Up Direct Debit'}
+                </button>
+
+                {customer.GoCardlessBillingRequestId && !customer.GoCardlessMandateId && (
+                  <button
+                    className="modal-save-btn customer-modal-action-btn"
+                    onClick={handleSyncGoCardlessBillingRequest}
+                    disabled={goCardlessLoading}
+                    style={{ marginTop: '0.85rem', minWidth: '180px', marginLeft: '0.5rem' }}
+                    title="Sync billing request to extract mandate details"
+                  >
+                    {goCardlessLoading ? 'Syncing...' : 'Sync Billing Request'}
+                  </button>
+                )}
+
+                {customer.GoCardlessMandateId && (
+                  <button
+                    className="modal-save-btn customer-modal-action-btn"
+                    onClick={handleSyncGoCardlessStatus}
+                    disabled={goCardlessLoading}
+                    style={{ marginTop: '0.85rem', minWidth: '180px', marginLeft: '0.5rem' }}
+                    title="Check GoCardless for latest mandate status"
+                  >
+                    {goCardlessLoading ? 'Syncing...' : 'Sync Mandate Status'}
+                  </button>
+                )}
 
                 {onRequestCancelService && (
                   <button

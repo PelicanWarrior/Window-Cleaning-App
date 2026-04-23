@@ -11,6 +11,7 @@ import AdminPanel from './components/AdminPanel'
 import logo1 from '../public/Logo1.png'
 import { supabase } from './lib/supabase'
 import { normalizeUserCountryFields } from './lib/format'
+import { syncGoCardlessBillingRequest } from './lib/gocardless'
 
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const PREVIEW_USER = {
@@ -108,6 +109,44 @@ function App() {
       listener?.subscription?.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const goCardlessParam = params.get('gocardless')
+    const billingRequestId = params.get('billing_request_id')
+
+    if (!goCardlessParam) return
+
+    const run = async () => {
+      try {
+        if (goCardlessParam === 'connected') {
+          setCheckoutStatus('success')
+          setStatusMessage('GoCardless connected successfully.')
+          await refreshUserData()
+        } else if (goCardlessParam === 'flow_return' && user?.id && billingRequestId) {
+          setCheckoutStatus('success')
+          setStatusMessage('GoCardless flow completed. Syncing payment details...')
+          await syncGoCardlessBillingRequest({ userId: user.id, billingRequestId })
+          setStatusMessage('GoCardless flow completed and synced.')
+        } else if (goCardlessParam === 'flow_exit') {
+          setCheckoutStatus('cancelled')
+          setStatusMessage('GoCardless flow was closed before completion.')
+        } else if (goCardlessParam === 'connect_error') {
+          setCheckoutStatus('cancelled')
+          setStatusMessage(params.get('message') || 'Unable to connect GoCardless.')
+        }
+      } catch (error) {
+        setCheckoutStatus('cancelled')
+        setStatusMessage(error?.message || 'GoCardless action failed.')
+      } finally {
+        window.history.replaceState({}, document.title, window.location.pathname)
+        setTimeout(() => setCheckoutStatus(null), 5000)
+      }
+    }
+
+    if (goCardlessParam === 'flow_return' && !user?.id) return
+    run()
+  }, [user])
 
   // Handle checkout success/cancel redirects
   useEffect(() => {

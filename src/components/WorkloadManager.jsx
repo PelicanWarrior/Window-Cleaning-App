@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import './WorkloadManager.css'
 import { formatCurrency, formatDateByCountry, getCurrencyConfig } from '../lib/format'
+import { createGoCardlessFlow, collectGoCardlessPayment } from '../lib/gocardless'
 import { openMessageViaMethod } from '../lib/contactDelivery'
 import { createInvoiceAttachment } from '../lib/invoiceAttachment'
 import { getOwnerUserId, isOwnerUser } from '../lib/team'
@@ -76,6 +77,8 @@ function WorkloadManager({ user }) {
   const [cancelServiceModal, setCancelServiceModal] = useState({ show: false, reason: '' })
   const [bookJobModal, setBookJobModal] = useState({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
   const [invoiceModal, setInvoiceModal] = useState({ show: false, customer: null })
+  const [goCardlessLoadingCustomerId, setGoCardlessLoadingCustomerId] = useState(null)
+  const [gcConfirmModal, setGcConfirmModal] = useState({ open: false, customer: null, amount: '' })
   const [selectedRoutes, setSelectedRoutes] = useState([])
   const [calendarView, setCalendarView] = useState('Monthly')
   const [weeklyWeather, setWeeklyWeather] = useState({})
@@ -1517,7 +1520,7 @@ function WorkloadManager({ user }) {
   }
 
   // Handle Done and Paid
-  const handleDoneAndPaid = async (customer) => {
+  const handleDoneAndPaid = async (customer, options = {}) => {
     let nextDateValue = ''
 
     try {
@@ -1531,7 +1534,14 @@ function WorkloadManager({ user }) {
       const employeeHistorySuffix = messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName
         ? ` from ${user.UserName}`
         : ''
-      const historyMessage = `${customer.NextServices} done, Paid ${symbol}${customer.Price}${employeeHistorySuffix}`
+      const historySuffix = typeof options.historySuffix === 'string' && options.historySuffix.trim()
+        ? ` ${options.historySuffix.trim()}`
+        : ''
+      const hasPaidAmountOverride = options.paidAmount !== undefined && options.paidAmount !== null && Number.isFinite(Number(options.paidAmount))
+      const paidAmountText = hasPaidAmountOverride
+        ? Number(options.paidAmount).toFixed(2)
+        : customer.Price
+      const historyMessage = `${customer.NextServices} done, Paid ${symbol}${paidAmountText}${employeeHistorySuffix}${historySuffix}`
       await createCustomerHistory(customer.id, historyMessage)
       
       nextDateValue = toLocalDateKey(nextCleanDate)
@@ -1661,6 +1671,106 @@ function WorkloadManager({ user }) {
       }
 
       console.error('Error updating customer:', error.message)
+    }
+  }
+
+  const handleSetupGoCardlessMandate = async (customer) => {
+    if (!user?.GoCardlessConnected) {
+      alert('Connect GoCardless first in Settings > Payments.')
+      return
+    }
+
+    try {
+      setGoCardlessLoadingCustomerId(customer.id)
+      const data = await createGoCardlessFlow({
+        userId: user.id,
+        customerId: customer.id,
+      })
+      window.location.assign(data.url)
+    } catch (error) {
+      alert(error.message || 'Unable to start GoCardless setup.')
+    } finally {
+      setGoCardlessLoadingCustomerId(null)
+    }
+  }
+
+  const openGcConfirmModal = (customer) => {
+    if (!user?.GoCardlessConnected) {
+      alert('Connect GoCardless first in Settings > Payments.')
+      return
+    }
+    const activeMandateStatuses = new Set(['pending_submission', 'submitted', 'active', 'created'])
+    const mandateStatus = String(customer.GoCardlessMandateStatus || '').toLowerCase()
+    if (!customer.GoCardlessMandateId || !activeMandateStatuses.has(mandateStatus)) {
+      alert('Customer does not have an active Direct Debit mandate. Set one up first.')
+      return
+    }
+    const price = parseFloat(customer.Price) || 0
+    const outstanding = parseFloat(customer.Outstanding) || 0
+    const total = (price + outstanding).toFixed(2)
+    setGcConfirmModal({ open: true, customer, amount: total })
+  }
+
+  const handleDoneAndCollectGoCardless = async (customer, amountOverride) => {
+    if (!user?.GoCardlessConnected) return
+
+    try {
+      setGoCardlessLoadingCustomerId(customer.id)
+
+      // Auto-create an invoice for the agreed amount
+      const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+      const price = amountOverride !== undefined ? parseFloat(amountOverride) || 0 : parseFloat(customer.Price) || 0
+      const invoiceDate = new Date().toISOString().split('T')[0]
+
+      // Get next invoice number
+      const { data: custIds } = await supabase.from('Customers').select('id').eq('UserId', user.id)
+      const ids = (custIds || []).map((c) => c.id)
+      let nextInvoiceId = '1'
+      if (ids.length > 0) {
+        const { data: invs } = await supabase
+          .from('CustomerInvoices')
+          .select('InvoiceID')
+          .in('CustomerID', ids)
+          .order('id', { ascending: false })
+          .limit(100)
+        const nums = (invs || [])
+          .map((r) => { const m = String(r.InvoiceID || '').match(/(\d+)/g); return m ? parseInt(m[m.length - 1], 10) : null })
+          .filter((n) => n !== null)
+        if (nums.length > 0) nextInvoiceId = String(Math.max(...nums) + 1)
+      }
+
+      // Create invoice record
+      const { data: invData, error: invErr } = await supabase
+        .from('CustomerInvoices')
+        .insert({ CustomerID: customer.id, InvoiceID: nextInvoiceId, InvoiceDate: invoiceDate })
+        .select()
+        .single()
+      if (invErr) throw new Error(invErr.message || 'Failed to create invoice')
+
+      // Create invoice line item
+      const serviceName = customer.NextServices || 'Window Cleaning'
+      await supabase.from('CustomerInvoiceJobs').insert({
+        InvoiceID: invData.id,
+        Service: serviceName,
+        Price: parseFloat(price) || 0,
+      })
+
+      // Collect payment via GoCardless
+      await collectGoCardlessPayment({
+        userId: user.id,
+        customerId: customer.id,
+        invoiceId: invData.id,
+      })
+
+      // Mark as done and annotate history entry source
+      await handleDoneAndPaid(customer, { historySuffix: 'via GoCardless', paidAmount: price })
+
+      setGcConfirmModal({ open: false, customer: null, amount: '' })
+      alert(`Payment of ${symbol}${price.toFixed(2)} submitted via Direct Debit.`)
+    } catch (error) {
+      alert(error.message || 'Unable to collect GoCardless payment.')
+    } finally {
+      setGoCardlessLoadingCustomerId(null)
     }
   }
 
@@ -3635,6 +3745,17 @@ function WorkloadManager({ user }) {
                         <button onClick={() => handleDoneAndPaid(customer)} className="done-paid-btn">
                           Done and Paid
                         </button>
+                        {user?.GoCardlessConnected && customer.GoCardlessMandateId && (
+                          <button
+                            onClick={() => openGcConfirmModal(customer)}
+                            className="done-paid-btn"
+                            disabled={goCardlessLoadingCustomerId === customer.id}
+                            style={{ background: '#1a6b3c' }}
+                            title="Mark as done and collect payment via Direct Debit"
+                          >
+                            {goCardlessLoadingCustomerId === customer.id ? 'Collecting...' : 'Done & GoCardless'}
+                          </button>
+                        )}
                         <button onClick={() => handleDoneAndNotPaid(customer)} className="done-not-paid-btn">
                           Done and Not Paid
                         </button>
@@ -3677,6 +3798,21 @@ function WorkloadManager({ user }) {
                                 title="Create invoice"
                               >
                                 🧾
+                              </button>
+                            </div>
+                          )}
+                          {user?.GoCardlessConnected && (
+                            <div className="calendar-action-group">
+                              <span className="calendar-action-label">
+                                {customer.GoCardlessMandateId ? 'DD GoCardless' : 'Direct Debit'}
+                              </span>
+                              <button
+                                className="calendar-icon-btn"
+                                onClick={() => handleSetupGoCardlessMandate(customer)}
+                                disabled={goCardlessLoadingCustomerId === customer.id}
+                                title={customer.GoCardlessMandateId ? 'Change GoCardless Direct Debit details' : 'Set up GoCardless direct debit'}
+                              >
+                                {goCardlessLoadingCustomerId === customer.id ? '…' : '🏦'}
                               </button>
                             </div>
                           )}
@@ -3724,6 +3860,19 @@ function WorkloadManager({ user }) {
                             >
                               Done and Paid
                             </button>
+                            {user?.GoCardlessConnected && customer.GoCardlessMandateId && (
+                              <button
+                                className="mobile-menu-item done-paid-btn"
+                                style={{ background: '#1a6b3c' }}
+                                disabled={goCardlessLoadingCustomerId === customer.id}
+                                onClick={() => {
+                                  openGcConfirmModal(customer)
+                                  setMobileMenuOpenCustomerId(null)
+                                }}
+                              >
+                                {goCardlessLoadingCustomerId === customer.id ? 'Collecting...' : 'Done & GoCardless'}
+                              </button>
+                            )}
                             <button 
                               className="mobile-menu-item done-not-paid-btn"
                               onClick={() => {
@@ -3779,6 +3928,18 @@ function WorkloadManager({ user }) {
                                 🧾 Create Invoice
                               </button>
                             )}
+                            {user?.GoCardlessConnected && (
+                              <button
+                                className="mobile-menu-item"
+                                onClick={() => {
+                                  handleSetupGoCardlessMandate(customer)
+                                  setMobileMenuOpenCustomerId(null)
+                                }}
+                                disabled={goCardlessLoadingCustomerId === customer.id}
+                              >
+                                {goCardlessLoadingCustomerId === customer.id ? 'Opening GoCardless...' : customer.GoCardlessMandateId ? '🏦 Change Direct Debit Details' : '🏦 Set Up Direct Debit'}
+                              </button>
+                            )}
                             <button
                               className="mobile-menu-item calendar-icon-btn"
                               onClick={() => {
@@ -3822,6 +3983,54 @@ function WorkloadManager({ user }) {
           onClose={() => setInvoiceModal({ show: false, customer: null })}
         />
       )}
+
+      {gcConfirmModal.open && gcConfirmModal.customer && (() => {
+        const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+        const price = parseFloat(gcConfirmModal.customer.Price) || 0
+        const outstanding = parseFloat(gcConfirmModal.customer.Outstanding) || 0
+        return (
+          <div className="modal-overlay" onClick={() => setGcConfirmModal({ open: false, customer: null, amount: '' })}>
+            <div className="modal-content" style={{ maxWidth: 380 }} onClick={e => e.stopPropagation()}>
+              <button className="modal-close" onClick={() => setGcConfirmModal({ open: false, customer: null, amount: '' })}>×</button>
+              <h3>Collect via Direct Debit</h3>
+              <p style={{ marginBottom: 4 }}><strong>{gcConfirmModal.customer.Name}</strong></p>
+              <p style={{ fontSize: '0.85rem', color: '#555', marginBottom: 16 }}>
+                Job: {symbol}{price.toFixed(2)}
+                {outstanding > 0 && <> &nbsp;+&nbsp; Outstanding: {symbol}{outstanding.toFixed(2)}</>}
+              </p>
+              <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>
+                Amount to collect ({symbol})
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={gcConfirmModal.amount}
+                onChange={e => setGcConfirmModal(m => ({ ...m, amount: e.target.value }))}
+                style={{ width: '100%', padding: '8px 10px', fontSize: '1.1rem', border: '1px solid #ccc', borderRadius: 6, marginBottom: 20, boxSizing: 'border-box' }}
+                autoFocus
+              />
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  className="done-paid-btn"
+                  style={{ flex: 1, background: '#1a6b3c' }}
+                  disabled={goCardlessLoadingCustomerId === gcConfirmModal.customer.id || !parseFloat(gcConfirmModal.amount) > 0}
+                  onClick={() => handleDoneAndCollectGoCardless(gcConfirmModal.customer, gcConfirmModal.amount)}
+                >
+                  {goCardlessLoadingCustomerId === gcConfirmModal.customer.id ? 'Collecting...' : `Collect ${symbol}${parseFloat(gcConfirmModal.amount || 0).toFixed(2)}`}
+                </button>
+                <button
+                  className="skip-clean-btn"
+                  style={{ flex: 1 }}
+                  onClick={() => setGcConfirmModal({ open: false, customer: null, amount: '' })}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       <SendMessageMethodModal
         isOpen={sendMessageModal.show}

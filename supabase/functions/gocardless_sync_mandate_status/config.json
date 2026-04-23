@@ -1,0 +1,4 @@
+{
+  "runtime": "node",
+  "verify_jwt": false
+}

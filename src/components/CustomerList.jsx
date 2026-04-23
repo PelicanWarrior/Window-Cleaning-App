@@ -19,6 +19,7 @@ import InvoicesModal from './InvoicesModal'
 import InvoiceModalContent from './InvoiceModalNew'
 import SendMessageMethodModal from './SendMessageMethodModal'
 import CustomerDetailsModal from './CustomerDetailsModal'
+import { createGoCardlessFlow, collectGoCardlessPayment } from '../lib/gocardless'
 
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
@@ -83,6 +84,8 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   const [invoicesListModal, setInvoicesListModal] = useState({ show: false, customer: null })
   const [changePriceModal, setChangePriceModal] = useState({ show: false, price: '' })
   const [sendMessageModal, setSendMessageModal] = useState({ show: false, customer: null, subject: '', body: '', historyMessage: '' })
+  const [goCardlessLoadingCustomerId, setGoCardlessLoadingCustomerId] = useState(null)
+  const [goCardlessPayModal, setGoCardlessPayModal] = useState({ show: false, customer: null, amount: '' })
   const [showCSVImportModal, setShowCSVImportModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportFields, setExportFields] = useState([])
@@ -1715,6 +1718,113 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
     }
   }
 
+  const openGoCardlessPayModal = (customer) => {
+    if (!user?.GoCardlessConnected) {
+      alert('Connect GoCardless first in Settings > Payments.')
+      return
+    }
+
+    const activeMandateStatuses = new Set(['pending_submission', 'submitted', 'active', 'created'])
+    const mandateStatus = String(customer.GoCardlessMandateStatus || '').toLowerCase()
+    if (!customer.GoCardlessMandateId || !activeMandateStatuses.has(mandateStatus)) {
+      alert('Customer does not have an active Direct Debit mandate. Set one up first.')
+      return
+    }
+
+    const price = parseFloat(customer.Price) || 0
+    const outstanding = parseFloat(customer.Outstanding) || 0
+    const total = (price + outstanding).toFixed(2)
+    setGoCardlessPayModal({ show: true, customer, amount: total })
+  }
+
+  const handlePayViaGoCardless = async (customer, amountInput) => {
+    const amount = parseFloat(amountInput)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert('Enter a valid amount greater than 0.')
+      return
+    }
+
+    try {
+      setGoCardlessLoadingCustomerId(customer.id)
+
+      const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+      const invoiceDate = new Date().toISOString().split('T')[0]
+
+      const { data: custIds } = await supabase.from('Customers').select('id').eq('UserId', ownerUserId)
+      const ids = (custIds || []).map((c) => c.id)
+      let nextInvoiceId = '1'
+      if (ids.length > 0) {
+        const { data: invs } = await supabase
+          .from('CustomerInvoices')
+          .select('InvoiceID')
+          .in('CustomerID', ids)
+          .order('id', { ascending: false })
+          .limit(100)
+        const nums = (invs || [])
+          .map((r) => {
+            const m = String(r.InvoiceID || '').match(/(\d+)/g)
+            return m ? parseInt(m[m.length - 1], 10) : null
+          })
+          .filter((n) => n !== null)
+        if (nums.length > 0) nextInvoiceId = String(Math.max(...nums) + 1)
+      }
+
+      const { data: invData, error: invErr } = await supabase
+        .from('CustomerInvoices')
+        .insert({ CustomerID: customer.id, InvoiceID: nextInvoiceId, InvoiceDate: invoiceDate })
+        .select()
+        .single()
+      if (invErr) throw new Error(invErr.message || 'Failed to create invoice')
+
+      const serviceName = customer.NextServices || 'Window Cleaning'
+      const { error: lineItemError } = await supabase.from('CustomerInvoiceJobs').insert({
+        InvoiceID: invData.id,
+        Service: serviceName,
+        Price: amount,
+      })
+      if (lineItemError) throw new Error(lineItemError.message || 'Failed to create invoice line item')
+
+      await collectGoCardlessPayment({
+        userId: ownerUserId,
+        customerId: customer.id,
+        invoiceId: invData.id,
+      })
+
+      const currentWorkDate = customer.NextClean
+        ? new Date(`${customer.NextClean}T00:00:00`)
+        : new Date()
+      const weeksToAdd = parseInt(customer.Weeks) || 0
+      const nextCleanDate = new Date(currentWorkDate)
+      nextCleanDate.setDate(nextCleanDate.getDate() + (weeksToAdd * 7))
+      const nextDateValue = nextCleanDate.toISOString().split('T')[0]
+
+      const { error: customerUpdateError } = await supabase
+        .from('Customers')
+        .update({ NextClean: nextDateValue })
+        .eq('id', customer.id)
+      if (customerUpdateError) throw new Error(customerUpdateError.message || 'Failed to update customer')
+
+      await addCustomerHistoryEntry(
+        customer.id,
+        `${serviceName} done, Paid ${symbol}${amount.toFixed(2)} via GoCardless`
+      )
+
+      setCustomers((prev) => prev.map((row) => (
+        Number(row.id) === Number(customer.id)
+          ? { ...row, NextClean: nextDateValue }
+          : row
+      )))
+
+      setGoCardlessPayModal({ show: false, customer: null, amount: '' })
+      fetchCustomers()
+      alert(`Payment of ${symbol}${amount.toFixed(2)} submitted via Direct Debit.`)
+    } catch (error) {
+      alert(error.message || 'Unable to collect GoCardless payment.')
+    } finally {
+      setGoCardlessLoadingCustomerId(null)
+    }
+  }
+
   async function handleCancelService(reason) {
     if (!selectedCustomer) return
 
@@ -2604,6 +2714,18 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
                                     >
                                       Mark as Paid
                                     </button>
+                                    {user?.GoCardlessConnected && customer.GoCardlessMandateId && (
+                                      <button
+                                        className="invoice-btn"
+                                        disabled={goCardlessLoadingCustomerId === customer.id}
+                                        onClick={() => {
+                                          openGoCardlessPayModal(customer)
+                                          setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
+                                        }}
+                                      >
+                                        {goCardlessLoadingCustomerId === customer.id ? 'Collecting...' : 'Pay via GoCardless'}
+                                      </button>
+                                    )}
                                     <button
                                       className="change-price-btn"
                                       onClick={() => {
@@ -2623,6 +2745,25 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
                                     >
                                       Create Invoice
                                     </button>
+                                    {user?.GoCardlessConnected && !customer.GoCardlessMandateId && (
+                                      <button
+                                        className="invoice-btn"
+                                        onClick={async () => {
+                                          try {
+                                            const data = await createGoCardlessFlow({
+                                              userId: user.id,
+                                              customerId: customer.id,
+                                            })
+                                            setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
+                                            window.location.assign(data.url)
+                                          } catch (error) {
+                                            alert(error.message || 'Unable to start GoCardless setup.')
+                                          }
+                                        }}
+                                      >
+                                        Set Up Direct Debit
+                                      </button>
+                                    )}
                                     <button
                                       className="delete-btn"
                                       onClick={() => deleteCustomer(customer.id)}
@@ -2799,6 +2940,54 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
           onClose={() => setInvoiceModal({ show: false, customer: null })}
         />
       )}
+
+      {goCardlessPayModal.show && goCardlessPayModal.customer && (() => {
+        const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+        const price = parseFloat(goCardlessPayModal.customer.Price) || 0
+        const outstanding = parseFloat(goCardlessPayModal.customer.Outstanding) || 0
+        return (
+          <div className="modal-overlay" onClick={() => setGoCardlessPayModal({ show: false, customer: null, amount: '' })}>
+            <div className="modal-content" style={{ maxWidth: 380 }} onClick={(e) => e.stopPropagation()}>
+              <button className="modal-close" onClick={() => setGoCardlessPayModal({ show: false, customer: null, amount: '' })}>×</button>
+              <h3>Pay via GoCardless</h3>
+              <p style={{ marginBottom: 4 }}><strong>{goCardlessPayModal.customer.CustomerName}</strong></p>
+              <p style={{ fontSize: '0.85rem', color: '#555', marginBottom: 16 }}>
+                Job: {symbol}{price.toFixed(2)}
+                {outstanding > 0 && <> {' + '} Outstanding: {symbol}{outstanding.toFixed(2)}</>}
+              </p>
+              <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>
+                Amount to collect ({symbol})
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={goCardlessPayModal.amount}
+                onChange={(e) => setGoCardlessPayModal((prev) => ({ ...prev, amount: e.target.value }))}
+                style={{ width: '100%', padding: '8px 10px', fontSize: '1.1rem', border: '1px solid #ccc', borderRadius: 6, marginBottom: 20, boxSizing: 'border-box' }}
+                autoFocus
+              />
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  className="modal-ok-btn"
+                  style={{ flex: 1 }}
+                  disabled={goCardlessLoadingCustomerId === goCardlessPayModal.customer.id || !(parseFloat(goCardlessPayModal.amount) > 0)}
+                  onClick={() => handlePayViaGoCardless(goCardlessPayModal.customer, goCardlessPayModal.amount)}
+                >
+                  {goCardlessLoadingCustomerId === goCardlessPayModal.customer.id ? 'Collecting...' : `Collect ${symbol}${(parseFloat(goCardlessPayModal.amount) || 0).toFixed(2)}`}
+                </button>
+                <button
+                  className="modal-cancel-btn"
+                  style={{ flex: 1 }}
+                  onClick={() => setGoCardlessPayModal({ show: false, customer: null, amount: '' })}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       <SendMessageMethodModal
         isOpen={sendMessageModal.show}

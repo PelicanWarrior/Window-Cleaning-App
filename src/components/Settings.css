@@ -20,7 +20,7 @@
 
 .settings-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.35rem;
   margin: 1rem 0;
   border-bottom: 2px solid #ecf0f1;
@@ -332,6 +332,86 @@
 
 .plan-test-btn:hover {
   background: #cbd5f5;
+}
+
+.payments-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.payments-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.payments-title {
+  margin: 0 0 8px 0;
+  font-size: 1rem;
+  color: #1f2937;
+}
+
+.payments-note {
+  margin: 0 0 12px 0;
+  color: #475569;
+}
+
+.payments-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.payments-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.payments-badge.connected {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.payments-badge.disconnected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.payments-meta {
+  margin: 0;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.payments-connect-btn {
+  margin-top: 8px;
+  background: #1565c0;
+  color: #fff;
+  border: none;
+  padding: 9px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.payments-connect-btn:disabled {
+  background: #90caf9;
+  cursor: not-allowed;
+}
+
+.payments-help {
+  margin: 12px 0 0 0;
+  color: #64748b;
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 .system-content {

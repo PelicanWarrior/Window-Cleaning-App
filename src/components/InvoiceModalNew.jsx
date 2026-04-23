@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { formatCurrency, getCurrencyConfig, formatDateByCountry } from '../lib/format'
 import { sendInvoiceWhatsApp } from '../lib/whatsappCloud'
+import { collectGoCardlessPayment, createGoCardlessFlow } from '../lib/gocardless'
 // jsPDF loaded via CDN script; fallback avoids bundler import issues
 const jsPDFRef = typeof window !== 'undefined' && window.jspdf ? window.jspdf.jsPDF : null
 import './Invoice.css'
@@ -13,6 +14,7 @@ function InvoiceModalContent({ user, customer, onClose }) {
   const [items, setItems] = useState([{ mode: 'select', ServiceId: '', Service: '', Price: 0 }])
   const [showSendOptions, setShowSendOptions] = useState(false)
   const [savedInvoiceData, setSavedInvoiceData] = useState(null)
+  const [goCardlessLoading, setGoCardlessLoading] = useState(false)
   const currencySymbol = getCurrencyConfig(user.SettingsCountry || 'United Kingdom').symbol
   const jsPDFRef = typeof window !== 'undefined' && window.jspdf ? window.jspdf.jsPDF : null
 
@@ -417,70 +419,139 @@ function InvoiceModalContent({ user, customer, onClose }) {
     }
   }
 
-  const handleSave = async () => {
+  const saveInvoiceRecord = async () => {
     if (!invoiceIdText) {
-      alert('Please enter an Invoice ID')
-      return
+      throw new Error('Please enter an Invoice ID')
     }
 
-    // Filter out empty items (like the last "select service" row)
-    const validItems = items.filter(it => it.Service && it.Price)
-    
+    const validItems = items.filter((it) => it.Service && it.Price)
     if (validItems.length === 0) {
-      alert('Please add at least one service')
-      return
+      throw new Error('Please add at least one service')
     }
 
-    // Create invoice header
     const { data: invData, error: invErr } = await supabase
       .from('CustomerInvoices')
       .insert({
         CustomerID: customer.id,
         InvoiceID: invoiceIdText,
-        InvoiceDate: invoiceDate
+        InvoiceDate: invoiceDate,
       })
       .select()
 
     if (invErr) {
-      alert('Failed to create invoice: ' + invErr.message)
-      return
+      throw new Error(invErr.message || 'Failed to create invoice')
     }
 
     const invoiceRow = Array.isArray(invData) ? invData[0] : invData
     const invoicePk = invoiceRow?.id
 
-    // Save service items
     const itemsPayload = validItems.map((it) => ({
       InvoiceID: invoicePk,
       Service: it.Service,
       Price: parseInt(it.Price) || 0,
     }))
-    
+
     const { error: jobsErr } = await supabase
       .from('CustomerInvoiceJobs')
       .insert(itemsPayload)
-      
+
     if (jobsErr) {
-      alert('Failed to save invoice items: ' + jobsErr.message)
+      throw new Error(jobsErr.message || 'Failed to save invoice items')
+    }
+
+    const invoiceData = {
+      invoiceId: invoiceIdText,
+      invoiceDate,
+      items: validItems,
+      invoiceRow,
+    }
+    setSavedInvoiceData(invoiceData)
+    return invoiceData
+  }
+
+  const handleSave = async () => {
+    try {
+      const invoiceData = await saveInvoiceRecord()
+      setTimeout(() => {
+        generateAndDownloadPDF(invoiceData)
+        onClose()
+      }, 100)
+    } catch (error) {
+      alert(error.message || 'Unable to save invoice')
+    }
+  }
+
+  const handleSaveAndCollectWithGoCardless = async () => {
+    if (!user?.GoCardlessConnected) {
+      alert('Connect GoCardless first in Settings > Payments.')
       return
     }
 
-    // Save data for PDF generation
-    setSavedInvoiceData({
-      invoiceId: invoiceIdText,
-      invoiceDate: invoiceDate,
-      items: validItems
-    })
+    try {
+      setGoCardlessLoading(true)
+      const invoiceData = await saveInvoiceRecord()
+      const activeMandateStatuses = new Set(['pending_submission', 'submitted', 'active', 'created'])
+      const mandateStatus = String(customer.GoCardlessMandateStatus || '').toLowerCase()
 
-    // Generate and download PDF directly
-    setTimeout(() => {
-      generateAndDownloadPDF({
-        invoiceId: invoiceIdText,
-        invoiceDate: invoiceDate,
-        items: validItems
-      })
+      if (customer.GoCardlessMandateId && activeMandateStatuses.has(mandateStatus)) {
+        await collectGoCardlessPayment({
+          userId: user.id,
+          customerId: customer.id,
+          invoiceId: invoiceData.invoiceRow.id,
+        })
+        alert('GoCardless payment submitted from the saved mandate.')
+      } else {
+        const data = await createGoCardlessFlow({
+          userId: user.id,
+          customerId: customer.id,
+          invoiceId: invoiceData.invoiceRow.id,
+        })
+        window.location.assign(data.url)
+        return
+      }
+
       onClose()
-    }, 100)
+    } catch (error) {
+      alert(error.message || 'Unable to start GoCardless collection')
+    } finally {
+      setGoCardlessLoading(false)
+    }
+  }
+
+  const handleDoneAndCollectWithGoCardless = async () => {
+    if (!user?.GoCardlessConnected) {
+      alert('Connect GoCardless first in Settings > Payments.')
+      return
+    }
+
+    if (!customer.GoCardlessMandateId) {
+      alert('Customer does not have an active GoCardless mandate. Please set up a mandate first.')
+      return
+    }
+
+    try {
+      setGoCardlessLoading(true)
+      const invoiceData = await saveInvoiceRecord()
+      const activeMandateStatuses = new Set(['pending_submission', 'submitted', 'active', 'created'])
+      const mandateStatus = String(customer.GoCardlessMandateStatus || '').toLowerCase()
+
+      if (!activeMandateStatuses.has(mandateStatus)) {
+        alert(`Cannot collect: mandate status is ${customer.GoCardlessMandateStatus || 'unknown'}`)
+        return
+      }
+
+      await collectGoCardlessPayment({
+        userId: user.id,
+        customerId: customer.id,
+        invoiceId: invoiceData.invoiceRow.id,
+      })
+      alert('Payment submitted from mandate. You will receive updates as it processes.')
+      onClose()
+    } catch (error) {
+      alert(error.message || 'Unable to collect payment')
+    } finally {
+      setGoCardlessLoading(false)
+    }
   }
 
   const addressLines = [customer.Address, customer.Address2, customer.Address3, customer.Postcode].filter(Boolean)
@@ -537,6 +608,8 @@ function InvoiceModalContent({ user, customer, onClose }) {
         <div className="invoice-customer">
           <div><strong>Name:</strong> {customer.CustomerName}</div>
           <div><strong>Address:</strong> {addressLines.join(', ')}</div>
+          <div><strong>GoCardless:</strong> {customer.GoCardlessMandateStatus || 'Not set up'}</div>
+          <div><strong>Mandate:</strong> {customer.GoCardlessMandateId || '—'}</div>
         </div>
 
         <div className="invoice-header-row" style={{ marginTop: '16px' }}>
@@ -622,8 +695,16 @@ function InvoiceModalContent({ user, customer, onClose }) {
           ))}
         </div>
 
-        <div className="modal-buttons">
+        <div className="modal-buttons invoice-action-buttons">
           <button className="modal-ok-btn" onClick={handleSave}>Save</button>
+          <button className="modal-ok-btn" onClick={handleSaveAndCollectWithGoCardless} disabled={goCardlessLoading}>
+            {goCardlessLoading ? 'Opening GoCardless...' : 'Save & Collect with GoCardless'}
+          </button>
+          {user?.GoCardlessConnected && customer?.GoCardlessMandateId && (
+            <button className="modal-ok-btn" onClick={handleDoneAndCollectWithGoCardless} disabled={goCardlessLoading}>
+              {goCardlessLoading ? 'Collecting...' : 'Done & Collect with GoCardless'}
+            </button>
+          )}
           <button className="modal-cancel-btn" onClick={onClose}>Cancel</button>
         </div>
       </div>
