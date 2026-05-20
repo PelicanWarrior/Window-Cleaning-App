@@ -1697,7 +1697,7 @@ function WorkloadManager({ user }) {
       const data = await createGoCardlessFlow({
         userId: user.id,
         customerId: customer.id,
-        amount: parseFloat(customer?.Price) || 0,
+        amount: null,
       })
       window.location.assign(data.url)
     } catch (error) {
