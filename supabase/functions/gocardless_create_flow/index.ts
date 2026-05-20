@@ -28,12 +28,34 @@ function buildCustomerDetailsPayload(customer: Record<string, any>, user: Record
     customer?.email ||
     undefined;
 
-  const phoneNumber =
+  const rawPhoneNumber =
     customer?.PhoneNumber ||
     customer?.Phone ||
     customer?.Mobile ||
     customer?.Telephone ||
     undefined;
+
+  const normalizePhoneNumber = (raw: string | undefined) => {
+    if (!raw) return undefined;
+    const compact = String(raw).trim().replace(/[\s().-]/g, "");
+    if (!compact) return undefined;
+
+    if (/^\+[1-9]\d{7,14}$/.test(compact)) {
+      return compact;
+    }
+
+    if (/^0\d{9,10}$/.test(compact)) {
+      return `+44${compact.slice(1)}`;
+    }
+
+    if (/^\d{7,15}$/.test(compact)) {
+      return `+${compact}`;
+    }
+
+    return undefined;
+  };
+
+  const phoneNumber = normalizePhoneNumber(rawPhoneNumber);
 
   const addressLine1 =
     customer?.Address ||
@@ -90,27 +112,145 @@ async function prefillCustomerDetails(
   billingRequestId: string,
   customerDetails: Record<string, any>,
 ) {
-  const payloadVariants = [
-    { data: customerDetails },
-    { collect_customer_details: customerDetails },
-    customerDetails,
+  const payloadVariants: Array<{ label: string; payload: Record<string, any> }> = [
+    { label: "data", payload: { data: customerDetails } },
+    { label: "collect_customer_details", payload: { collect_customer_details: customerDetails } },
+    { label: "direct", payload: customerDetails },
   ];
 
   let lastError: unknown = null;
 
-  for (const payload of payloadVariants) {
+  const wasFieldApplied = (response: any, details: Record<string, any>) => {
+    const actions: any[] = response?.billing_requests?.actions || [];
+    const collectAction = actions.find((action) => action?.type === "collect_customer_details");
+    const incompleteCustomer = collectAction?.collect_customer_details?.incomplete_fields?.customer || [];
+    const incompleteBilling = collectAction?.collect_customer_details?.incomplete_fields?.customer_billing_detail || [];
+
+    const expectsEmail = Boolean(details?.customer?.email);
+    const expectsAddressLine1 = Boolean(details?.customer_billing_detail?.address_line1);
+    const expectsCity = Boolean(details?.customer_billing_detail?.city);
+    const expectsPostalCode = Boolean(details?.customer_billing_detail?.postal_code);
+    const expectsCountryCode = Boolean(details?.customer_billing_detail?.country_code);
+
+    const emailApplied = !expectsEmail || !incompleteCustomer.includes("email");
+    const addressLine1Applied = !expectsAddressLine1 || !incompleteBilling.includes("address_line1");
+    const cityApplied = !expectsCity || !incompleteBilling.includes("city");
+    const postalCodeApplied = !expectsPostalCode || !incompleteBilling.includes("postal_code");
+    const countryCodeApplied = !expectsCountryCode || !incompleteBilling.includes("country_code");
+
+    return emailApplied && addressLine1Applied && cityApplied && postalCodeApplied && countryCodeApplied;
+  };
+
+  for (const variant of payloadVariants) {
     try {
-      await gocardlessRequest(accessToken, `/billing_requests/${billingRequestId}/actions/collect_customer_details`, {
+      const response = await gocardlessRequest(accessToken, `/billing_requests/${billingRequestId}/actions/collect_customer_details`, {
         method: "POST",
-        body: payload,
+        body: variant.payload,
       });
-      return;
+
+      if (!wasFieldApplied(response, customerDetails)) {
+        lastError = new Error(`GoCardless accepted '${variant.label}' payload but did not apply prefilled customer details`);
+        continue;
+      }
+
+      return {
+        ok: true,
+        variant: variant.label,
+        response,
+      };
     } catch (error) {
       lastError = error;
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error("Unable to prefill customer details");
+  return {
+    ok: false,
+    variant: null,
+    error: lastError instanceof Error ? lastError.message : "Unable to prefill customer details",
+  };
+}
+
+async function ensureGoCardlessCustomerLinks(
+  accessToken: string,
+  customerDetails: Record<string, any>,
+  existing: { customerId?: string | null; customerBillingDetailId?: string | null },
+) {
+  let customerId = existing.customerId || null;
+  let customerBillingDetailId = existing.customerBillingDetailId || null;
+
+  const hasCustomerIdentity = Boolean(
+    customerDetails?.customer?.email ||
+    customerDetails?.customer?.phone_number ||
+    customerDetails?.customer?.given_name ||
+    customerDetails?.customer?.family_name,
+  );
+
+  const hasBillingAddress = Boolean(
+    customerDetails?.customer_billing_detail?.address_line1 ||
+    customerDetails?.customer_billing_detail?.city ||
+    customerDetails?.customer_billing_detail?.postal_code ||
+    customerDetails?.customer_billing_detail?.country_code,
+  );
+
+  const diagnostics: Record<string, unknown> = {
+    usedExistingCustomerId: Boolean(customerId),
+    usedExistingCustomerBillingDetailId: Boolean(customerBillingDetailId),
+    createCustomerError: null,
+    createCustomerBillingDetailError: null,
+  };
+
+  if (!customerId && hasCustomerIdentity) {
+    try {
+      const customerResponse = await gocardlessRequest(accessToken, "/customers", {
+        method: "POST",
+        body: {
+          customers: {
+            email: customerDetails.customer.email || undefined,
+            phone_number: customerDetails.customer.phone_number || undefined,
+            given_name: customerDetails.customer.given_name || undefined,
+            family_name: customerDetails.customer.family_name || undefined,
+          },
+        },
+      });
+      customerId = customerResponse?.customers?.id || null;
+    } catch (error) {
+      diagnostics.createCustomerError = error instanceof Error ? error.message : "Unable to create GoCardless customer";
+      // Fall back to action-based prefill flow.
+    }
+  }
+
+  if (customerId && !customerBillingDetailId && hasBillingAddress) {
+    try {
+      const billingDetailResponse = await gocardlessRequest(accessToken, "/customer_billing_details", {
+        method: "POST",
+        body: {
+          customer_billing_details: {
+            address_line1: customerDetails.customer_billing_detail.address_line1 || undefined,
+            address_line2: customerDetails.customer_billing_detail.address_line2 || undefined,
+            address_line3: customerDetails.customer_billing_detail.address_line3 || undefined,
+            city: customerDetails.customer_billing_detail.city || undefined,
+            postal_code: customerDetails.customer_billing_detail.postal_code || undefined,
+            country_code: customerDetails.customer_billing_detail.country_code || undefined,
+            links: {
+              customer: customerId,
+            },
+          },
+        },
+      });
+      customerBillingDetailId = billingDetailResponse?.customer_billing_details?.id || null;
+    } catch (error) {
+      diagnostics.createCustomerBillingDetailError = error instanceof Error
+        ? error.message
+        : "Unable to create GoCardless customer billing detail";
+      // Fall back to action-based prefill flow.
+    }
+  }
+
+  return {
+    customerId,
+    customerBillingDetailId,
+    diagnostics,
+  };
 }
 
 serve(async (req) => {
@@ -132,6 +272,7 @@ serve(async (req) => {
     const prefillBankDetails = body?.prefillBankDetails && typeof body.prefillBankDetails === "object"
       ? body.prefillBankDetails
       : null;
+    const debugPrefill = Boolean(body?.debugPrefill);
 
     if (!userId || !customerId) {
       return jsonResponse(400, { error: "Missing userId or customerId" });
@@ -257,6 +398,31 @@ serve(async (req) => {
     }
 
     const customerDetails = buildCustomerDetailsPayload(customer, user);
+
+    const linkedGoCardlessDetails = await ensureGoCardlessCustomerLinks(
+      connection.AccessToken,
+      customerDetails,
+      {
+        customerId: customer?.GoCardlessCustomerId || null,
+        customerBillingDetailId: customer?.GoCardlessCustomerBillingDetailId || null,
+      },
+    );
+
+    const hasLinkedCustomerDetails = Boolean(
+      linkedGoCardlessDetails.customerId && linkedGoCardlessDetails.customerBillingDetailId,
+    );
+
+    if (linkedGoCardlessDetails.customerId || linkedGoCardlessDetails.customerBillingDetailId) {
+      billingRequestsPayload.links = {
+        ...(billingRequestsPayload.links || {}),
+      };
+      if (linkedGoCardlessDetails.customerId) {
+        billingRequestsPayload.links.customer = linkedGoCardlessDetails.customerId;
+      }
+      if (linkedGoCardlessDetails.customerBillingDetailId) {
+        billingRequestsPayload.links.customer_billing_detail = linkedGoCardlessDetails.customerBillingDetailId;
+      }
+    }
     const hasAnyCustomerData = Boolean(
       customerDetails.customer.email ||
       customerDetails.customer.given_name ||
@@ -266,12 +432,28 @@ serve(async (req) => {
       customerDetails.customer_billing_detail.postal_code
     );
 
-    if (hasAnyCustomerData) {
+    let prefillDiagnostics: Record<string, unknown> = {
+      attempted: false,
+      ok: false,
+    };
+
+    if (hasAnyCustomerData && !hasLinkedCustomerDetails) {
+      prefillDiagnostics.attempted = true;
       try {
-        await prefillCustomerDetails(connection.AccessToken, billingRequest.id, customerDetails);
+        const prefillResult = await prefillCustomerDetails(connection.AccessToken, billingRequest.id, customerDetails);
+        prefillDiagnostics = {
+          attempted: true,
+          ...prefillResult,
+        };
       } catch (collectError) {
         console.warn("[gocardless_create_flow] Unable to prefill customer details", collectError instanceof Error ? collectError.message : collectError);
       }
+    } else if (hasLinkedCustomerDetails) {
+      prefillDiagnostics = {
+        attempted: false,
+        ok: true,
+        skipped: "linked_customer_details",
+      };
     }
 
     const flowResponse = await gocardlessRequest(connection.AccessToken, "/billing_request_flows", {
@@ -301,6 +483,12 @@ serve(async (req) => {
     const customerUpdates: Record<string, any> = {
       GoCardlessBillingRequestId: billingRequest.id,
       GoCardlessBillingRequestFlowId: flow.id || null,
+      ...(linkedGoCardlessDetails.customerId
+        ? { GoCardlessCustomerId: linkedGoCardlessDetails.customerId }
+        : {}),
+      ...(linkedGoCardlessDetails.customerBillingDetailId
+        ? { GoCardlessCustomerBillingDetailId: linkedGoCardlessDetails.customerBillingDetailId }
+        : {}),
     };
 
     const invoiceUpdates: Record<string, any> = invoiceRow ? {
@@ -322,7 +510,7 @@ serve(async (req) => {
 
     await Promise.all(updates);
 
-    return jsonResponse(200, {
+    const result: Record<string, unknown> = {
       url: flow.authorisation_url,
       billingRequestId: billingRequest.id,
       billingRequestFlowId: flow.id || null,
@@ -331,7 +519,16 @@ serve(async (req) => {
         : (hasStandaloneAmount
           ? (openBankingOnly ? "amount_open_banking" : "amount_payment_and_mandate")
           : "mandate_setup"),
-    });
+    };
+
+    if (debugPrefill) {
+      result.prefillDiagnostics = prefillDiagnostics;
+      result.prefillCustomerDetails = customerDetails;
+      result.linkedGoCardlessDetails = linkedGoCardlessDetails;
+      result.usedLinkedCustomerDetails = hasLinkedCustomerDetails;
+    }
+
+    return jsonResponse(200, result);
   } catch (error) {
     return jsonResponse(500, {
       error: error instanceof Error ? error.message : "Unable to create GoCardless flow",

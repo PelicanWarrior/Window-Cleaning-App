@@ -149,7 +149,20 @@ export async function gocardlessRequest(
   }
 
   if (!response.ok) {
-    const message = payload?.error?.message || payload?.message || `GoCardless request failed (${response.status})`;
+    const baseMessage = payload?.error?.message || payload?.message || `GoCardless request failed (${response.status})`;
+    const validationErrors = Array.isArray(payload?.error?.errors)
+      ? payload.error.errors
+        .map((item: any) => {
+          const field = item?.field ? ` (${item.field})` : "";
+          const reason = item?.reason ? `: ${item.reason}` : "";
+          const message = item?.message || item?.description || "validation error";
+          return `${message}${field}${reason}`;
+        })
+        .filter(Boolean)
+        .join("; ")
+      : "";
+
+    const message = validationErrors ? `${baseMessage} - ${validationErrors}` : baseMessage;
     throw new Error(message);
   }
 
