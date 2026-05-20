@@ -15,22 +15,71 @@ import {
 
 function buildCustomerDetailsPayload(customer: Record<string, any>, user: Record<string, any>) {
   const names = splitCustomerName(customer?.CustomerName || customer?.Name);
-  const countryCode = mapCountryToCountryCode(user?.SettingsCountry);
-  const city = customer?.Address3 || customer?.Address2 || customer?.Address || customer?.Town || "Unknown";
+  const countryCode = mapCountryToCountryCode(
+    customer?.Country ||
+    customer?.CountryName ||
+    user?.SettingsCountry,
+  );
+
+  const email =
+    customer?.EmailAddress ||
+    customer?.email_address ||
+    customer?.Email ||
+    customer?.email ||
+    undefined;
+
+  const phoneNumber =
+    customer?.PhoneNumber ||
+    customer?.Phone ||
+    customer?.Mobile ||
+    customer?.Telephone ||
+    undefined;
+
+  const addressLine1 =
+    customer?.Address ||
+    customer?.Address1 ||
+    customer?.address_line1 ||
+    undefined;
+
+  const addressLine2 =
+    customer?.Address2 ||
+    customer?.address_line2 ||
+    undefined;
+
+  const addressLine3 =
+    customer?.Address3 ||
+    customer?.address_line3 ||
+    undefined;
+
+  const city =
+    customer?.Town ||
+    customer?.City ||
+    customer?.County ||
+    addressLine3 ||
+    addressLine2 ||
+    addressLine1 ||
+    "Unknown";
+
+  const postalCode =
+    customer?.Postcode ||
+    customer?.PostalCode ||
+    customer?.postcode ||
+    customer?.postal_code ||
+    undefined;
 
   return {
     customer: {
-      email: customer?.EmailAddress || customer?.Email || undefined,
-      phone_number: customer?.PhoneNumber || customer?.Phone || undefined,
+      email,
+      phone_number: phoneNumber,
       given_name: names.given_name,
       family_name: names.family_name || undefined,
     },
     customer_billing_detail: {
-      address_line1: customer?.Address || undefined,
-      address_line2: customer?.Address2 || undefined,
-      address_line3: customer?.Address3 || undefined,
+      address_line1: addressLine1,
+      address_line2: addressLine2,
+      address_line3: addressLine3,
       city,
-      postal_code: customer?.Postcode || undefined,
+      postal_code: postalCode,
       country_code: countryCode,
     },
   };
