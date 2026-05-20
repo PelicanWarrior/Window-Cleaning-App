@@ -85,6 +85,34 @@ function buildCustomerDetailsPayload(customer: Record<string, any>, user: Record
   };
 }
 
+async function prefillCustomerDetails(
+  accessToken: string,
+  billingRequestId: string,
+  customerDetails: Record<string, any>,
+) {
+  const payloadVariants = [
+    { data: customerDetails },
+    { collect_customer_details: customerDetails },
+    customerDetails,
+  ];
+
+  let lastError: unknown = null;
+
+  for (const payload of payloadVariants) {
+    try {
+      await gocardlessRequest(accessToken, `/billing_requests/${billingRequestId}/actions/collect_customer_details`, {
+        method: "POST",
+        body: payload,
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Unable to prefill customer details");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -240,12 +268,9 @@ serve(async (req) => {
 
     if (hasAnyCustomerData) {
       try {
-        await gocardlessRequest(connection.AccessToken, `/billing_requests/${billingRequest.id}/actions/collect_customer_details`, {
-          method: "POST",
-          body: { data: customerDetails },
-        });
+        await prefillCustomerDetails(connection.AccessToken, billingRequest.id, customerDetails);
       } catch (collectError) {
-        console.warn("[gocardless_create_flow] Unable to prefill customer details", collectError);
+        console.warn("[gocardless_create_flow] Unable to prefill customer details", collectError instanceof Error ? collectError.message : collectError);
       }
     }
 
