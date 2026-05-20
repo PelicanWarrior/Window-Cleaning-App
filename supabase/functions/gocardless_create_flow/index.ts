@@ -92,7 +92,9 @@ function buildCustomerDetailsPayload(customer: Record<string, any>, user: Record
   return {
     customer: {
       email,
-      phone_number: phoneNumber,
+      // Phone validation is strict in GoCardless and can block all prefill fields.
+      // We omit phone from prefill so email/address still populate reliably.
+      phone_number: undefined,
       given_name: names.given_name,
       family_name: names.family_name || undefined,
     },
