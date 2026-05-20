@@ -119,6 +119,7 @@ async function prefillCustomerDetails(
   ];
 
   let lastError: unknown = null;
+  const attempts: Array<Record<string, unknown>> = [];
 
   const wasFieldApplied = (response: any, details: Record<string, any>) => {
     const actions: any[] = response?.billing_requests?.actions || [];
@@ -148,6 +149,16 @@ async function prefillCustomerDetails(
         body: variant.payload,
       });
 
+      const actions: any[] = response?.billing_requests?.actions || [];
+      const collectAction = actions.find((action) => action?.type === "collect_customer_details");
+      const incompleteCustomer = collectAction?.collect_customer_details?.incomplete_fields?.customer || [];
+      const incompleteBilling = collectAction?.collect_customer_details?.incomplete_fields?.customer_billing_detail || [];
+      attempts.push({
+        variant: variant.label,
+        incompleteCustomer,
+        incompleteBilling,
+      });
+
       if (!wasFieldApplied(response, customerDetails)) {
         lastError = new Error(`GoCardless accepted '${variant.label}' payload but did not apply prefilled customer details`);
         continue;
@@ -156,16 +167,22 @@ async function prefillCustomerDetails(
       return {
         ok: true,
         variant: variant.label,
+        attempts,
         response,
       };
     } catch (error) {
       lastError = error;
+      attempts.push({
+        variant: variant.label,
+        error: error instanceof Error ? error.message : "Request failed",
+      });
     }
   }
 
   return {
     ok: false,
     variant: null,
+    attempts,
     error: lastError instanceof Error ? lastError.message : "Unable to prefill customer details",
   };
 }
@@ -408,10 +425,6 @@ serve(async (req) => {
       },
     );
 
-    const hasLinkedCustomerDetails = Boolean(
-      linkedGoCardlessDetails.customerId && linkedGoCardlessDetails.customerBillingDetailId,
-    );
-
     if (linkedGoCardlessDetails.customerId || linkedGoCardlessDetails.customerBillingDetailId) {
       billingRequestsPayload.links = {
         ...(billingRequestsPayload.links || {}),
@@ -437,7 +450,7 @@ serve(async (req) => {
       ok: false,
     };
 
-    if (hasAnyCustomerData && !hasLinkedCustomerDetails) {
+    if (hasAnyCustomerData) {
       prefillDiagnostics.attempted = true;
       try {
         const prefillResult = await prefillCustomerDetails(connection.AccessToken, billingRequest.id, customerDetails);
@@ -448,12 +461,6 @@ serve(async (req) => {
       } catch (collectError) {
         console.warn("[gocardless_create_flow] Unable to prefill customer details", collectError instanceof Error ? collectError.message : collectError);
       }
-    } else if (hasLinkedCustomerDetails) {
-      prefillDiagnostics = {
-        attempted: false,
-        ok: true,
-        skipped: "linked_customer_details",
-      };
     }
 
     const flowResponse = await gocardlessRequest(connection.AccessToken, "/billing_request_flows", {
@@ -525,7 +532,9 @@ serve(async (req) => {
       result.prefillDiagnostics = prefillDiagnostics;
       result.prefillCustomerDetails = customerDetails;
       result.linkedGoCardlessDetails = linkedGoCardlessDetails;
-      result.usedLinkedCustomerDetails = hasLinkedCustomerDetails;
+      result.usedLinkedCustomerDetails = Boolean(
+        linkedGoCardlessDetails.customerId && linkedGoCardlessDetails.customerBillingDetailId,
+      );
     }
 
     return jsonResponse(200, result);
