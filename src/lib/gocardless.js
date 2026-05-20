@@ -40,11 +40,14 @@ export async function startGoCardlessConnect(userId) {
   return data
 }
 
-export async function createGoCardlessFlow({ userId, customerId, invoiceId = null }) {
+export async function createGoCardlessFlow({ userId, customerId, invoiceId = null, amount = null, openBankingOnly = false, prefillBankDetails = null }) {
   const { data, error } = await supabase.functions.invoke('gocardless_create_flow', getInvokeOptions({
     userId,
     customerId,
     invoiceId,
+    amount,
+    openBankingOnly,
+    prefillBankDetails,
   }))
 
   if (error) {
@@ -61,6 +64,7 @@ export async function collectGoCardlessPayment({ userId, customerId, invoiceId }
     userId,
     customerId,
     invoiceId,
+    successPlus: true,
   }))
 
   if (error) {
@@ -89,6 +93,75 @@ export async function syncGoCardlessMandateStatus({ userId, customerId }) {
 
   if (error) {
     throw new Error(await getFunctionErrorMessage(error, 'Unable to sync mandate status'))
+  }
+  return data
+}
+
+export async function syncGoCardlessPayments({ userId, limit = 50 }) {
+  const { data, error } = await supabase.functions.invoke('gocardless_sync_payments', getInvokeOptions({
+    userId,
+    limit,
+  }))
+
+  if (error) {
+    throw new Error(await getFunctionErrorMessage(error, 'Unable to sync GoCardless payments'))
+  }
+  return data
+}
+
+export async function createGoCardlessSubscription({ userId, customerId, amount, startDate = null, interval = 1, intervalUnit = 'monthly' }) {
+  const { data, error } = await supabase.functions.invoke('gocardless_create_subscription', getInvokeOptions({
+    userId,
+    customerId,
+    amount,
+    startDate,
+    interval,
+    intervalUnit,
+  }))
+
+  if (error) {
+    throw new Error(await getFunctionErrorMessage(error, 'Unable to create subscription'))
+  }
+  return data
+}
+
+export async function cancelGoCardlessSubscription({ userId, customerId }) {
+  const { data, error } = await supabase.functions.invoke('gocardless_cancel_subscription', getInvokeOptions({
+    userId,
+    customerId,
+  }))
+
+  if (error) {
+    throw new Error(await getFunctionErrorMessage(error, 'Unable to cancel subscription'))
+  }
+  return data
+}
+
+export async function updateGoCardlessSubscription({ userId, customerId, amount, startDate = null, interval = 1, intervalUnit = 'monthly' }) {
+  const { data, error } = await supabase.functions.invoke('gocardless_update_subscription', getInvokeOptions({
+    userId,
+    customerId,
+    amount,
+    startDate,
+    interval,
+    intervalUnit,
+  }))
+
+  if (error) {
+    throw new Error(await getFunctionErrorMessage(error, 'Unable to update subscription'))
+  }
+  return data
+}
+
+export async function refundGoCardlessPayment({ userId, invoiceId, amount = null }) {
+  const { data, error } = await supabase.functions.invoke('gocardless_refund_payment', getInvokeOptions({
+    userId,
+    invoiceId,
+    amount,
+  }))
+
+  if (error) {
+    throw new Error(await getFunctionErrorMessage(error, 'Unable to refund payment'))
   }
   return data
 }

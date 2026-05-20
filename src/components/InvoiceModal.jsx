@@ -111,7 +111,7 @@ function InvoiceModal({ user, customer, onClose, onSaved }) {
       const preItemsPayload = items.map((it) => ({
         InvoiceID: null,
         Service: it.Service,
-        Price: parseInt(it.Price) || 0,
+        Price: parseFloat(it.Price) || 0,
       }))
       const pdfBlob = await generateInvoicePdf(null, preItemsPayload)
       const filename = `Invoice-${invoiceIdText}.pdf`
@@ -146,7 +146,7 @@ function InvoiceModal({ user, customer, onClose, onSaved }) {
     const itemsPayload = items.map((it) => ({
       InvoiceID: invoicePk,
       Service: it.Service,
-      Price: parseInt(it.Price) || 0,
+      Price: parseFloat(it.Price) || 0,
     }))
     const { error: jobsErr } = await supabase
       .from('CustomerInvoiceJobs')

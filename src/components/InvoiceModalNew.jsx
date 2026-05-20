@@ -448,7 +448,7 @@ function InvoiceModalContent({ user, customer, onClose }) {
     const itemsPayload = validItems.map((it) => ({
       InvoiceID: invoicePk,
       Service: it.Service,
-      Price: parseInt(it.Price) || 0,
+      Price: parseFloat(it.Price) || 0,
     }))
 
     const { error: jobsErr } = await supabase
@@ -490,7 +490,7 @@ function InvoiceModalContent({ user, customer, onClose }) {
     try {
       setGoCardlessLoading(true)
       const invoiceData = await saveInvoiceRecord()
-      const activeMandateStatuses = new Set(['pending_submission', 'submitted', 'active', 'created'])
+      const activeMandateStatuses = new Set(['pending_submission', 'created', 'submitted', 'active'])
       const mandateStatus = String(customer.GoCardlessMandateStatus || '').toLowerCase()
 
       if (customer.GoCardlessMandateId && activeMandateStatuses.has(mandateStatus)) {
@@ -518,6 +518,29 @@ function InvoiceModalContent({ user, customer, onClose }) {
     }
   }
 
+  const handleSaveAndPayOpenBankingOnly = async () => {
+    if (!user?.GoCardlessConnected) {
+      alert('Connect GoCardless first in Settings > Payments.')
+      return
+    }
+
+    try {
+      setGoCardlessLoading(true)
+      const invoiceData = await saveInvoiceRecord()
+      const data = await createGoCardlessFlow({
+        userId: user.id,
+        customerId: customer.id,
+        invoiceId: invoiceData.invoiceRow.id,
+        openBankingOnly: true,
+      })
+      window.location.assign(data.url)
+    } catch (error) {
+      alert(error.message || 'Unable to start Open Banking payment')
+    } finally {
+      setGoCardlessLoading(false)
+    }
+  }
+
   const handleDoneAndCollectWithGoCardless = async () => {
     if (!user?.GoCardlessConnected) {
       alert('Connect GoCardless first in Settings > Payments.')
@@ -532,7 +555,7 @@ function InvoiceModalContent({ user, customer, onClose }) {
     try {
       setGoCardlessLoading(true)
       const invoiceData = await saveInvoiceRecord()
-      const activeMandateStatuses = new Set(['pending_submission', 'submitted', 'active', 'created'])
+      const activeMandateStatuses = new Set(['pending_submission', 'created', 'submitted', 'active'])
       const mandateStatus = String(customer.GoCardlessMandateStatus || '').toLowerCase()
 
       if (!activeMandateStatuses.has(mandateStatus)) {
@@ -699,6 +722,9 @@ function InvoiceModalContent({ user, customer, onClose }) {
           <button className="modal-ok-btn" onClick={handleSave}>Save</button>
           <button className="modal-ok-btn" onClick={handleSaveAndCollectWithGoCardless} disabled={goCardlessLoading}>
             {goCardlessLoading ? 'Opening GoCardless...' : 'Save & Collect with GoCardless'}
+          </button>
+          <button className="modal-ok-btn" onClick={handleSaveAndPayOpenBankingOnly} disabled={goCardlessLoading}>
+            {goCardlessLoading ? 'Opening...' : 'Save & Pay (Open Banking Only)'}
           </button>
           {user?.GoCardlessConnected && customer?.GoCardlessMandateId && (
             <button className="modal-ok-btn" onClick={handleDoneAndCollectWithGoCardless} disabled={goCardlessLoading}>

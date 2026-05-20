@@ -8,6 +8,46 @@ import {
   verifyWebhookSignature,
 } from "../_shared/gocardless.ts";
 
+async function getInvoiceTotal(
+  supabase: ReturnType<typeof getSupabaseAdminClient>["supabase"],
+  invoiceId: number,
+) {
+  const { data: items, error } = await supabase
+    .from("CustomerInvoiceJobs")
+    .select("Price")
+    .eq("InvoiceID", invoiceId);
+
+  if (error) throw error;
+  return (items || []).reduce((sum, item: any) => sum + (Number(item?.Price) || 0), 0);
+}
+
+async function deductCustomerOutstanding(
+  supabase: ReturnType<typeof getSupabaseAdminClient>["supabase"],
+  customerId: number,
+  amount: number,
+) {
+  if (!customerId || !Number.isFinite(amount) || amount <= 0) return;
+
+  const { data: customer, error: customerError } = await supabase
+    .from("Customers")
+    .select("id, Outstanding")
+    .eq("id", customerId)
+    .maybeSingle();
+
+  if (customerError) throw customerError;
+  if (!customer?.id) return;
+
+  const currentOutstanding = Number(customer.Outstanding) || 0;
+  const nextOutstanding = Math.max(0, Number((currentOutstanding - amount).toFixed(2)));
+
+  const { error: updateError } = await supabase
+    .from("Customers")
+    .update({ Outstanding: nextOutstanding })
+    .eq("id", customerId);
+
+  if (updateError) throw updateError;
+}
+
 async function hasProcessedEvent(supabase: ReturnType<typeof getSupabaseAdminClient>["supabase"], eventId: string | null) {
   if (!eventId) return false;
   const { data, error } = await supabase
@@ -117,11 +157,84 @@ serve(async (req) => {
       if (event.resource_type === "payments") {
         const paymentId = event?.links?.payment || null;
         if (paymentId) {
+          const paymentAction = String(event.action || "").toLowerCase();
+          if (paymentAction === "paid_out") {
+            const payoutTimestamp = event.created_at || new Date().toISOString();
+            const { data: updatedInvoices, error: updateError } = await supabase
+              .from("CustomerInvoices")
+              .update({
+                GoCardlessPaymentStatus: "paid_out",
+                GoCardlessPaymentConfirmedAt: payoutTimestamp,
+              })
+              .eq("GoCardlessPaymentId", paymentId)
+              .neq("GoCardlessPaymentStatus", "paid_out")
+              .select("id, CustomerID");
+
+            if (updateError) throw updateError;
+
+            for (const invoice of updatedInvoices || []) {
+              if (!invoice?.id || !invoice?.CustomerID) continue;
+              const invoiceTotal = await getInvoiceTotal(supabase, Number(invoice.id));
+              await deductCustomerOutstanding(supabase, Number(invoice.CustomerID), invoiceTotal);
+            }
+          } else {
+            const updates: Record<string, unknown> = {
+              GoCardlessPaymentStatus: paymentAction,
+            };
+
+            if (paymentAction === "confirmed") {
+              updates.GoCardlessPaymentConfirmedAt = event.created_at || new Date().toISOString();
+            }
+
+            const { error } = await supabase
+              .from("CustomerInvoices")
+              .update(updates)
+              .eq("GoCardlessPaymentId", paymentId);
+            if (error) throw error;
+          }
+        }
+      }
+
+      if (event.resource_type === "subscriptions") {
+        const subscriptionId = event?.links?.subscription || null;
+        if (subscriptionId) {
+          const { error } = await supabase
+            .from("Customers")
+            .update({
+              GoCardlessSubscriptionId: subscriptionId,
+              GoCardlessSubscriptionStatus: event.action || null,
+              GoCardlessSubscriptionLastEventAt: event.created_at || new Date().toISOString(),
+            })
+            .eq("GoCardlessSubscriptionId", subscriptionId);
+          if (error) throw error;
+        }
+      }
+
+      if (event.resource_type === "refunds") {
+        const refundId = event?.links?.refund || null;
+        const paymentId = event?.links?.payment || null;
+        const refundAction = String(event.action || "").toLowerCase();
+
+        const invoiceUpdates: Record<string, unknown> = {
+          GoCardlessRefundStatus: refundAction || null,
+        };
+        if (refundId) invoiceUpdates.GoCardlessRefundId = refundId;
+        if (["paid", "submitted", "created"].includes(refundAction)) {
+          invoiceUpdates.GoCardlessRefundedAt = event.created_at || new Date().toISOString();
+        }
+
+        if (refundId) {
           const { error } = await supabase
             .from("CustomerInvoices")
-            .update({
-              GoCardlessPaymentStatus: event.action,
-            })
+            .update(invoiceUpdates)
+            .eq("GoCardlessRefundId", refundId);
+          if (error) throw error;
+        }
+
+        if (paymentId) {
+          const { error } = await supabase
+            .from("CustomerInvoices")
+            .update(invoiceUpdates)
             .eq("GoCardlessPaymentId", paymentId);
           if (error) throw error;
         }

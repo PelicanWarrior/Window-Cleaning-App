@@ -48,12 +48,12 @@ function InvoiceItemsModal({ user, customer, invoice, onClose, onSaved }) {
     const updates = items.filter((it) => it.id).map((it) => (
       supabase
         .from('CustomerInvoiceJobs')
-        .update({ Service: it.Service, Price: parseInt(it.Price) || 0 })
+        .update({ Service: it.Service, Price: parseFloat(it.Price) || 0 })
         .eq('id', it.id)
     ))
 
     // Insert new
-    const insertsData = items.filter((it) => !it.id).map((it) => ({ InvoiceID: invoice.id, Service: it.Service, Price: parseInt(it.Price) || 0 }))
+    const insertsData = items.filter((it) => !it.id).map((it) => ({ InvoiceID: invoice.id, Service: it.Service, Price: parseFloat(it.Price) || 0 }))
     let inserts = []
     if (insertsData.length) {
       inserts = [supabase.from('CustomerInvoiceJobs').insert(insertsData)]

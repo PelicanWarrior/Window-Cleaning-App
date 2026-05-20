@@ -23,6 +23,7 @@ serve(async (req) => {
     const userId = body?.userId;
     const customerId = body?.customerId;
     const invoiceId = body?.invoiceId;
+    const successPlus = body?.successPlus !== false;
 
     if (!userId || !customerId || !invoiceId) {
       return jsonResponse(400, { error: "Missing userId, customerId or invoiceId" });
@@ -63,6 +64,7 @@ serve(async (req) => {
       payments: {
         amount: toMinorUnitAmount(total),
         currency: mapCountryToCurrency(user?.SettingsCountry),
+        retry_if_possible: successPlus,
         links: {
           mandate: customer.GoCardlessMandateId,
         },

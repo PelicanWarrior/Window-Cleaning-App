@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import Auth from './components/Auth'
 import CustomerList from './components/CustomerList'
@@ -11,7 +11,7 @@ import AdminPanel from './components/AdminPanel'
 import logo1 from '../public/Logo1.png'
 import { supabase } from './lib/supabase'
 import { normalizeUserCountryFields } from './lib/format'
-import { syncGoCardlessBillingRequest } from './lib/gocardless'
+import { syncGoCardlessBillingRequest, syncGoCardlessPayments } from './lib/gocardless'
 
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const PREVIEW_USER = {
@@ -38,6 +38,7 @@ function App() {
   const [showInstallButton, setShowInstallButton] = useState(false)
   const [checkoutStatus, setCheckoutStatus] = useState(null) // 'success', 'cancelled', or null
   const [statusMessage, setStatusMessage] = useState('')
+  const goCardlessSyncRef = useRef({ userId: null, done: false })
   const isAuthenticated = Boolean(user?.id)
   const activeUser = user || PREVIEW_USER
 
@@ -147,6 +148,27 @@ function App() {
     if (goCardlessParam === 'flow_return' && !user?.id) return
     run()
   }, [user])
+
+  useEffect(() => {
+    if (!user?.id || !user?.GoCardlessConnected) return
+
+    if (goCardlessSyncRef.current.userId !== user.id) {
+      goCardlessSyncRef.current = { userId: user.id, done: false }
+    }
+
+    if (goCardlessSyncRef.current.done) return
+    goCardlessSyncRef.current.done = true
+
+    const run = async () => {
+      try {
+        await syncGoCardlessPayments({ userId: user.id, limit: 50 })
+      } catch (error) {
+        console.error('GoCardless payment sync on login failed:', error)
+      }
+    }
+
+    run()
+  }, [user?.id, user?.GoCardlessConnected])
 
   // Handle checkout success/cancel redirects
   useEffect(() => {

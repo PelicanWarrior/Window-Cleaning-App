@@ -19,7 +19,7 @@ import InvoicesModal from './InvoicesModal'
 import InvoiceModalContent from './InvoiceModalNew'
 import SendMessageMethodModal from './SendMessageMethodModal'
 import CustomerDetailsModal from './CustomerDetailsModal'
-import { createGoCardlessFlow, collectGoCardlessPayment } from '../lib/gocardless'
+import { createGoCardlessFlow, collectGoCardlessPayment, syncGoCardlessPayments, syncGoCardlessMandateStatus } from '../lib/gocardless'
 
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
@@ -42,6 +42,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   const [reminderLetter, setReminderLetter] = useState(null)
   const [messageFooter, setMessageFooter] = useState('')
   const [messageFooterIncludeEmployee, setMessageFooterIncludeEmployee] = useState(false)
+  const [goCardlessMessageLetterId, setGoCardlessMessageLetterId] = useState('')
   const [showSortDropdown, setShowSortDropdown] = useState(false)
   const [showCustomerModal, setShowCustomerModal] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState(null)
@@ -85,7 +86,11 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   const [changePriceModal, setChangePriceModal] = useState({ show: false, price: '' })
   const [sendMessageModal, setSendMessageModal] = useState({ show: false, customer: null, subject: '', body: '', historyMessage: '' })
   const [goCardlessLoadingCustomerId, setGoCardlessLoadingCustomerId] = useState(null)
+  const [refreshingGoCardless, setRefreshingGoCardless] = useState(false)
   const [goCardlessPayModal, setGoCardlessPayModal] = useState({ show: false, customer: null, amount: '' })
+  const [markPaidModal, setMarkPaidModal] = useState({ show: false, customer: null, amount: '' })
+  const [sendGoCardlessMessageConfirm, setSendGoCardlessMessageConfirm] = useState({ show: false, customer: null, amount: 0, messageBody: '', messageTitle: '' })
+  const [customerGoCardlessStatus, setCustomerGoCardlessStatus] = useState({}) // Map of customerId -> { amount, status }
   const [showCSVImportModal, setShowCSVImportModal] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportFields, setExportFields] = useState([])
@@ -294,6 +299,15 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   }, [ownerUserId])
 
   useEffect(() => {
+    // Fetch GoCardless payment status for each customer in the list
+    customers.forEach((customer) => {
+      if (customer.GoCardlessMandateId) {
+        fetchGoCardlessPaymentStatus(customer.id)
+      }
+    })
+  }, [customers])
+
+  useEffect(() => {
     if (!customerMutationQueueKey || syncingMutationsRef.current) return
 
     const syncQueuedMutations = async () => {
@@ -354,7 +368,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       const [{ data: userData, error: userError }, { data: messagesData, error: messagesError }] = await Promise.all([
         supabase
           .from('Users')
-          .select('CustomerReminderLetter, MessageFooter, MessageFooterIncludeEmployee')
+          .select('CustomerReminderLetter, MessageFooter, MessageFooterIncludeEmployee, GoCardlessMessageLetter')
           .eq('id', ownerUserId)
           .single(),
         supabase
@@ -370,6 +384,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
         const reminder = messagesData?.find((m) => String(m.id) === String(userData.CustomerReminderLetter))
         setReminderLetter(reminder || null)
       }
+      setGoCardlessMessageLetterId(userData?.GoCardlessMessageLetter || '')
       setMessages(messagesData || [])
       setMessageFooter(userData?.MessageFooter || '')
       setMessageFooterIncludeEmployee(userData?.MessageFooterIncludeEmployee || false)
@@ -746,6 +761,104 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
     }
   }
 
+  const formatPaymentStatusLabel = (status) => {
+    const normalized = String(status || '').trim().toLowerCase()
+    if (!normalized) return 'Pending'
+    if (normalized === 'confirmed') return 'Confirmed'
+    return normalized
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  }
+
+  const fetchGoCardlessPaymentStatus = async (customerId) => {
+    try {
+      const { data: invoices, error } = await supabase
+        .from('CustomerInvoices')
+        .select('id, GoCardlessPaymentId, GoCardlessPaymentStatus')
+        .order('id', { ascending: false })
+        .eq('CustomerID', customerId)
+
+      if (error) throw error
+
+      const outstandingInvoiceIds = (invoices || [])
+        .filter((invoice) => {
+          if (!invoice?.GoCardlessPaymentId) return false
+          const status = String(invoice.GoCardlessPaymentStatus || '').trim().toLowerCase()
+          return status !== 'paid_out' && status !== 'cancelled'
+        })
+        .map((inv) => inv.id)
+
+      const clearCustomerStatus = () => {
+        setCustomerGoCardlessStatus((prev) => {
+          if (!prev[customerId]) return prev
+          const next = { ...prev }
+          delete next[customerId]
+          return next
+        })
+      }
+
+      if (outstandingInvoiceIds.length > 0) {
+        // Fetch all line items for outstanding invoices
+        const { data: lineItems, error: lineItemsError } = await supabase
+          .from('CustomerInvoiceJobs')
+          .select('InvoiceID, Price')
+          .in('InvoiceID', outstandingInvoiceIds)
+
+        if (lineItemsError) throw lineItemsError
+
+        // Calculate total amount per invoice
+        const invoiceTotals = {}
+        ;(lineItems || []).forEach((item) => {
+          invoiceTotals[item.InvoiceID] = (invoiceTotals[item.InvoiceID] || 0) + (parseFloat(item.Price) || 0)
+        })
+
+        // Get the outstanding invoices with their totals
+        const outstandingPayments = invoices
+          .filter((inv) => outstandingInvoiceIds.includes(inv.id))
+          .map((inv) => ({
+            ...inv,
+            totalAmount: invoiceTotals[inv.id] || 0
+          }))
+
+        if (outstandingPayments.length > 0) {
+          const totalAmount = outstandingPayments.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0)
+          const paymentStatus = outstandingPayments[0].GoCardlessPaymentStatus
+
+          if (totalAmount <= 0) {
+            clearCustomerStatus()
+            return
+          }
+
+          setCustomerGoCardlessStatus((prev) => ({
+            ...prev,
+            [customerId]: { amount: totalAmount, status: paymentStatus }
+          }))
+          return
+        }
+      }
+
+      clearCustomerStatus()
+    } catch (error) {
+      console.error('Error fetching GoCardless payment status:', error.message)
+    }
+  }
+
+  const handleRefreshGoCardless = async () => {
+    if (!user?.GoCardlessConnected || !ownerUserId) return
+
+    try {
+      setRefreshingGoCardless(true)
+      await syncGoCardlessPayments({ userId: ownerUserId, limit: 200 })
+      await fetchCustomers()
+      setCustomerGoCardlessStatus({})
+    } catch (error) {
+      alert(error.message || 'Unable to refresh GoCardless payments')
+    } finally {
+      setRefreshingGoCardless(false)
+    }
+  }
+
   const handleSendMessageModalConfirm = async (method, selectedInvoice) => {
     let attachment = null
     if (selectedInvoice) {
@@ -995,6 +1108,25 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
 
     // Close the dropdown after opening send options
     setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
+  }
+
+  const buildGoCardlessMessageBody = ({ customer, amount, messageTemplate }) => {
+    const formalName = getFormalCustomerName(customer?.CustomerName)
+    const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+    const amountText = `${symbol}${Number(amount || 0).toFixed(2)}`
+    const amountLine = 'The amount of [Amount] has been deducted from your account via GoCardless.'
+      .replace('[Amount]', amountText)
+
+    const bodyParts = [`Dear ${formalName}`, amountLine]
+
+    if (messageTemplate?.Message) {
+      bodyParts.push(String(messageTemplate.Message).replaceAll('[Amount]', amountText))
+    }
+
+    if (messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName) bodyParts.push(user.UserName)
+    if (messageFooter) bodyParts.push(messageFooter)
+
+    return bodyParts.join('\n\n')
   }
 
   const toggleActionDropdown = (customerId, buttonRef) => {
@@ -1657,7 +1789,27 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
     }
   }
 
-  async function handleMarkAsPaid(customerId) {
+  const openMarkPaidModal = (customer) => {
+    const outstanding = parseFloat(customer?.Outstanding) || 0
+    if (!(outstanding > 0)) {
+      alert('Customer has no outstanding amount to mark as paid.')
+      return
+    }
+
+    setMarkPaidModal({
+      show: true,
+      customer,
+      amount: outstanding.toFixed(2)
+    })
+  }
+
+  async function handleMarkAsPaid(customerId, amountInput) {
+    const paidAmount = parseFloat(amountInput)
+    if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+      alert('Enter a valid amount greater than 0.')
+      return
+    }
+
     try {
       // Get customer data first to access Outstanding amount
       const { data: customer, error: fetchError } = await supabase
@@ -1668,9 +1820,12 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       
       if (fetchError) throw fetchError
 
+      const currentOutstanding = parseFloat(customer?.Outstanding) || 0
+      const newOutstanding = Math.max(0, Number((currentOutstanding - paidAmount).toFixed(2)))
+
       // Create history record
       const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
-      const historyMessage = `${symbol}${customer.Outstanding} mark as paid`
+      const historyMessage = `${symbol}${paidAmount.toFixed(2)} mark as paid`
       
       const { error: historyError } = await supabase
         .from('CustomerHistory')
@@ -1681,32 +1836,38 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       
       if (historyError) throw historyError
 
-      // Update customer outstanding to 0
+      // Deduct only the paid amount from outstanding and floor at zero.
       const { error } = await supabase
         .from('Customers')
-        .update({ Outstanding: 0 })
+        .update({ Outstanding: newOutstanding })
         .eq('id', customerId)
       
       if (error) throw error
       
+      setMarkPaidModal({ show: false, customer: null, amount: '' })
       setExpandedActionRows(prev => ({...prev, [customerId]: false}))
       fetchCustomers()
     } catch (error) {
       if (isLikelyOfflineError(error)) {
+        const localCustomer = customers.find((row) => Number(row.id) === Number(customerId))
+        const currentOutstanding = parseFloat(localCustomer?.Outstanding) || 0
+        const newOutstanding = Math.max(0, Number((currentOutstanding - paidAmount).toFixed(2)))
+
         const queued = queueCustomerMutation(
           {
             type: 'update',
             customerId,
-            changes: { Outstanding: 0 }
+            changes: { Outstanding: newOutstanding }
           },
           'Mark as paid saved offline.'
         )
 
         if (queued) {
+          setMarkPaidModal({ show: false, customer: null, amount: '' })
           setExpandedActionRows(prev => ({...prev, [customerId]: false}))
           setCustomers((prev) => prev.map((customer) => (
             Number(customer.id) === Number(customerId)
-              ? { ...customer, Outstanding: 0 }
+              ? { ...customer, Outstanding: newOutstanding }
               : customer
           )))
           return
@@ -1718,22 +1879,42 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
     }
   }
 
-  const openGoCardlessPayModal = (customer) => {
+  const openGoCardlessPayModal = async (customer) => {
     if (!user?.GoCardlessConnected) {
       alert('Connect GoCardless first in Settings > Payments.')
       return
     }
 
-    const activeMandateStatuses = new Set(['pending_submission', 'submitted', 'active', 'created'])
-    const mandateStatus = String(customer.GoCardlessMandateStatus || '').toLowerCase()
+    const activeMandateStatuses = new Set(['pending_submission', 'created', 'submitted', 'active'])
+    let mandateStatus = String(customer.GoCardlessMandateStatus || '').toLowerCase()
+
+    // Sync once on demand so stale local mandate status does not block valid collections.
+    if (customer.GoCardlessMandateId && !activeMandateStatuses.has(mandateStatus)) {
+      try {
+        const statusResult = await syncGoCardlessMandateStatus({
+          userId: ownerUserId || user.id,
+          customerId: customer.id,
+        })
+        mandateStatus = String(statusResult?.mandateStatus || mandateStatus).toLowerCase()
+        if (statusResult?.mandateStatus) {
+          setCustomers((prev) => prev.map((row) => (
+            Number(row.id) === Number(customer.id)
+              ? { ...row, GoCardlessMandateStatus: statusResult.mandateStatus }
+              : row
+          )))
+        }
+      } catch (error) {
+        console.error('Unable to sync mandate status before collection:', error.message)
+      }
+    }
+
     if (!customer.GoCardlessMandateId || !activeMandateStatuses.has(mandateStatus)) {
       alert('Customer does not have an active Direct Debit mandate. Set one up first.')
       return
     }
 
-    const price = parseFloat(customer.Price) || 0
     const outstanding = parseFloat(customer.Outstanding) || 0
-    const total = (price + outstanding).toFixed(2)
+    const total = outstanding.toFixed(2)
     setGoCardlessPayModal({ show: true, customer, amount: total })
   }
 
@@ -1815,13 +1996,58 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
           : row
       )))
 
+      const goCardlessMessage = messages.find((m) => String(m.id) === String(goCardlessMessageLetterId))
+      if (goCardlessMessage) {
+        const messageBody = buildGoCardlessMessageBody({ customer, amount, messageTemplate: goCardlessMessage })
+        setSendGoCardlessMessageConfirm({
+          show: true,
+          customer,
+          amount,
+          messageBody,
+          messageTitle: goCardlessMessage.MessageTitle || 'GoCardless Payment'
+        })
+      }
+
       setGoCardlessPayModal({ show: false, customer: null, amount: '' })
       fetchCustomers()
-      alert(`Payment of ${symbol}${amount.toFixed(2)} submitted via Direct Debit.`)
+      if (!goCardlessMessage) {
+        alert(`Payment of ${symbol}${amount.toFixed(2)} submitted via Direct Debit.`)
+      }
     } catch (error) {
       alert(error.message || 'Unable to collect GoCardless payment.')
     } finally {
       setGoCardlessLoadingCustomerId(null)
+    }
+  }
+
+  const handleSendGoCardlessMessageViaSMS = async () => {
+    if (!sendGoCardlessMessageConfirm.customer) return
+
+    try {
+      const result = await openMessageViaMethod({
+        method: 'Text',
+        customer: sendGoCardlessMessageConfirm.customer,
+        subject: sendGoCardlessMessageConfirm.messageTitle,
+        body: sendGoCardlessMessageConfirm.messageBody
+      })
+
+      if (!result.ok) {
+        alert(result.error)
+        return
+      }
+
+      if (sendGoCardlessMessageConfirm.customer?.id) {
+        await addCustomerHistoryEntry(
+          sendGoCardlessMessageConfirm.customer.id,
+          `${sendGoCardlessMessageConfirm.messageTitle} sent via WhatsApp`
+        )
+      }
+
+      const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+      alert(`Payment of ${symbol}${sendGoCardlessMessageConfirm.amount.toFixed(2)} submitted via Direct Debit. Message sent via WhatsApp.`)
+      setSendGoCardlessMessageConfirm({ show: false, customer: null, amount: 0, messageBody: '', messageTitle: '' })
+    } catch (error) {
+      alert(error.message || 'Unable to send message.')
     }
   }
 
@@ -2530,6 +2756,17 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
               </div>
             )}
           </div>
+          {user?.GoCardlessConnected && (
+            <button
+              type="button"
+              className="sort-toggle refresh-gocardless-btn"
+              onClick={handleRefreshGoCardless}
+              disabled={refreshingGoCardless}
+              title="Sync latest payment statuses from GoCardless"
+            >
+              {refreshingGoCardless ? 'Refreshing GoCardless...' : 'Refresh GoCardless'}
+            </button>
+          )}
         </div>
         {customers.length === 0 ? (
           <p className="empty-state">No customers yet. Add your first customer above!</p>
@@ -2611,7 +2848,8 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
                       value: editingCustomerId === customer.id ? editFormData.Outstanding : customer.Outstanding,
                       onChange: (e) => setEditFormData({...editFormData, Outstanding: e.target.value}),
                       type: 'number',
-                      isOutstanding: true
+                      isOutstanding: true,
+                      goCardlessInfo: customerGoCardlessStatus[customer.id] || null
                     })
                   } else if (col === 'Route') {
                     rowCells.push({
@@ -2710,7 +2948,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
                                     )}
                                     <button
                                       className="paid-btn"
-                                      onClick={() => handleMarkAsPaid(customer.id)}
+                                      onClick={() => openMarkPaidModal(customer)}
                                     >
                                       Mark as Paid
                                     </button>
@@ -2753,6 +2991,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
                                             const data = await createGoCardlessFlow({
                                               userId: user.id,
                                               customerId: customer.id,
+                                              amount: parseFloat(customer?.Price) || 0,
                                             })
                                             setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
                                             window.location.assign(data.url)
@@ -2830,7 +3069,20 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
                             placeholder={cell.type === 'tel' ? 'Phone' : undefined}
                           />
                         ) : (
-                          cell.isOutstanding ? formatCurrency(cell.value, user.SettingsCountry || 'United Kingdom') : 
+                          cell.isOutstanding ? (
+                            <div>
+                              {formatCurrency(cell.value, user.SettingsCountry || 'United Kingdom')}
+                              {cell.goCardlessInfo && (parseFloat(cell.value) || 0) > 0 && (
+                                <div style={{ marginTop: '0.2rem', fontSize: '0.85rem', color: '#666' }}>
+                                  {cell.goCardlessInfo.amount !== parseFloat(cell.value) ? (
+                                    <>GC: {formatCurrency(cell.goCardlessInfo.amount, user.SettingsCountry || 'United Kingdom')} - {formatPaymentStatusLabel(cell.goCardlessInfo.status)}</>
+                                  ) : (
+                                    <>{formatPaymentStatusLabel(cell.goCardlessInfo.status)}</>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ) : 
                           cell.isDateField ? formatDateByCountry(cell.value, user.SettingsCountry || 'United Kingdom') : 
                           cell.value
                         )}
@@ -2943,7 +3195,6 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
 
       {goCardlessPayModal.show && goCardlessPayModal.customer && (() => {
         const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
-        const price = parseFloat(goCardlessPayModal.customer.Price) || 0
         const outstanding = parseFloat(goCardlessPayModal.customer.Outstanding) || 0
         return (
           <div className="modal-overlay" onClick={() => setGoCardlessPayModal({ show: false, customer: null, amount: '' })}>
@@ -2952,8 +3203,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
               <h3>Pay via GoCardless</h3>
               <p style={{ marginBottom: 4 }}><strong>{goCardlessPayModal.customer.CustomerName}</strong></p>
               <p style={{ fontSize: '0.85rem', color: '#555', marginBottom: 16 }}>
-                Job: {symbol}{price.toFixed(2)}
-                {outstanding > 0 && <> {' + '} Outstanding: {symbol}{outstanding.toFixed(2)}</>}
+                Outstanding: {symbol}{outstanding.toFixed(2)}
               </p>
               <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>
                 Amount to collect ({symbol})
@@ -2982,6 +3232,94 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
                   onClick={() => setGoCardlessPayModal({ show: false, customer: null, amount: '' })}
                 >
                   Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {markPaidModal.show && markPaidModal.customer && (() => {
+        const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+        const outstanding = parseFloat(markPaidModal.customer.Outstanding) || 0
+        return (
+          <div className="modal-overlay" onClick={() => setMarkPaidModal({ show: false, customer: null, amount: '' })}>
+            <div className="modal-content" style={{ maxWidth: 380 }} onClick={(e) => e.stopPropagation()}>
+              <button className="modal-close" onClick={() => setMarkPaidModal({ show: false, customer: null, amount: '' })}>×</button>
+              <h3>Mark as Paid</h3>
+              <p style={{ marginBottom: 4 }}><strong>{markPaidModal.customer.CustomerName}</strong></p>
+              <p style={{ fontSize: '0.85rem', color: '#555', marginBottom: 16 }}>
+                Outstanding: {symbol}{outstanding.toFixed(2)}
+              </p>
+              <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>
+                Amount paid ({symbol})
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={markPaidModal.amount}
+                onChange={(e) => setMarkPaidModal((prev) => ({ ...prev, amount: e.target.value }))}
+                style={{ width: '100%', padding: '8px 10px', fontSize: '1.1rem', border: '1px solid #ccc', borderRadius: 6, marginBottom: 20, boxSizing: 'border-box' }}
+                autoFocus
+              />
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  className="modal-ok-btn"
+                  style={{ flex: 1 }}
+                  disabled={!(parseFloat(markPaidModal.amount) > 0)}
+                  onClick={() => handleMarkAsPaid(markPaidModal.customer.id, markPaidModal.amount)}
+                >
+                  Save Payment
+                </button>
+                <button
+                  className="modal-cancel-btn"
+                  style={{ flex: 1 }}
+                  onClick={() => setMarkPaidModal({ show: false, customer: null, amount: '' })}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {sendGoCardlessMessageConfirm.show && sendGoCardlessMessageConfirm.customer && (() => {
+        return (
+          <div className="modal-overlay" onClick={() => setSendGoCardlessMessageConfirm({ show: false, customer: null, amount: 0, messageBody: '', messageTitle: '' })}>
+            <div className="modal-content" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+              <button className="modal-close" onClick={() => setSendGoCardlessMessageConfirm({ show: false, customer: null, amount: 0, messageBody: '', messageTitle: '' })}>×</button>
+              <h3>Send Message to Customer</h3>
+              <p style={{ marginBottom: 12 }}>Send a WhatsApp message to <strong>{sendGoCardlessMessageConfirm.customer.CustomerName}</strong> about the payment?</p>
+              <div style={{ 
+                backgroundColor: '#f9f9f9',
+                border: '1px solid #ddd',
+                borderRadius: 6,
+                padding: 12,
+                marginBottom: 20,
+                maxHeight: 200,
+                overflowY: 'auto',
+                fontSize: '0.95rem',
+                whiteSpace: 'pre-wrap',
+                wordWrap: 'break-word'
+              }}>
+                {sendGoCardlessMessageConfirm.messageBody}
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  className="modal-ok-btn"
+                  style={{ flex: 1 }}
+                  onClick={() => handleSendGoCardlessMessageViaSMS()}
+                >
+                  Send via WhatsApp
+                </button>
+                <button
+                  className="modal-cancel-btn"
+                  style={{ flex: 1 }}
+                  onClick={() => setSendGoCardlessMessageConfirm({ show: false, customer: null, amount: 0, messageBody: '', messageTitle: '' })}
+                >
+                  Skip
                 </button>
               </div>
             </div>

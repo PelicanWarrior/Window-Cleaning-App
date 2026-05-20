@@ -14,13 +14,14 @@ import {
 } from "../_shared/gocardless.ts";
 
 function buildCustomerDetailsPayload(customer: Record<string, any>, user: Record<string, any>) {
-  const names = splitCustomerName(customer?.CustomerName);
+  const names = splitCustomerName(customer?.CustomerName || customer?.Name);
   const countryCode = mapCountryToCountryCode(user?.SettingsCountry);
   const city = customer?.Address3 || customer?.Address2 || customer?.Address || customer?.Town || "Unknown";
 
   return {
     customer: {
-      email: customer?.EmailAddress || undefined,
+      email: customer?.EmailAddress || customer?.Email || undefined,
+      phone_number: customer?.PhoneNumber || customer?.Phone || undefined,
       given_name: names.given_name,
       family_name: names.family_name || undefined,
     },
@@ -49,6 +50,11 @@ serve(async (req) => {
     const userId = body?.userId;
     const customerId = body?.customerId;
     const invoiceId = body?.invoiceId || null;
+    const amount = body?.amount;
+    const openBankingOnly = Boolean(body?.openBankingOnly);
+    const prefillBankDetails = body?.prefillBankDetails && typeof body.prefillBankDetails === "object"
+      ? body.prefillBankDetails
+      : null;
 
     if (!userId || !customerId) {
       return jsonResponse(400, { error: "Missing userId or customerId" });
@@ -87,15 +93,24 @@ serve(async (req) => {
       invoice_id: invoiceId,
     };
 
-    const billingRequestBody: Record<string, any> = {
-      billing_requests: {
-        mandate_request: {
-          currency,
-        },
+    const billingRequestsPayload: Record<string, any> = {
+      mandate_request: {
+        currency,
+        // Protect+ style verification to reduce bank detail and payer risk.
+        verify: "recommended",
+      },
+      metadata: {
+        app_flow: invoiceId ? "invoice_collect" : "mandate_setup",
       },
     };
 
+    const billingRequestBody: Record<string, any> = {
+      billing_requests: billingRequestsPayload,
+    };
+
     let invoiceRow: Record<string, any> | null = null;
+    const amountValue = Number(amount);
+    const hasStandaloneAmount = Number.isFinite(amountValue) && amountValue > 0;
     if (invoiceId) {
       const { data: invoice, error: invoiceError } = await supabase
         .from("CustomerInvoices")
@@ -118,12 +133,40 @@ serve(async (req) => {
 
       const total = (items || []).reduce((sum, item) => sum + (Number(item.Price) || 0), 0);
       const description = `Invoice ${invoice.InvoiceID || invoice.id}`;
-      billingRequestBody.billing_requests.payment_request = {
+      billingRequestsPayload.payment_request = {
         amount: toMinorUnitAmount(total),
         currency,
         description,
       };
+
+      // Combined Open Banking + Direct Debit flow is enabled by default.
+      billingRequestsPayload.fallback_enabled = !openBankingOnly;
+
+      if (openBankingOnly) {
+        delete billingRequestsPayload.mandate_request;
+      }
+
       invoiceRow = invoice;
+    } else if (hasStandaloneAmount) {
+      billingRequestsPayload.payment_request = {
+        amount: toMinorUnitAmount(amountValue),
+        currency,
+        description: `Service for ${customer?.CustomerName || customer?.Name || "customer"}`,
+      };
+      billingRequestsPayload.fallback_enabled = !openBankingOnly;
+
+      if (openBankingOnly) {
+        delete billingRequestsPayload.mandate_request;
+      }
+    }
+
+    if (prefillBankDetails && billingRequestsPayload.mandate_request) {
+      billingRequestsPayload.mandate_request.bank_account = {
+        account_holder_name: prefillBankDetails.account_holder_name,
+        account_number: prefillBankDetails.account_number,
+        branch_code: prefillBankDetails.branch_code,
+        country_code: prefillBankDetails.country_code || mapCountryToCountryCode(user?.SettingsCountry),
+      };
     }
 
     const billingRequestResponse = await gocardlessRequest(connection.AccessToken, "/billing_requests", {
@@ -209,7 +252,11 @@ serve(async (req) => {
       url: flow.authorisation_url,
       billingRequestId: billingRequest.id,
       billingRequestFlowId: flow.id || null,
-      mode: invoiceId ? "invoice_payment_and_mandate" : "mandate_setup",
+      mode: invoiceId
+        ? (openBankingOnly ? "invoice_open_banking" : "invoice_payment_and_mandate")
+        : (hasStandaloneAmount
+          ? (openBankingOnly ? "amount_open_banking" : "amount_payment_and_mandate")
+          : "mandate_setup"),
     });
   } catch (error) {
     return jsonResponse(500, {

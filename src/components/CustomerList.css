@@ -381,6 +381,18 @@
 }
 .sort-toggle:hover { background-color: #d5dbdb; }
 .sort-toggle.open { border-color: #2980b9; }
+.refresh-gocardless-btn {
+  border-color: #16a085;
+  color: #0f5f50;
+  background-color: #e8f7f3;
+}
+.refresh-gocardless-btn:hover {
+  background-color: #d4efe8;
+}
+.refresh-gocardless-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
 .sort-dropdown-menu {
   position: absolute;
   top: calc(100% + 6px);

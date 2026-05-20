@@ -20,6 +20,7 @@ function Letters({ user }) {
   const [selectedPayLetter, setSelectedPayLetter] = useState('')
   const [selectedReminderLetter, setSelectedReminderLetter] = useState('')
   const [selectedPayChangeLetter, setSelectedPayChangeLetter] = useState('')
+  const [selectedGoCardlessMessageLetter, setSelectedGoCardlessMessageLetter] = useState('')
   const [selectedQuoteBookedInLetter, setSelectedQuoteBookedInLetter] = useState('')
   const [selectedQuoteTurnedIntoJobLetter, setSelectedQuoteTurnedIntoJobLetter] = useState('')
   const [quoteTurnedIntoJobIncludeBookedServices, setQuoteTurnedIntoJobIncludeBookedServices] = useState(false)
@@ -36,6 +37,7 @@ function Letters({ user }) {
     fetchCustomerPayLetter()
     fetchCustomerReminderLetter()
     fetchCustomerPayChangeLetter()
+    fetchGoCardlessMessageLetter()
     fetchQuoteBookedInLetter()
     fetchQuoteTurnedIntoJobLetter()
     if (!isTeamMember) fetchTeamMemberCount()
@@ -117,6 +119,24 @@ function Letters({ user }) {
     }
   }
 
+  async function fetchGoCardlessMessageLetter() {
+    try {
+      const { data, error } = await supabase
+        .from('Users')
+        .select('GoCardlessMessageLetter')
+        .eq('id', ownerUserId)
+        .single()
+
+      if (error) throw error
+      setSelectedGoCardlessMessageLetter(data?.GoCardlessMessageLetter || '')
+    } catch (error) {
+      console.error('Error fetching GoCardless message letter:', error.message)
+      if (String(error.message || '').toLowerCase().includes('gocardlessmessageletter')) {
+        alert('GoCardless default message is not available in Supabase yet. Please run the latest migration to add GoCardlessMessageLetter.')
+      }
+    }
+  }
+
   async function fetchQuoteBookedInLetter() {
     try {
       const { data, error } = await supabase
@@ -193,6 +213,24 @@ function Letters({ user }) {
       if (error) throw error
     } catch (error) {
       console.error('Error updating pay change letter:', error.message)
+    }
+  }
+
+  async function handleGoCardlessMessageLetterChange(letterId) {
+    const previousValue = selectedGoCardlessMessageLetter
+    setSelectedGoCardlessMessageLetter(letterId)
+    try {
+      const { error } = await supabase
+        .from('Users')
+        .update({ GoCardlessMessageLetter: letterId || null })
+        .eq('id', ownerUserId)
+
+      if (error) throw error
+      await fetchGoCardlessMessageLetter()
+    } catch (error) {
+      setSelectedGoCardlessMessageLetter(previousValue)
+      console.error('Error updating GoCardless message letter:', error.message)
+      alert('Could not save GoCardless Message default to Supabase. If this is a new field, run the latest migration first.')
     }
   }
 
@@ -462,6 +500,28 @@ function Letters({ user }) {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="gocardless-message-letter-section">
+            <label htmlFor="goCardlessMessageLetterSelect" className="gocardless-message-letter-label">
+              GoCardless Message
+            </label>
+            <select
+              id="goCardlessMessageLetterSelect"
+              value={selectedGoCardlessMessageLetter || ''}
+              onChange={(e) => handleGoCardlessMessageLetterChange(e.target.value)}
+              className="gocardless-message-letter-select"
+            >
+              <option value="">Select a message...</option>
+              {messages.map((message) => (
+                <option key={message.id} value={message.id}>
+                  {message.MessageTitle}
+                </option>
+              ))}
+            </select>
+            <p style={{ marginTop: '0.5rem', marginBottom: 0 }}>
+              This will have The amount of [Amount] has been deducted from your account via GoCardless.
+            </p>
           </div>
 
           <div className="quote-booked-in-letter-section">

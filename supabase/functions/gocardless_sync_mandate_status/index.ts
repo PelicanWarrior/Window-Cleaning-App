@@ -3,7 +3,7 @@ import { corsHeaders } from "../_shared/gocardless.ts"
 
 const gocardlessBaseUrl = Deno.env.get("GOCARDLESS_ENV") === "live"
   ? "https://api.gocardless.com"
-  : "https://sandbox.gocardless.com"
+  : "https://api-sandbox.gocardless.com"
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -77,6 +77,8 @@ serve(async (req) => {
       {
         headers: {
           Authorization: `Bearer ${connection.AccessToken}`,
+          Accept: "application/json",
+          "GoCardless-Version": "2015-07-06",
           "Content-Type": "application/json",
         },
       }
@@ -94,7 +96,7 @@ serve(async (req) => {
     }
 
     const mandateData = await mandateRes.json()
-    const mandate = mandateData.mandates ? mandateData.mandates[0] : mandateData.mandate
+    const mandate = mandateData?.mandates || mandateData?.mandate || null
 
     if (!mandate) {
       return new Response(

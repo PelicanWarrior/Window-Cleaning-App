@@ -167,11 +167,27 @@ function Auth({ onLogin }) {
   }
 
   async function ensureUserRecordFromAuth(authUser, signupDefaults = {}) {
-    if (!authUser?.email) {
+    // If authUser is null, try to get current session user
+    if (!authUser) {
+      const { data: { user: sessionUser }, error: sessionError } = await supabase.auth.getUser()
+      if (sessionError || !sessionUser) {
+        throw new Error('Auth user not found and cannot retrieve from session')
+      }
+      authUser = sessionUser
+    }
+    
+    // Try multiple email sources as Supabase may return it in different formats
+    const authEmail = (
+      authUser?.email ||
+      authUser?.user_metadata?.email ||
+      authUser?.identities?.[0]?.identity_data?.email ||
+      signupDefaults?.fallbackEmail ||
+      ''
+    ).trim().toLowerCase()
+    
+    if (!authEmail) {
       throw new Error('Confirmed auth user email was not found')
     }
-
-    const authEmail = authUser.email.trim().toLowerCase()
 
     const { data: existingUser, error: existingError } = await supabase
       .from('Users')
@@ -495,17 +511,25 @@ function Auth({ onLogin }) {
 
         if (authError || !authData?.user) {
           const authMessage = (authError?.message || '').toLowerCase()
+          const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+          
           if (authMessage.includes('email not confirmed')) {
-            setError('Please confirm your email before logging in. Check your inbox and spam folder.')
+            if (!isLocalhost) {
+              setError('Please confirm your email before logging in. Check your inbox and spam folder.')
+              setLoading(false)
+              return
+            }
+            // On localhost, allow login even if email not confirmed (dev mode)
           } else {
             setError('Invalid username/email or password')
+            setLoading(false)
+            return
           }
-          setLoading(false)
-          return
         }
 
         const data = await ensureUserRecordFromAuth(authData.user, {
-          username: credentialInput
+          username: credentialInput,
+          fallbackEmail: authLoginEmail
         })
 
         if (!data) {

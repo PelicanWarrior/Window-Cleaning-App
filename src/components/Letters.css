@@ -135,6 +135,38 @@
   outline: none;
 }
 
+.gocardless-message-letter-section {
+  background: #e9fbf6;
+  border: 2px solid #16a085;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.gocardless-message-letter-label {
+  display: block;
+  margin-bottom: 0.75rem;
+  color: #2c3e50;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.gocardless-message-letter-select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #16a085;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+  background-color: white;
+}
+
+.gocardless-message-letter-select:hover,
+.gocardless-message-letter-select:focus {
+  border-color: #0e8b72;
+  outline: none;
+}
+
 .quote-booked-in-letter-section {
   background: #e8f8ef;
   border: 2px solid #27ae60;
