@@ -1,0 +1,725 @@
+﻿<!doctype html><html><head><meta charset="utf-8"/><title>Squeegee</title><base href="/"/><style>:root {
+                --notch-inset-top: 0;
+                --notch-inset-right: 0;
+                --notch-inset-bottom: 0;
+                --notch-inset-left: 0;
+
+                --notch-inset-top: env(safe-area-inset-top);
+                --notch-inset-right: env(safe-area-inset-right);
+                --notch-inset-bottom: env(safe-area-inset-bottom);
+                --notch-inset-left: env(safe-area-inset-left);
+            }</style><script>var isMobileApp = document?.location?.protocol === 'file:' || document?.location?.host === 'squeegee-mobile-app';
+            var isHttp = !isMobileApp && /^https?\:\/\//.test(document.location.href);
+
+            if (isHttp) {
+                if (/^http\:\/\/localhost/.test(document.location.href)) {
+                    document.writeln('<link rel="icon" href="images/favicon-local.png" />');
+                } else if (/^http\:\/\/127.0.0.1/.test(document.location.href)) {
+                    document.writeln('<link rel="icon" href="images/favicon-local.png" />');
+                } else if (/^https\:\/\/dev.squeeg.ee/.test(document.location.href)) {
+                    document.writeln('<link rel="manifest" href="/manifest-dev.json">');
+                    document.writeln('<link rel="icon" href="images/favicon-dev.png" />');
+                } else if (/^https\:\/\/staging.squeeg.ee/.test(document.location.href)) {
+                    document.writeln('<link rel="manifest" href="/manifest-staging.json">');
+                    document.writeln('<link rel="icon" href="images/favicon-staging.png" />');
+                } else {
+                    document.writeln('<link rel="manifest" href="/manifest.json">');
+                    document.writeln('<link rel="icon" href="images/favicon.png" />');
+                }
+            } else {
+                document.writeln('<link rel="icon" href="images/favicon.png" />');
+            }
+
+            var style = document.documentElement.style;
+            style.setProperty('--max-view-height', '100vh');
+            style.setProperty('--max-view-height', 'calc(100vh - var(--notch-inset-top))');</script><meta http-equiv="Content-Security-Policy" content="default-src * filesystem: data: blob: 'unsafe-inline' 'unsafe-eval' ws: wss:; script-src * data: blob: 'unsafe-inline' 'unsafe-eval'; connect-src * data: blob: 'unsafe-inline'; img-src * filesystem: data: blob: 'unsafe-inline'; frame-src * data: blob: gap:; style-src * data: blob: 'unsafe-inline'; font-src * data: blob: 'unsafe-inline';"/><meta name="format-detection" content="telephone=no"/><meta name="apple-mobile-web-app-capable" content="yes"/><meta name="apple-itunes-app" content="app-id=1223407652"/><meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no,width=device-width,viewport-fit=cover"/><meta name="title" content="Squeegee Â® The Work Scheduling App"/><meta name="keywords" content="scheduling app, task management, squeegee, scheduling software, task management software"/><meta name="description" content="Sign up to Squeegee, the must have scheduling app for managing your business on Android, iOS, Windows, Mac and Linux"/><meta name="author" content=""/><meta name="application-name" content="Squeegee"/><meta itemprop="name" content="Squeegee Â® The Work Scheduling App"/><meta itemprop="description" content="Sign up to Squeegee, the must have scheduling app for managing your business on Android, iOS, Windows, Mac and Linux"/><meta itemprop="image" content="https://app.squeeg.ee/assets/images/logomark-neutral.svg?r=2"/><meta name="twitter:card" content="summary"/><meta name="twitter:site" content="@squeegeeonline"/><meta name="twitter:description" content="Sign up to Squeegee, the must have scheduling app for managing your business on Android, iOS, Windows, Mac and Linux"/><meta name="twitter:title" content="Squeegee Â® - The Work Scheduling App"/><meta name="twitter:image" content="https://app.squeeg.ee/assets/images/logomark-neutral.svg?r=2"/><meta property="og:title" content="Squeegee Â® The Work Scheduling App"/><meta property="og:url" content="https://app.squeeg.ee/"/><meta property="og:description" content="Sign up to Squeegee, the must have scheduling app for managing your business on Android, iOS, Windows, Mac and Linux"/><meta property="og:image" content="https://app.squeeg.ee/assets/images/logomark-neutral.svg?r=2"/><meta property="og:site_name" content="Squeegee&reg;"/><meta property="og:type" content="website"/><meta property="og:locale" content="en_GB"/><meta property="og:locale:alternate" content="en_US"/><meta property="og:locale:alternate" content="en_AU"/><meta property="og:locale:alternate" content="en_CA"/><meta property="og:locale:alternate" content="en_IE"/><meta name="google-signin-client_id" content="106037320825-nk1ksoqtg5ieaom2ojdpd30avcqkj961.apps.googleusercontent.com"/><link rel="stylesheet" href="fonts/fonts.css"/><link rel="apple-touch-icon" sizes="180x180" href="images/apple-touch-icon.png"/><script>var isMobile = false;
+            var isTouchEnabled = 'ontouchstart' in window;
+            var isAppleMobileDevice =
+                (!!navigator && !!navigator.userAgent && /iPad|iPhone/.test(navigator.userAgent)) ||
+                (!!navigator && !!navigator.userAgent && /Macintosh/.test(navigator.userAgent) && !isHttp);
+            var isAndroidMobileDevice = !!navigator && !!navigator.userAgent && /Android/.test(navigator.userAgent);
+            window.__pendingOpenUrls = window.__pendingOpenUrls || [];
+            var handleOpenURL = function (rawUrl) {
+                window.__pendingOpenUrls.push(rawUrl);
+            };
+            if (
+                isMobileApp ||
+                isAppleMobileDevice ||
+                isAndroidMobileDevice ||
+                (!!navigator && !!navigator.userAgent && /Mobi/.test(navigator.userAgent))
+            ) {
+                isMobile = true;
+            }
+            var isDevServer =
+                isHttp &&
+                (document.location.hostname.includes('dev') ||
+                    document.location.hostname.includes('localhost') ||
+                    /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(document.location.hostname));
+
+            var NativeFile = File;
+            if (!isHttp && isMobile) {
+                document.write('<script src="cordova.js"></' + 'script>');
+            }
+
+            var isAppleMobileApp = isAppleMobileDevice && isMobileApp;
+
+            var isAndroidMobileApp = isAndroidMobileDevice && isMobileApp;
+
+            var isLocalhost = isHttp && document.location.href.indexOf('localhost:') > -1;
+
+            var isSafari =
+                (/Safari/i.test(navigator.userAgent) && /Apple Computer, Inc./i.test(navigator.vendor)) ||
+                /Apple Inc./i.test(navigator.vendor);</script><style>html,
+            body,
+            #root {
+                margin: 0;
+                padding: 0;
+                height: 100%;
+                width: 100%;
+                font-size: 14px;
+            }
+            .splash {
+                background-color: var(--themed-main);
+                width: 100vw;
+                height: 100vh;
+                display: grid;
+                justify-content: center;
+                align-content: center;
+                font-weight: 400;
+                line-height: 20px;
+                font-family: Roboto, Helvetica, Arial, sans-serif;
+                overflow: hidden;
+                box-sizing: border-box;
+            }
+            .splash__logo,
+            .startup__logo {
+                width: 520px;
+                margin: auto;
+            }
+
+            .startup__logo > svg,
+            .splash__logo > svg {
+                width: 100%;
+                height: auto;
+                max-width: 520px;
+                display: block;
+                margin: 0 auto;
+            }
+
+            @media only screen and (max-width: 600px) {
+                .splash__logo {
+                    width: 300px;
+                    margin: auto;
+                }
+            }
+            .splash__logo svg {
+                vertical-align: middle;
+            }
+            .splash__loader {
+                padding: 1rem;
+            }
+            .splash__loader__msg {
+                text-align: center;
+                color: #fff;
+                font-size: 16px;
+                font-weight: 500;
+            }
+            .splash__info {
+                color: #7c99cc;
+                font-weight: 500;
+                margin: auto;
+            }
+            .splash__sign-out {
+                position: absolute;
+                bottom: 1rem;
+                left: 1rem;
+            }
+
+            :root {
+                --mdc-layout-grid-margin-desktop: 24px;
+                --mdc-layout-grid-gutter-desktop: 24px;
+                --mdc-layout-grid-column-width-desktop: 72px;
+                --mdc-layout-grid-margin-tablet: 16px;
+                --mdc-layout-grid-gutter-tablet: 16px;
+                --mdc-layout-grid-column-width-tablet: 72px;
+                --mdc-layout-grid-margin-phone: 16px;
+                --mdc-layout-grid-gutter-phone: 16px;
+                --mdc-layout-grid-column-width-phone: 72px;
+
+                /* Color theme */
+                --themed-main-lighter: #122e88;
+                --themed-main: #041344;
+                --themed-main-dark: #04154b;
+                --themed-main-darker: #03103b;
+                --themed-primary: #03103b;
+
+                --themed-background-light: #f2f2f2;
+                --themed-background-dark: #7e7e7e;
+                --themed-background-darker: #585858;
+                --themed-background-white: #ffffff;
+                --themed-light-gray: #dddddd;
+                --themed-dark-gray: #7e7e7e;
+                --themed-background-active: #ddd;
+            }
+
+            @-webkit-keyframes mdc-linear-progress-primary-indeterminate-translate {
+                0% {
+                    -webkit-transform: translateX(0);
+                    transform: translateX(0);
+                }
+                20% {
+                    -webkit-animation-timing-function: cubic-bezier(0.5, 0, 0.701732, 0.495819);
+                    animation-timing-function: cubic-bezier(0.5, 0, 0.701732, 0.495819);
+                    -webkit-transform: translateX(0);
+                    transform: translateX(0);
+                }
+                59.15% {
+                    -webkit-animation-timing-function: cubic-bezier(0.302435, 0.381352, 0.55, 0.956352);
+                    animation-timing-function: cubic-bezier(0.302435, 0.381352, 0.55, 0.956352);
+                    -webkit-transform: translateX(83.67142%);
+                    transform: translateX(83.67142%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-primary-half, 83.67142%));
+                    transform: translateX(var(--mdc-linear-progress-primary-half, 83.67142%));
+                }
+                100% {
+                    -webkit-transform: translateX(200.611057%);
+                    transform: translateX(200.611057%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-primary-full, 200.611057%));
+                    transform: translateX(var(--mdc-linear-progress-primary-full, 200.611057%));
+                }
+            }
+            @keyframes mdc-linear-progress-primary-indeterminate-translate {
+                0% {
+                    -webkit-transform: translateX(0);
+                    transform: translateX(0);
+                }
+                20% {
+                    -webkit-animation-timing-function: cubic-bezier(0.5, 0, 0.701732, 0.495819);
+                    animation-timing-function: cubic-bezier(0.5, 0, 0.701732, 0.495819);
+                    -webkit-transform: translateX(0);
+                    transform: translateX(0);
+                }
+                59.15% {
+                    -webkit-animation-timing-function: cubic-bezier(0.302435, 0.381352, 0.55, 0.956352);
+                    animation-timing-function: cubic-bezier(0.302435, 0.381352, 0.55, 0.956352);
+                    -webkit-transform: translateX(83.67142%);
+                    transform: translateX(83.67142%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-primary-half, 83.67142%));
+                    transform: translateX(var(--mdc-linear-progress-primary-half, 83.67142%));
+                }
+                100% {
+                    -webkit-transform: translateX(200.611057%);
+                    transform: translateX(200.611057%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-primary-full, 200.611057%));
+                    transform: translateX(var(--mdc-linear-progress-primary-full, 200.611057%));
+                }
+            }
+            @-webkit-keyframes mdc-linear-progress-primary-indeterminate-scale {
+                0% {
+                    -webkit-transform: scaleX(0.08);
+                    transform: scaleX(0.08);
+                }
+                36.65% {
+                    -webkit-animation-timing-function: cubic-bezier(0.334731, 0.12482, 0.785844, 1);
+                    animation-timing-function: cubic-bezier(0.334731, 0.12482, 0.785844, 1);
+                    -webkit-transform: scaleX(0.08);
+                    transform: scaleX(0.08);
+                }
+                69.15% {
+                    -webkit-animation-timing-function: cubic-bezier(0.06, 0.11, 0.6, 1);
+                    animation-timing-function: cubic-bezier(0.06, 0.11, 0.6, 1);
+                    -webkit-transform: scaleX(0.661479);
+                    transform: scaleX(0.661479);
+                }
+                100% {
+                    -webkit-transform: scaleX(0.08);
+                    transform: scaleX(0.08);
+                }
+            }
+            @keyframes mdc-linear-progress-primary-indeterminate-scale {
+                0% {
+                    -webkit-transform: scaleX(0.08);
+                    transform: scaleX(0.08);
+                }
+                36.65% {
+                    -webkit-animation-timing-function: cubic-bezier(0.334731, 0.12482, 0.785844, 1);
+                    animation-timing-function: cubic-bezier(0.334731, 0.12482, 0.785844, 1);
+                    -webkit-transform: scaleX(0.08);
+                    transform: scaleX(0.08);
+                }
+                69.15% {
+                    -webkit-animation-timing-function: cubic-bezier(0.06, 0.11, 0.6, 1);
+                    animation-timing-function: cubic-bezier(0.06, 0.11, 0.6, 1);
+                    -webkit-transform: scaleX(0.661479);
+                    transform: scaleX(0.661479);
+                }
+                100% {
+                    -webkit-transform: scaleX(0.08);
+                    transform: scaleX(0.08);
+                }
+            }
+            @-webkit-keyframes mdc-linear-progress-secondary-indeterminate-translate {
+                0% {
+                    -webkit-animation-timing-function: cubic-bezier(0.15, 0, 0.515058, 0.409685);
+                    animation-timing-function: cubic-bezier(0.15, 0, 0.515058, 0.409685);
+                    -webkit-transform: translateX(0);
+                    transform: translateX(0);
+                }
+                25% {
+                    -webkit-animation-timing-function: cubic-bezier(0.31033, 0.284058, 0.8, 0.733712);
+                    animation-timing-function: cubic-bezier(0.31033, 0.284058, 0.8, 0.733712);
+                    -webkit-transform: translateX(37.651913%);
+                    transform: translateX(37.651913%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-secondary-quarter, 37.651913%));
+                    transform: translateX(var(--mdc-linear-progress-secondary-quarter, 37.651913%));
+                }
+                48.35% {
+                    -webkit-animation-timing-function: cubic-bezier(0.4, 0.627035, 0.6, 0.902026);
+                    animation-timing-function: cubic-bezier(0.4, 0.627035, 0.6, 0.902026);
+                    -webkit-transform: translateX(84.386165%);
+                    transform: translateX(84.386165%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-secondary-half, 84.386165%));
+                    transform: translateX(var(--mdc-linear-progress-secondary-half, 84.386165%));
+                }
+                100% {
+                    -webkit-transform: translateX(160.277782%);
+                    transform: translateX(160.277782%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-secondary-full, 160.277782%));
+                    transform: translateX(var(--mdc-linear-progress-secondary-full, 160.277782%));
+                }
+            }
+            @keyframes mdc-linear-progress-secondary-indeterminate-translate {
+                0% {
+                    -webkit-animation-timing-function: cubic-bezier(0.15, 0, 0.515058, 0.409685);
+                    animation-timing-function: cubic-bezier(0.15, 0, 0.515058, 0.409685);
+                    -webkit-transform: translateX(0);
+                    transform: translateX(0);
+                }
+                25% {
+                    -webkit-animation-timing-function: cubic-bezier(0.31033, 0.284058, 0.8, 0.733712);
+                    animation-timing-function: cubic-bezier(0.31033, 0.284058, 0.8, 0.733712);
+                    -webkit-transform: translateX(37.651913%);
+                    transform: translateX(37.651913%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-secondary-quarter, 37.651913%));
+                    transform: translateX(var(--mdc-linear-progress-secondary-quarter, 37.651913%));
+                }
+                48.35% {
+                    -webkit-animation-timing-function: cubic-bezier(0.4, 0.627035, 0.6, 0.902026);
+                    animation-timing-function: cubic-bezier(0.4, 0.627035, 0.6, 0.902026);
+                    -webkit-transform: translateX(84.386165%);
+                    transform: translateX(84.386165%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-secondary-half, 84.386165%));
+                    transform: translateX(var(--mdc-linear-progress-secondary-half, 84.386165%));
+                }
+                100% {
+                    -webkit-transform: translateX(160.277782%);
+                    transform: translateX(160.277782%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-secondary-full, 160.277782%));
+                    transform: translateX(var(--mdc-linear-progress-secondary-full, 160.277782%));
+                }
+            }
+            @-webkit-keyframes mdc-linear-progress-secondary-indeterminate-scale {
+                0% {
+                    -webkit-animation-timing-function: cubic-bezier(0.205028, 0.057051, 0.57661, 0.453971);
+                    animation-timing-function: cubic-bezier(0.205028, 0.057051, 0.57661, 0.453971);
+                    -webkit-transform: scaleX(0.08);
+                    transform: scaleX(0.08);
+                }
+                19.15% {
+                    -webkit-animation-timing-function: cubic-bezier(0.152313, 0.196432, 0.648374, 1.004315);
+                    animation-timing-function: cubic-bezier(0.152313, 0.196432, 0.648374, 1.004315);
+                    -webkit-transform: scaleX(0.457104);
+                    transform: scaleX(0.457104);
+                }
+                44.15% {
+                    -webkit-animation-timing-function: cubic-bezier(0.257759, -0.003163, 0.211762, 1.38179);
+                    animation-timing-function: cubic-bezier(0.257759, -0.003163, 0.211762, 1.38179);
+                    -webkit-transform: scaleX(0.72796);
+                    transform: scaleX(0.72796);
+                }
+                100% {
+                    -webkit-transform: scaleX(0.08);
+                    transform: scaleX(0.08);
+                }
+            }
+            @keyframes mdc-linear-progress-secondary-indeterminate-scale {
+                0% {
+                    -webkit-animation-timing-function: cubic-bezier(0.205028, 0.057051, 0.57661, 0.453971);
+                    animation-timing-function: cubic-bezier(0.205028, 0.057051, 0.57661, 0.453971);
+                    -webkit-transform: scaleX(0.08);
+                    transform: scaleX(0.08);
+                }
+                19.15% {
+                    -webkit-animation-timing-function: cubic-bezier(0.152313, 0.196432, 0.648374, 1.004315);
+                    animation-timing-function: cubic-bezier(0.152313, 0.196432, 0.648374, 1.004315);
+                    -webkit-transform: scaleX(0.457104);
+                    transform: scaleX(0.457104);
+                }
+                44.15% {
+                    -webkit-animation-timing-function: cubic-bezier(0.257759, -0.003163, 0.211762, 1.38179);
+                    animation-timing-function: cubic-bezier(0.257759, -0.003163, 0.211762, 1.38179);
+                    -webkit-transform: scaleX(0.72796);
+                    transform: scaleX(0.72796);
+                }
+                100% {
+                    -webkit-transform: scaleX(0.08);
+                    transform: scaleX(0.08);
+                }
+            }
+            @-webkit-keyframes mdc-linear-progress-buffering {
+                from {
+                    -webkit-transform: rotate(180deg) translateX(-10px);
+                    transform: rotate(180deg) translateX(-10px);
+                }
+            }
+            @keyframes mdc-linear-progress-buffering {
+                from {
+                    -webkit-transform: rotate(180deg) translateX(-10px);
+                    transform: rotate(180deg) translateX(-10px);
+                }
+            }
+            @-webkit-keyframes mdc-linear-progress-primary-indeterminate-translate-reverse {
+                0% {
+                    -webkit-transform: translateX(0);
+                    transform: translateX(0);
+                }
+                20% {
+                    -webkit-animation-timing-function: cubic-bezier(0.5, 0, 0.701732, 0.495819);
+                    animation-timing-function: cubic-bezier(0.5, 0, 0.701732, 0.495819);
+                    -webkit-transform: translateX(0);
+                    transform: translateX(0);
+                }
+                59.15% {
+                    -webkit-animation-timing-function: cubic-bezier(0.302435, 0.381352, 0.55, 0.956352);
+                    animation-timing-function: cubic-bezier(0.302435, 0.381352, 0.55, 0.956352);
+                    -webkit-transform: translateX(-83.67142%);
+                    transform: translateX(-83.67142%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-primary-half-neg, -83.67142%));
+                    transform: translateX(var(--mdc-linear-progress-primary-half-neg, -83.67142%));
+                }
+                100% {
+                    -webkit-transform: translateX(-200.611057%);
+                    transform: translateX(-200.611057%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-primary-full-neg, -200.611057%));
+                    transform: translateX(var(--mdc-linear-progress-primary-full-neg, -200.611057%));
+                }
+            }
+            @keyframes mdc-linear-progress-primary-indeterminate-translate-reverse {
+                0% {
+                    -webkit-transform: translateX(0);
+                    transform: translateX(0);
+                }
+                20% {
+                    -webkit-animation-timing-function: cubic-bezier(0.5, 0, 0.701732, 0.495819);
+                    animation-timing-function: cubic-bezier(0.5, 0, 0.701732, 0.495819);
+                    -webkit-transform: translateX(0);
+                    transform: translateX(0);
+                }
+                59.15% {
+                    -webkit-animation-timing-function: cubic-bezier(0.302435, 0.381352, 0.55, 0.956352);
+                    animation-timing-function: cubic-bezier(0.302435, 0.381352, 0.55, 0.956352);
+                    -webkit-transform: translateX(-83.67142%);
+                    transform: translateX(-83.67142%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-primary-half-neg, -83.67142%));
+                    transform: translateX(var(--mdc-linear-progress-primary-half-neg, -83.67142%));
+                }
+                100% {
+                    -webkit-transform: translateX(-200.611057%);
+                    transform: translateX(-200.611057%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-primary-full-neg, -200.611057%));
+                    transform: translateX(var(--mdc-linear-progress-primary-full-neg, -200.611057%));
+                }
+            }
+            @-webkit-keyframes mdc-linear-progress-secondary-indeterminate-translate-reverse {
+                0% {
+                    -webkit-animation-timing-function: cubic-bezier(0.15, 0, 0.515058, 0.409685);
+                    animation-timing-function: cubic-bezier(0.15, 0, 0.515058, 0.409685);
+                    -webkit-transform: translateX(0);
+                    transform: translateX(0);
+                }
+                25% {
+                    -webkit-animation-timing-function: cubic-bezier(0.31033, 0.284058, 0.8, 0.733712);
+                    animation-timing-function: cubic-bezier(0.31033, 0.284058, 0.8, 0.733712);
+                    -webkit-transform: translateX(-37.651913%);
+                    transform: translateX(-37.651913%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-secondary-quarter-neg, -37.651913%));
+                    transform: translateX(var(--mdc-linear-progress-secondary-quarter-neg, -37.651913%));
+                }
+                48.35% {
+                    -webkit-animation-timing-function: cubic-bezier(0.4, 0.627035, 0.6, 0.902026);
+                    animation-timing-function: cubic-bezier(0.4, 0.627035, 0.6, 0.902026);
+                    -webkit-transform: translateX(-84.386165%);
+                    transform: translateX(-84.386165%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-secondary-half-neg, -84.386165%));
+                    transform: translateX(var(--mdc-linear-progress-secondary-half-neg, -84.386165%));
+                }
+                100% {
+                    -webkit-transform: translateX(-160.277782%);
+                    transform: translateX(-160.277782%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-secondary-full-neg, -160.277782%));
+                    transform: translateX(var(--mdc-linear-progress-secondary-full-neg, -160.277782%));
+                }
+            }
+            @keyframes mdc-linear-progress-secondary-indeterminate-translate-reverse {
+                0% {
+                    -webkit-animation-timing-function: cubic-bezier(0.15, 0, 0.515058, 0.409685);
+                    animation-timing-function: cubic-bezier(0.15, 0, 0.515058, 0.409685);
+                    -webkit-transform: translateX(0);
+                    transform: translateX(0);
+                }
+                25% {
+                    -webkit-animation-timing-function: cubic-bezier(0.31033, 0.284058, 0.8, 0.733712);
+                    animation-timing-function: cubic-bezier(0.31033, 0.284058, 0.8, 0.733712);
+                    -webkit-transform: translateX(-37.651913%);
+                    transform: translateX(-37.651913%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-secondary-quarter-neg, -37.651913%));
+                    transform: translateX(var(--mdc-linear-progress-secondary-quarter-neg, -37.651913%));
+                }
+                48.35% {
+                    -webkit-animation-timing-function: cubic-bezier(0.4, 0.627035, 0.6, 0.902026);
+                    animation-timing-function: cubic-bezier(0.4, 0.627035, 0.6, 0.902026);
+                    -webkit-transform: translateX(-84.386165%);
+                    transform: translateX(-84.386165%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-secondary-half-neg, -84.386165%));
+                    transform: translateX(var(--mdc-linear-progress-secondary-half-neg, -84.386165%));
+                }
+                100% {
+                    -webkit-transform: translateX(-160.277782%);
+                    transform: translateX(-160.277782%);
+                    -webkit-transform: translateX(var(--mdc-linear-progress-secondary-full-neg, -160.277782%));
+                    transform: translateX(var(--mdc-linear-progress-secondary-full-neg, -160.277782%));
+                }
+            }
+            @-webkit-keyframes mdc-linear-progress-buffering-reverse {
+                from {
+                    -webkit-transform: translateX(-10px);
+                    transform: translateX(-10px);
+                }
+            }
+            @keyframes mdc-linear-progress-buffering-reverse {
+                from {
+                    -webkit-transform: translateX(-10px);
+                    transform: translateX(-10px);
+                }
+            }
+            .mdc-linear-progress {
+                position: relative;
+                width: 100%;
+                height: 4px;
+                -webkit-transform: translateZ(0);
+                transform: translateZ(0);
+                outline: 1px solid transparent;
+                overflow: hidden;
+                transition: opacity 250ms 0ms cubic-bezier(0.4, 0, 0.6, 0.7);
+            }
+            .mdc-linear-progress__bar {
+                position: absolute;
+                width: 100%;
+                height: 100%;
+                -webkit-animation: none;
+                animation: none;
+                -webkit-transform-origin: top left;
+                transform-origin: top left;
+                transition: -webkit-transform 250ms 0ms cubic-bezier(0.4, 0, 0.6, 1);
+                transition: transform 250ms 0ms cubic-bezier(0.4, 0, 0.6, 1);
+                transition:
+                    transform 250ms 0ms cubic-bezier(0.4, 0, 0.6, 1),
+                    -webkit-transform 250ms 0ms cubic-bezier(0.4, 0, 0.6, 1);
+            }
+            .mdc-linear-progress__bar-inner {
+                display: inline-block;
+                position: absolute;
+                width: 100%;
+                -webkit-animation: none;
+                animation: none;
+                border-top: 4px solid;
+            }
+            .mdc-linear-progress__buffer {
+                display: flex;
+                position: absolute;
+                width: 100%;
+                height: 100%;
+            }
+            .mdc-linear-progress__buffer-dots {
+                background-repeat: repeat-x;
+                background-size: 10px 4px;
+                flex: auto;
+                -webkit-transform: rotate(180deg);
+                transform: rotate(180deg);
+                -webkit-animation: mdc-linear-progress-buffering 250ms infinite linear;
+                animation: mdc-linear-progress-buffering 250ms infinite linear;
+            }
+            .mdc-linear-progress__buffer-bar {
+                flex: 0 1 100%;
+                transition: flex-basis 250ms 0ms cubic-bezier(0.4, 0, 0.6, 1);
+            }
+            .mdc-linear-progress__primary-bar {
+                -webkit-transform: scaleX(0);
+                transform: scaleX(0);
+            }
+            .mdc-linear-progress__secondary-bar {
+                visibility: hidden;
+            }
+            .mdc-linear-progress--indeterminate .mdc-linear-progress__bar {
+                transition: none;
+            }
+            .mdc-linear-progress--indeterminate .mdc-linear-progress__primary-bar {
+                left: -145.166611%;
+            }
+            .mdc-linear-progress--indeterminate .mdc-linear-progress__secondary-bar {
+                left: -54.888891%;
+                visibility: visible;
+            }
+            .mdc-linear-progress--indeterminate.mdc-linear-progress--animation-ready .mdc-linear-progress__primary-bar {
+                -webkit-animation: mdc-linear-progress-primary-indeterminate-translate 2s infinite linear;
+                animation: mdc-linear-progress-primary-indeterminate-translate 2s infinite linear;
+            }
+            .mdc-linear-progress--indeterminate.mdc-linear-progress--animation-ready
+                .mdc-linear-progress__primary-bar
+                > .mdc-linear-progress__bar-inner {
+                -webkit-animation: mdc-linear-progress-primary-indeterminate-scale 2s infinite linear;
+                animation: mdc-linear-progress-primary-indeterminate-scale 2s infinite linear;
+            }
+            .mdc-linear-progress--indeterminate.mdc-linear-progress--animation-ready .mdc-linear-progress__secondary-bar {
+                -webkit-animation: mdc-linear-progress-secondary-indeterminate-translate 2s infinite linear;
+                animation: mdc-linear-progress-secondary-indeterminate-translate 2s infinite linear;
+            }
+            .mdc-linear-progress--indeterminate.mdc-linear-progress--animation-ready
+                .mdc-linear-progress__secondary-bar
+                > .mdc-linear-progress__bar-inner {
+                -webkit-animation: mdc-linear-progress-secondary-indeterminate-scale 2s infinite linear;
+                animation: mdc-linear-progress-secondary-indeterminate-scale 2s infinite linear;
+            }
+            [dir='rtl'] .mdc-linear-progress:not([dir='ltr']) .mdc-linear-progress__bar,
+            .mdc-linear-progress[dir='rtl']:not([dir='ltr']) .mdc-linear-progress__bar {
+                right: 0;
+                -webkit-transform-origin: center right;
+                transform-origin: center right;
+            }
+            [dir='rtl'] .mdc-linear-progress:not([dir='ltr']).mdc-linear-progress--animation-ready .mdc-linear-progress__primary-bar,
+            .mdc-linear-progress[dir='rtl']:not([dir='ltr']).mdc-linear-progress--animation-ready .mdc-linear-progress__primary-bar {
+                -webkit-animation-name: mdc-linear-progress-primary-indeterminate-translate-reverse;
+                animation-name: mdc-linear-progress-primary-indeterminate-translate-reverse;
+            }
+            [dir='rtl'] .mdc-linear-progress:not([dir='ltr']).mdc-linear-progress--animation-ready .mdc-linear-progress__secondary-bar,
+            .mdc-linear-progress[dir='rtl']:not([dir='ltr']).mdc-linear-progress--animation-ready .mdc-linear-progress__secondary-bar {
+                -webkit-animation-name: mdc-linear-progress-secondary-indeterminate-translate-reverse;
+                animation-name: mdc-linear-progress-secondary-indeterminate-translate-reverse;
+            }
+            [dir='rtl'] .mdc-linear-progress:not([dir='ltr']) .mdc-linear-progress__buffer-dots,
+            .mdc-linear-progress[dir='rtl']:not([dir='ltr']) .mdc-linear-progress__buffer-dots {
+                -webkit-animation: mdc-linear-progress-buffering-reverse 250ms infinite linear;
+                animation: mdc-linear-progress-buffering-reverse 250ms infinite linear;
+                -webkit-transform: rotate(0);
+                transform: rotate(0);
+            }
+            [dir='rtl'] .mdc-linear-progress:not([dir='ltr']).mdc-linear-progress--indeterminate .mdc-linear-progress__primary-bar,
+            .mdc-linear-progress[dir='rtl']:not([dir='ltr']).mdc-linear-progress--indeterminate .mdc-linear-progress__primary-bar {
+                right: -145.166611%;
+                left: auto;
+            }
+            [dir='rtl'] .mdc-linear-progress:not([dir='ltr']).mdc-linear-progress--indeterminate .mdc-linear-progress__secondary-bar,
+            .mdc-linear-progress[dir='rtl']:not([dir='ltr']).mdc-linear-progress--indeterminate .mdc-linear-progress__secondary-bar {
+                right: -54.888891%;
+                left: auto;
+            }
+            .mdc-linear-progress--closed {
+                opacity: 0;
+            }
+            .mdc-linear-progress--closed-animation-off .mdc-linear-progress__buffer-dots {
+                -webkit-animation: none;
+                animation: none;
+            }
+            .mdc-linear-progress--closed-animation-off.mdc-linear-progress--indeterminate .mdc-linear-progress__bar,
+            .mdc-linear-progress--closed-animation-off.mdc-linear-progress--indeterminate
+                .mdc-linear-progress__bar
+                .mdc-linear-progress__bar-inner {
+                -webkit-animation: none;
+                animation: none;
+            }
+            .mdc-linear-progress__bar-inner {
+                border-color: var(--themed-main-lighter);
+            }
+            .mdc-linear-progress__buffer-dots {
+                background-image: url("data:image/svg+xml,%3Csvg version='1.1' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' x='0px' y='0px' enable-background='new 0 0 5 2' xml:space='preserve' viewBox='0 0 5 2' preserveAspectRatio='none slice'%3E%3Ccircle cx='1' cy='1' r='1' fill='%23e6e6e6'/%3E%3C/svg%3E");
+            }
+            .mdc-linear-progress__buffer-bar {
+                background-color: #e6e6e6;
+            }</style><script>// Early theme init
+            var r = document.querySelector(':root');
+
+            var optionsJson = localStorage.getItem('squeegee-theme');
+            var options = optionsJson ? JSON.parse(optionsJson) : {};
+            console.log('Theme options:', options);
+            var baseTheme = {
+                '--themed-main-lighter': '#122e88',
+                '--themed-main': '#041344',
+                '--themed-main-dark': '#04154b',
+                '--themed-main-darker': '#03103b',
+                '--themed-primary': '#03103b',
+                '--themed-background-light': '#f2f2f2',
+                '--themed-background-dark': '#7e7e7e',
+                '--themed-background-darker': '#585858',
+                '--themed-background-white': '#ffffff',
+                '--themed-light-gray': '#dddddd',
+                '--themed-dark-gray': '#7e7e7e',
+                '--themed-background-active': '#ddd',
+            };
+
+            r.style.setProperty('--themed-main-lighter', options['--themed-main-lighter'] || baseTheme['--themed-main-lighter']);
+            r.style.setProperty('--themed-main', options['--themed-main'] || baseTheme['--themed-main']);
+            r.style.setProperty('--themed-main-dark', options['--themed-main-dark'] || baseTheme['--themed-main-dark']);
+            r.style.setProperty('--themed-main-darker', options['--themed-main-darker'] || baseTheme['--themed-main-darker']);
+            r.style.setProperty('--themed-primary', options['--themed-primary'] || baseTheme['--themed-primary']);
+            r.style.setProperty(
+                '--themed-background-light',
+                options['--themed-background-light'] || baseTheme['--themed-background-light'],
+            );
+            r.style.setProperty('--themed-background-dark', options['--themed-background-dark'] || baseTheme['--themed-background-dark']);
+            r.style.setProperty(
+                '--themed-background-darker',
+                options['--themed-background-darker'] || baseTheme['--themed-background-darker'],
+            );
+            r.style.setProperty(
+                '--themed-background-white',
+                options['--themed-background-white'] || baseTheme['--themed-background-white'],
+            );
+            r.style.setProperty('--themed-light-gray', options['--themed-light-gray'] || baseTheme['--themed-light-gray']);
+            r.style.setProperty('--themed-dark-gray', options['--themed-dark-gray'] || baseTheme['--themed-dark-gray']);
+            r.style.setProperty(
+                '--themed-background-active',
+                options['--themed-background-active'] || baseTheme['--themed-background-active'],
+            );</script><script defer="defer" src="/runtime~app.f982ddca33d82a69a66f.bundle.js"></script><script defer="defer" src="/vendors-7aeafcb2.213595102d7a22cb3b9d.bundle.js"></script><script defer="defer" src="/vendors-cdd60c62.f2ae05ac9b8f262e5d6d.bundle.js"></script><script defer="defer" src="/vendors-d2eb5610.8f7c0b965208a63682d0.bundle.js"></script><script defer="defer" src="/vendors-536eaa00.37b07808457a04eee0f1.bundle.js"></script><script defer="defer" src="/vendors-bb3d84b5.d6353dc6dff58a58c86c.bundle.js"></script><script defer="defer" src="/vendors-cb2d071c.4430bca36cb910ebce5e.bundle.js"></script><script defer="defer" src="/vendors-9db5d9a1.fc80dac1a5d211b26b91.bundle.js"></script><script defer="defer" src="/vendors-2f0ad843.dd72d216166a3a9852bb.bundle.js"></script><script defer="defer" src="/vendors-a4590e3f.39b7334ac67bfe42c730.bundle.js"></script><script defer="defer" src="/vendors-059be3de.aeeaeca38b4c4cf59fa4.bundle.js"></script><script defer="defer" src="/vendors-fbf35941.461910cd780fdc8aff89.bundle.js"></script><script defer="defer" src="/vendors-d39d7386.7db3a91caf7aaa957440.bundle.js"></script><script defer="defer" src="/vendors-3fb7187e.6b2aab01daaa54612433.bundle.js"></script><script defer="defer" src="/vendors-41b1562a.e53bf8b504553be7e867.bundle.js"></script><script defer="defer" src="/vendors-0bc0478e.bd5403cbdddb823fbb97.bundle.js"></script><script defer="defer" src="/vendors-db4c9f17.9b3d1c0fe6565b67e3cb.bundle.js"></script><script defer="defer" src="/vendors-2eb6d141.784b38799d441773971f.bundle.js"></script><script defer="defer" src="/vendors-a3052b7a.b7f0d7420a356630be4c.bundle.js"></script><script defer="defer" src="/vendors-cbfea2a1.f2142ec21981b64ff132.bundle.js"></script><script defer="defer" src="/vendors-cad7b73c.fce94fd8b7b46801088b.bundle.js"></script><script defer="defer" src="/vendors-e5bca7e4.29f7d4efeb6ab9d7d048.bundle.js"></script><script defer="defer" src="/vendors-49ceb22a.d94bf525e14df1058aa8.bundle.js"></script><script defer="defer" src="/vendors-7c94561b.8db50bb27a251fbb43e5.bundle.js"></script><script defer="defer" src="/vendors-27545368.16bf5d0b9e498a9cfe04.bundle.js"></script><script defer="defer" src="/vendors-52ef38c8.76c868856952ef5d77d6.bundle.js"></script><script defer="defer" src="/vendors-229eafb5.874b9685abe2711caee6.bundle.js"></script><script defer="defer" src="/vendors-0cd164f9.b998996895c096a8e381.bundle.js"></script><script defer="defer" src="/vendors-65820101.ae4d3c72927e60386b93.bundle.js"></script><script defer="defer" src="/vendors-8409e43d.e99345d264d131837e56.bundle.js"></script><script defer="defer" src="/vendors-906efe05.c32862a04187e1ca5946.bundle.js"></script><script defer="defer" src="/vendors-b8c5aba4.79a7613da23149919664.bundle.js"></script><script defer="defer" src="/vendors-866ab763.85db19034e08c908ef9c.bundle.js"></script><script defer="defer" src="/vendors-a5ce148e.6bc14220e641cd022c64.bundle.js"></script><script defer="defer" src="/vendors-c9b35b07.830169e9ff7bb18a3dbc.bundle.js"></script><script defer="defer" src="/vendors-5008afac.cb82eb306389a982cb76.bundle.js"></script><script defer="defer" src="/app-7aeafcb2.d19f4330e42bc47252ea.bundle.js"></script><script defer="defer" src="/app-9e5025d6.deb01110affa0b45b458.bundle.js"></script><script defer="defer" src="/app-9acf4d28.c397273c94e8eba30f38.bundle.js"></script><script defer="defer" src="/app-4f064d56.e3196ee49d47c3074fa1.bundle.js"></script><script defer="defer" src="/app-2e90501a.70724a2452bf7166e43f.bundle.js"></script><script defer="defer" src="/app-2ecf32f8.8f5d94587c23090d737b.bundle.js"></script><script defer="defer" src="/app-09176910.25306d9f0a0189c6f46a.bundle.js"></script><script defer="defer" src="/app-1772b753.d81264ad2d1c8b952db3.bundle.js"></script><script defer="defer" src="/app-a1d170d4.c3f6fd115ae148e7a8a2.bundle.js"></script><script defer="defer" src="/app-8c29ce34.88f65733c734c121816d.bundle.js"></script></head><body><div id="root" aurelia-app="main"><div class="splash"><div class="splash__logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 453 80" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M73.3857 17.9564C75.1617 18.9893 76.2 20.8983 76.2 22.9642C76.2 22.9642 76.1994 25.1339 76.0643 26.0244C75.5489 29.4257 69.6535 32.7495 66.0372 34.4873C63.4709 35.8638 60.6331 36.8 57.6652 36.8C51.7077 36.8 47.4182 34.7679 43.2538 32.7951C42.7888 32.5748 42.3254 32.3553 41.8615 32.1394C41.0352 31.755 40.2006 31.3346 39.3461 30.9042C32.2744 27.3421 23.8459 23.0966 7.59992 32.947C6.41729 33.5496 5.01983 32.6874 5.01983 31.3521L5 22.9642C5 20.8983 6.09409 18.9894 7.87013 17.9564L37.1128 0.948808C39.2879 -0.316269 41.9679 -0.316269 44.143 0.948808L73.3857 17.9564ZM7.81433 62.0436C6.03829 61.0107 5 59.1017 5 57.0358C5 57.0358 5.00063 54.8661 5.13565 53.9756C5.65108 50.5743 11.5465 47.2505 15.1628 45.5127C17.7291 44.1362 20.5669 43.2 23.5348 43.2C29.4923 43.2 33.7818 45.2321 37.9462 47.2049C38.4112 47.4252 38.8746 47.6447 39.3385 47.8606C40.1648 48.245 40.9994 48.6654 41.8539 49.0958C48.9256 52.6579 57.3541 56.9034 73.6001 47.053C74.7827 46.4504 76.1802 47.3126 76.1802 48.6479L76.2 57.0358C76.2 59.1017 75.1059 61.0106 73.3299 62.0436L44.0872 79.0512C41.912 80.3163 39.2321 80.3163 37.057 79.0512L7.81433 62.0436Z" fill="white"/><path d="M121.502 60.108C118.295 60.108 115.237 59.59 112.326 58.554C109.465 57.4687 107.023 55.8653 105 53.744L107.738 48.712C110.007 50.7347 112.252 52.19 114.472 53.078C116.692 53.966 118.937 54.41 121.206 54.41C123.673 54.41 125.671 53.9413 127.2 53.004C128.779 52.0667 129.568 50.6853 129.568 48.86C129.568 47.528 129.149 46.5413 128.31 45.9C127.521 45.2587 126.386 44.716 124.906 44.272C123.426 43.828 121.65 43.31 119.578 42.718C116.865 41.8793 114.571 41.016 112.696 40.128C110.871 39.24 109.489 38.13 108.552 36.798C107.615 35.466 107.146 33.7887 107.146 31.766C107.146 29.25 107.787 27.1287 109.07 25.402C110.353 23.6753 112.129 22.3433 114.398 21.406C116.667 20.4687 119.282 20 122.242 20C125.054 20 127.619 20.444 129.938 21.332C132.306 22.22 134.378 23.552 136.154 25.328L132.972 30.286C131.344 28.7073 129.617 27.548 127.792 26.808C125.967 26.0187 123.969 25.624 121.798 25.624C120.565 25.624 119.331 25.7967 118.098 26.142C116.914 26.438 115.927 26.956 115.138 27.696C114.398 28.436 114.028 29.4967 114.028 30.878C114.028 32.062 114.324 32.9993 114.916 33.69C115.557 34.3313 116.495 34.8987 117.728 35.392C119.011 35.836 120.54 36.3293 122.316 36.872C125.276 37.76 127.817 38.648 129.938 39.536C132.109 40.3747 133.761 41.46 134.896 42.792C136.08 44.124 136.672 45.974 136.672 48.342C136.672 52.042 135.291 54.928 132.528 57C129.765 59.072 126.09 60.108 121.502 60.108Z" fill="white"/><path d="M158.965 60.108C156.449 60.108 154.13 59.5653 152.009 58.48C149.888 57.3947 148.062 55.9393 146.533 54.114C145.004 52.2393 143.82 50.0933 142.981 47.676C142.142 45.2587 141.723 42.718 141.723 40.054C141.723 37.2913 142.192 34.7013 143.129 32.284C144.066 29.8667 145.349 27.7453 146.977 25.92C148.654 24.0947 150.603 22.664 152.823 21.628C155.043 20.5427 157.436 20 160.001 20C163.01 20 165.724 20.74 168.141 22.22C170.558 23.7 172.482 25.5993 173.913 27.918V20.74H180.351V75.13H173.025V51.968C169.621 57.3947 164.934 60.108 158.965 60.108ZM161.555 53.818C163.282 53.818 164.86 53.4727 166.291 52.782C167.722 52.0913 169.004 51.154 170.139 49.97C171.274 48.786 172.236 47.454 173.025 45.974V35.318C172.828 34.0847 172.334 32.95 171.545 31.914C170.805 30.8287 169.892 29.8667 168.807 29.028C167.722 28.1893 166.562 27.548 165.329 27.104C164.096 26.6107 162.862 26.364 161.629 26.364C159.804 26.364 158.126 26.7587 156.597 27.548C155.117 28.288 153.81 29.324 152.675 30.656C151.59 31.9387 150.726 33.4187 150.085 35.096C149.493 36.724 149.197 38.426 149.197 40.202C149.197 42.6687 149.715 44.938 150.751 47.01C151.836 49.082 153.292 50.7347 155.117 51.968C156.992 53.2013 159.138 53.818 161.555 53.818Z" fill="white"/><path d="M190.191 44.124V20.74H197.517V42.644C197.517 46.344 198.159 49.1313 199.441 51.006C200.773 52.8807 202.722 53.818 205.287 53.818C206.965 53.818 208.568 53.4727 210.097 52.782C211.676 52.042 213.082 51.006 214.315 49.674C215.598 48.342 216.609 46.7387 217.349 44.864V20.74H224.675V51.08C224.675 51.9187 224.823 52.5353 225.119 52.93C225.465 53.3247 226.032 53.5467 226.821 53.596V59.368C226.032 59.4667 225.391 59.5407 224.897 59.59C224.404 59.6393 223.96 59.664 223.565 59.664C222.184 59.664 221.025 59.2693 220.087 58.48C219.15 57.6907 218.632 56.704 218.533 55.52L218.385 51.302C216.708 54.114 214.463 56.2847 211.651 57.814C208.839 59.3433 205.756 60.108 202.401 60.108C198.405 60.108 195.371 58.7513 193.299 56.038C191.227 53.3247 190.191 49.3533 190.191 44.124Z" fill="white"/><path d="M252.682 60.108C249.673 60.108 246.959 59.59 244.542 58.554C242.125 57.4687 240.028 56.0133 238.252 54.188C236.525 52.3133 235.169 50.1673 234.182 47.75C233.245 45.3327 232.776 42.792 232.776 40.128C232.776 36.428 233.615 33.0733 235.292 30.064C236.969 27.0547 239.313 24.6373 242.322 22.812C245.331 20.9373 248.785 20 252.682 20C256.678 20 260.131 20.9373 263.042 22.812C265.953 24.6867 268.197 27.1287 269.776 30.138C271.404 33.098 272.218 36.3047 272.218 39.758C272.218 40.3007 272.193 40.8187 272.144 41.312C272.144 41.8053 272.119 42.2 272.07 42.496H240.546C240.743 44.864 241.409 46.9853 242.544 48.86C243.679 50.6853 245.159 52.116 246.984 53.152C248.809 54.1387 250.783 54.632 252.904 54.632C255.173 54.632 257.319 54.0893 259.342 53.004C261.365 51.8693 262.746 50.3647 263.486 48.49L269.776 50.266C268.937 52.1407 267.679 53.8427 266.002 55.372C264.325 56.852 262.351 58.0113 260.082 58.85C257.813 59.6887 255.346 60.108 252.682 60.108ZM240.324 37.538H265.188C264.991 35.17 264.3 33.0733 263.116 31.248C261.981 29.4227 260.501 28.0167 258.676 27.03C256.9 25.994 254.902 25.476 252.682 25.476C250.511 25.476 248.513 25.994 246.688 27.03C244.912 28.0167 243.457 29.4227 242.322 31.248C241.187 33.0733 240.521 35.17 240.324 37.538Z" fill="white"/><path d="M296.547 60.108C293.538 60.108 290.825 59.59 288.407 58.554C285.99 57.4687 283.893 56.0133 282.117 54.188C280.391 52.3133 279.034 50.1673 278.047 47.75C277.11 45.3327 276.641 42.792 276.641 40.128C276.641 36.428 277.48 33.0733 279.157 30.064C280.835 27.0547 283.178 24.6373 286.187 22.812C289.197 20.9373 292.65 20 296.547 20C300.543 20 303.997 20.9373 306.907 22.812C309.818 24.6867 312.063 27.1287 313.641 30.138C315.269 33.098 316.083 36.3047 316.083 39.758C316.083 40.3007 316.059 40.8187 316.009 41.312C316.009 41.8053 315.985 42.2 315.935 42.496H284.411C284.609 44.864 285.275 46.9853 286.409 48.86C287.544 50.6853 289.024 52.116 290.849 53.152C292.675 54.1387 294.648 54.632 296.769 54.632C299.039 54.632 301.185 54.0893 303.207 53.004C305.23 51.8693 306.611 50.3647 307.351 48.49L313.641 50.266C312.803 52.1407 311.545 53.8427 309.867 55.372C308.19 56.852 306.217 58.0113 303.947 58.85C301.678 59.6887 299.211 60.108 296.547 60.108ZM284.189 37.538H309.053C308.856 35.17 308.165 33.0733 306.981 31.248C305.847 29.4227 304.367 28.0167 302.541 27.03C300.765 25.994 298.767 25.476 296.547 25.476C294.377 25.476 292.379 25.994 290.553 27.03C288.777 28.0167 287.322 29.4227 286.187 31.248C285.053 33.0733 284.387 35.17 284.189 37.538Z" fill="white"/><path d="M338.415 59.738C335.8 59.738 333.407 59.22 331.236 58.184C329.066 57.148 327.191 55.7173 325.613 53.892C324.034 52.0173 322.801 49.896 321.913 47.528C321.074 45.16 320.654 42.6933 320.654 40.128C320.654 37.3653 321.074 34.7753 321.913 32.358C322.801 29.9407 324.034 27.8193 325.613 25.994C327.241 24.1193 329.14 22.664 331.311 21.628C333.481 20.5427 335.898 20 338.562 20C341.769 20 344.532 20.7647 346.85 22.294C349.218 23.8233 351.216 25.7967 352.844 28.214V20.74H359.283V58.554C359.283 62.254 358.395 65.3867 356.618 67.952C354.842 70.5173 352.425 72.466 349.367 73.798C346.357 75.1793 342.953 75.87 339.154 75.87C334.862 75.87 331.311 75.1053 328.499 73.576C325.687 72.096 323.343 70.0733 321.469 67.508L325.613 63.66C327.142 65.8307 329.09 67.4587 331.458 68.544C333.876 69.6787 336.441 70.246 339.154 70.246C341.473 70.246 343.594 69.8267 345.518 68.988C347.442 68.1493 348.996 66.8667 350.18 65.14C351.365 63.4133 351.956 61.218 351.956 58.554V52.264C350.575 54.5827 348.651 56.408 346.184 57.74C343.718 59.072 341.128 59.738 338.415 59.738ZM340.708 53.818C342.04 53.818 343.298 53.596 344.482 53.152C345.716 52.6587 346.851 52.042 347.887 51.302C348.923 50.562 349.786 49.6987 350.477 48.712C351.217 47.7253 351.71 46.714 351.956 45.678V35.022C351.315 33.2953 350.378 31.7907 349.145 30.508C347.911 29.176 346.505 28.1647 344.926 27.474C343.397 26.734 341.794 26.364 340.117 26.364C338.242 26.364 336.564 26.7587 335.085 27.548C333.605 28.3373 332.346 29.398 331.311 30.73C330.275 32.062 329.46 33.5667 328.868 35.244C328.326 36.872 328.055 38.5493 328.055 40.276C328.055 42.1013 328.375 43.828 329.016 45.456C329.707 47.084 330.62 48.5393 331.755 49.822C332.889 51.0553 334.221 52.042 335.751 52.782C337.329 53.4727 338.982 53.818 340.708 53.818Z" fill="white"/><path d="M386.735 60.108C383.725 60.108 381.012 59.59 378.595 58.554C376.177 57.4687 374.081 56.0133 372.305 54.188C370.578 52.3133 369.221 50.1673 368.235 47.75C367.297 45.3327 366.829 42.792 366.829 40.128C366.829 36.428 367.667 33.0733 369.345 30.064C371.022 27.0547 373.365 24.6373 376.375 22.812C379.384 20.9373 382.837 20 386.735 20C390.731 20 394.184 20.9373 397.095 22.812C400.005 24.6867 402.25 27.1287 403.829 30.138C405.457 33.098 406.271 36.3047 406.271 39.758C406.271 40.3007 406.246 40.8187 406.197 41.312C406.197 41.8053 406.172 42.2 406.123 42.496H374.599C374.796 44.864 375.462 46.9853 376.597 48.86C377.731 50.6853 379.211 52.116 381.037 53.152C382.862 54.1387 384.835 54.632 386.957 54.632C389.226 54.632 391.372 54.0893 393.395 53.004C395.417 51.8693 396.799 50.3647 397.539 48.49L403.829 50.266C402.99 52.1407 401.732 53.8427 400.055 55.372C398.377 56.852 396.404 58.0113 394.135 58.85C391.865 59.6887 389.399 60.108 386.735 60.108ZM374.377 37.538H399.241C399.043 35.17 398.353 33.0733 397.169 31.248C396.034 29.4227 394.554 28.0167 392.729 27.03C390.953 25.994 388.955 25.476 386.735 25.476C384.564 25.476 382.566 25.994 380.741 27.03C378.965 28.0167 377.509 29.4227 376.375 31.248C375.24 33.0733 374.574 35.17 374.377 37.538Z" fill="white"/><path d="M430.6 60.108C427.591 60.108 424.877 59.59 422.46 58.554C420.043 57.4687 417.946 56.0133 416.17 54.188C414.443 52.3133 413.087 50.1673 412.1 47.75C411.163 45.3327 410.694 42.792 410.694 40.128C410.694 36.428 411.533 33.0733 413.21 30.064C414.887 27.0547 417.231 24.6373 420.24 22.812C423.249 20.9373 426.703 20 430.6 20C434.596 20 438.049 20.9373 440.96 22.812C443.871 24.6867 446.115 27.1287 447.694 30.138C449.322 33.098 450.136 36.3047 450.136 39.758C450.136 40.3007 450.111 40.8187 450.062 41.312C450.062 41.8053 450.037 42.2 449.988 42.496H418.464C418.661 44.864 419.327 46.9853 420.462 48.86C421.597 50.6853 423.077 52.116 424.902 53.152C426.727 54.1387 428.701 54.632 430.822 54.632C433.091 54.632 435.237 54.0893 437.26 53.004C439.283 51.8693 440.664 50.3647 441.404 48.49L447.694 50.266C446.855 52.1407 445.597 53.8427 443.92 55.372C442.243 56.852 440.269 58.0113 438 58.85C435.731 59.6887 433.264 60.108 430.6 60.108ZM418.242 37.538H443.106C442.909 35.17 442.218 33.0733 441.034 31.248C439.899 29.4227 438.419 28.0167 436.594 27.03C434.818 25.994 432.82 25.476 430.6 25.476C428.429 25.476 426.431 25.994 424.606 27.03C422.83 28.0167 421.375 29.4227 420.24 31.248C419.105 33.0733 418.439 35.17 418.242 37.538Z" fill="white"/></svg></div><div class="splash__loader"><div id="initial-loader" class="splash__loader__msg">Loading</div><div class="mdc-linear-progress mdc-linear-progress--animation-ready" style="display: block; margin-top: 1rem"><div class="mdc-linear-progress__buffer"><div class="mdc-linear-progress__buffer-bar" style="flex-basis: 80%"></div><div class="mdc-linear-progress__buffer-dots"></div></div></div></div><div class="splash__info" style="visibility: hidden"><span>Squeegee Is Great</span></div><div class="splash__sign-out" style="visibility: hidden">Squeegee</div></div></div><div id="react-root"></div><div id="react-overlay-host"></div><div id="squeegee-theme-provider"></div><div id="mobile-notch-debug" style="display: none; pointer-events: none"><div style="position: fixed;
+                    top: 0;
+                    width: 100vw;
+                    height: var(--notch-inset-top);
+                    z-index: 1000;
+                    pointer-events: none;
+                    opacity: 0.1;"></div><div style="position: fixed;
+                    top: calc(var(--notch-inset-top) / 4);
+                    display: inline-block;
+                    border-radius: 50%;
+                    background-color: #000;
+                    margin: auto;
+                    width: calc(var(--notch-inset-top) / 2);
+                    height: calc(var(--notch-inset-top) / 2);
+                    left: 0;
+                    right: 0;
+                    z-index: 1000;
+                    border: 1px solid #1a1a1a;"></div><div style="position: fixed;
+                    bottom: 0;
+                    width: 100vw;
+                    height: var(--notch-inset-bottom);
+                    z-index: 1000;
+                    pointer-events: none;
+                    opacity: 0.1;"></div><div style="position: fixed;
+                    bottom: calc(var(--notch-inset-bottom) / 3);
+                    display: inline-block;
+                    border-radius: 3px;
+                    background-color: #000;
+                    margin: auto;
+                    width: 120px;
+                    height: 6px;
+                    left: 0;
+                    right: 0;
+                    z-index: 1000;"></div></div></body></html>

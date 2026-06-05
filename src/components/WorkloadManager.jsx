@@ -76,7 +76,9 @@ function WorkloadManager({ user }) {
   const [invoiceActionMenuId, setInvoiceActionMenuId] = useState(null)
   const [invoiceDetailsModal, setInvoiceDetailsModal] = useState({ show: false, invoice: null, items: [] })
   const [cancelServiceModal, setCancelServiceModal] = useState({ show: false, reason: '' })
-  const [bookJobModal, setBookJobModal] = useState({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
+  const [bookJobModal, setBookJobModal] = useState({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [], oneOff: false, weeks: 4 })
+  const [bookJobServiceData, setBookJobServiceData] = useState({ Service: '', Price: '', Description: '' })
+  const [bookJobSavingService, setBookJobSavingService] = useState(false)
   const [invoiceModal, setInvoiceModal] = useState({ show: false, customer: null })
   const [goCardlessLoadingCustomerId, setGoCardlessLoadingCustomerId] = useState(null)
   const [gcConfirmModal, setGcConfirmModal] = useState({ open: false, customer: null, amount: '' })
@@ -1529,8 +1531,10 @@ function WorkloadManager({ user }) {
     try {
       const currentWorkDate = parseDateKeyToLocalDate(selectedDate) || new Date(currentDate)
       const weeksToAdd = parseInt(customer.Weeks) || 0
-      const nextCleanDate = new Date(currentWorkDate)
-      nextCleanDate.setDate(nextCleanDate.getDate() + (weeksToAdd * 7))
+      const nextCleanDate = weeksToAdd > 0 ? new Date(currentWorkDate) : null
+      if (nextCleanDate) {
+        nextCleanDate.setDate(nextCleanDate.getDate() + (weeksToAdd * 7))
+      }
       
       // Create history record first
       const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
@@ -1547,7 +1551,7 @@ function WorkloadManager({ user }) {
       const historyMessage = `${customer.NextServices} done, Paid ${symbol}${paidAmountText}${employeeHistorySuffix}${historySuffix}`
       await createCustomerHistory(customer.id, historyMessage)
       
-      nextDateValue = toLocalDateKey(nextCleanDate)
+      nextDateValue = nextCleanDate ? toLocalDateKey(nextCleanDate) : ''
 
       const { error } = await supabase
         .from('Customers')
@@ -1608,8 +1612,10 @@ function WorkloadManager({ user }) {
     try {
       const currentWorkDate = parseDateKeyToLocalDate(selectedDate) || new Date(currentDate)
       const weeksToAdd = parseInt(customer.Weeks) || 0
-      const nextCleanDate = new Date(currentWorkDate)
-      nextCleanDate.setDate(nextCleanDate.getDate() + (weeksToAdd * 7))
+      const nextCleanDate = weeksToAdd > 0 ? new Date(currentWorkDate) : null
+      if (nextCleanDate) {
+        nextCleanDate.setDate(nextCleanDate.getDate() + (weeksToAdd * 7))
+      }
       
       // Create history record first
       const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
@@ -1621,7 +1627,7 @@ function WorkloadManager({ user }) {
       
       newOutstanding = (parseFloat(customer.Outstanding) || 0) + (parseFloat(customer.Price) || 0)
       
-      nextDateValue = toLocalDateKey(nextCleanDate)
+      nextDateValue = nextCleanDate ? toLocalDateKey(nextCleanDate) : ''
 
       const { error } = await supabase
         .from('Customers')
@@ -2998,21 +3004,74 @@ function WorkloadManager({ user }) {
       
       if (error) throw error
       
-      if (!services || services.length === 0) {
-        alert('You need to add at least 1 service')
-        // Open the customer modal and navigate to services tab
-        setSelectedCustomer(customer)
-        setShowCustomerModal(true)
-        setShowServices(true)
-        setShowHistory(false)
-        return
-      }
-      
       // Show date and service picker modal
-      setBookJobModal({ show: true, customer, selectedDate: '', services: services || [], selectedServices: [] })
+      const customerWeeks = Number.isFinite(parseInt(customer.Weeks, 10)) ? parseInt(customer.Weeks, 10) : 4
+      setBookJobModal({
+        show: true,
+        customer,
+        selectedDate: '',
+        services: services || [],
+        selectedServices: [],
+        oneOff: customerWeeks === 0,
+        weeks: customerWeeks === 0 ? 4 : customerWeeks
+      })
+      setBookJobServiceData({ Service: '', Price: '', Description: '' })
+      setBookJobSavingService(false)
     } catch (error) {
       console.error('Error checking services:', error.message)
       alert('Error checking services: ' + error.message)
+    }
+  }
+
+  const closeBookJobModal = () => {
+    setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [], oneOff: false, weeks: 4 })
+    setBookJobServiceData({ Service: '', Price: '', Description: '' })
+    setBookJobSavingService(false)
+  }
+
+  const handleBookJobAddService = async () => {
+    if (!bookJobModal.customer?.id) return
+
+    const serviceName = String(bookJobServiceData.Service || '').trim()
+    if (!serviceName) {
+      alert('Please enter a service name')
+      return
+    }
+
+    setBookJobSavingService(true)
+    try {
+      const { data: insertedService, error } = await supabase
+        .from('CustomerPrices')
+        .insert({
+          CustomerID: bookJobModal.customer.id,
+          Service: serviceName,
+          Price: parseFloat(bookJobServiceData.Price) || 0,
+          Description: String(bookJobServiceData.Description || '').trim()
+        })
+        .select('*')
+        .single()
+
+      if (error) throw error
+
+      setBookJobModal((prev) => {
+        const nextServices = [...prev.services, insertedService]
+        const nextSelected = insertedService?.id
+          ? [...new Set([...prev.selectedServices, insertedService.id])]
+          : prev.selectedServices
+
+        return {
+          ...prev,
+          services: nextServices,
+          selectedServices: nextSelected
+        }
+      })
+
+      setBookJobServiceData({ Service: '', Price: '', Description: '' })
+    } catch (error) {
+      console.error('Error adding service in book job modal:', error.message)
+      alert('Failed to add service. Please try again.')
+    } finally {
+      setBookJobSavingService(false)
     }
   }
 
@@ -3026,6 +3085,12 @@ function WorkloadManager({ user }) {
       const selectedServiceObjects = bookJobModal.services.filter(s => bookJobModal.selectedServices.includes(s.id))
       const totalPrice = selectedServiceObjects.reduce((sum, s) => sum + (parseFloat(s.Price) || 0), 0)
       const serviceNames = selectedServiceObjects.map(s => s.Service).join(', ')
+      const resolvedWeeks = bookJobModal.oneOff ? 0 : (parseInt(bookJobModal.weeks, 10) || 4)
+
+      if (!bookJobModal.oneOff && resolvedWeeks <= 0) {
+        alert('Weeks must be greater than 0 unless One Off is selected')
+        return
+      }
       
       const { error } = await supabase
         .from('Customers')
@@ -3033,6 +3098,7 @@ function WorkloadManager({ user }) {
           NextClean: bookJobModal.selectedDate,
           Price: totalPrice,
           NextServices: serviceNames,
+          Weeks: resolvedWeeks,
           Quote: false 
         })
         .eq('id', bookJobModal.customer.id)
@@ -3066,7 +3132,7 @@ function WorkloadManager({ user }) {
         }
       }
       
-      setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
+      setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [], oneOff: false, weeks: 4 })
       setShowCustomerModal(false)
       fetchCustomers()
     } catch (error) {
@@ -3074,6 +3140,7 @@ function WorkloadManager({ user }) {
         const selectedServiceObjects = bookJobModal.services.filter((s) => bookJobModal.selectedServices.includes(s.id))
         const totalPrice = selectedServiceObjects.reduce((sum, s) => sum + (parseFloat(s.Price) || 0), 0)
         const serviceNames = selectedServiceObjects.map((s) => s.Service).join(', ')
+        const resolvedWeeks = bookJobModal.oneOff ? 0 : (parseInt(bookJobModal.weeks, 10) || 4)
 
         const queued = queueWorkloadCustomerMutation(
           {
@@ -3083,6 +3150,7 @@ function WorkloadManager({ user }) {
               NextClean: bookJobModal.selectedDate,
               Price: totalPrice,
               NextServices: serviceNames,
+              Weeks: resolvedWeeks,
               Quote: false
             }
           },
@@ -3090,11 +3158,11 @@ function WorkloadManager({ user }) {
         )
 
         if (queued) {
-          setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })
+          setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [], oneOff: false, weeks: 4 })
           setShowCustomerModal(false)
           setCustomers((prev) => prev.map((row) => (
             Number(row.id) === Number(bookJobModal.customer.id)
-              ? { ...row, NextClean: bookJobModal.selectedDate, Price: totalPrice, NextServices: serviceNames, Quote: false }
+              ? { ...row, NextClean: bookJobModal.selectedDate, Price: totalPrice, NextServices: serviceNames, Weeks: resolvedWeeks, Quote: false }
               : row
           )))
           return
@@ -4347,7 +4415,7 @@ function WorkloadManager({ user }) {
       )}
 
       {bookJobModal.show && bookJobModal.customer && (
-        <div className="modal-overlay" onClick={() => setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })}>
+        <div className="modal-overlay" onClick={closeBookJobModal}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>Book Job for {bookJobModal.customer.CustomerName}</h3>
             <div className="modal-form">
@@ -4359,6 +4427,64 @@ function WorkloadManager({ user }) {
                 onChange={(e) => setBookJobModal(prev => ({ ...prev, selectedDate: e.target.value }))}
                 className="modal-input"
               />
+
+              <div className="book-job-frequency-row">
+                <label className="book-job-oneoff-toggle">
+                  <input
+                    type="checkbox"
+                    checked={bookJobModal.oneOff}
+                    onChange={(e) => setBookJobModal(prev => ({ ...prev, oneOff: e.target.checked }))}
+                  />
+                  One Off
+                </label>
+                <div className="book-job-weeks-input-wrap">
+                  <label htmlFor="jobWeeks">Weeks</label>
+                  <input
+                    id="jobWeeks"
+                    type="number"
+                    min="1"
+                    value={bookJobModal.weeks}
+                    onChange={(e) => setBookJobModal(prev => ({ ...prev, weeks: e.target.value }))}
+                    className="modal-input"
+                    disabled={bookJobModal.oneOff}
+                  />
+                </div>
+              </div>
+
+              <label style={{ marginTop: '1rem' }}>Add Service:</label>
+              <div className="book-job-add-service-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: '0.5rem' }}>
+                <input
+                  type="text"
+                  value={bookJobServiceData.Service}
+                  onChange={(e) => setBookJobServiceData((prev) => ({ ...prev, Service: e.target.value }))}
+                  className="modal-input"
+                  placeholder="Service name"
+                />
+                <input
+                  type="number"
+                  value={bookJobServiceData.Price}
+                  onChange={(e) => setBookJobServiceData((prev) => ({ ...prev, Price: e.target.value }))}
+                  className="modal-input"
+                  placeholder="Price"
+                />
+              </div>
+              <input
+                type="text"
+                value={bookJobServiceData.Description}
+                onChange={(e) => setBookJobServiceData((prev) => ({ ...prev, Description: e.target.value }))}
+                className="modal-input"
+                placeholder="Description (optional)"
+                style={{ marginTop: '0.5rem' }}
+              />
+              <button
+                type="button"
+                onClick={handleBookJobAddService}
+                className="modal-ok-btn"
+                style={{ marginTop: '0.5rem', width: 'fit-content' }}
+                disabled={bookJobSavingService}
+              >
+                {bookJobSavingService ? 'Adding...' : 'Add Service'}
+              </button>
               
               {bookJobModal.services.length > 0 && (
                 <>
@@ -4403,6 +4529,10 @@ function WorkloadManager({ user }) {
                   )}
                 </>
               )}
+
+              {bookJobModal.services.length === 0 && (
+                <p style={{ marginTop: '1rem' }}>Add at least one service, then select it to continue.</p>
+              )}
             </div>
             <div className="modal-buttons">
               <button 
@@ -4412,7 +4542,7 @@ function WorkloadManager({ user }) {
                 Save
               </button>
               <button 
-                onClick={() => setBookJobModal({ show: false, customer: null, selectedDate: '', services: [], selectedServices: [] })}
+                onClick={closeBookJobModal}
                 className="modal-cancel-btn"
               >
                 Cancel

@@ -579,7 +579,7 @@ function Quotes({ user }) {
         Notes: quoteData.Notes,
         NextClean: quoteData.QuoteDate || null,
         Price: 0,
-        Weeks: 4,
+        Weeks: 0,
         Route: '',
         Outstanding: 0,
         Quote: true

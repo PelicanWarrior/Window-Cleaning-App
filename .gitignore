@@ -31,3 +31,4 @@ gocardless-live-credentials.txt
 # Temporary files
 *.csv
 Window-Cleaning-App/
+.tmp_sqgee/
