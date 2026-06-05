@@ -141,10 +141,6 @@ function CustomerDetailsModal({
   const fullAddress = [customer.Address, customer.Address2, customer.Address3, customer.Postcode]
     .filter((part) => part && String(part).trim())
     .join(', ') || '—'
-  const normalizedMandateStatus = String(customer?.GoCardlessMandateStatus || '').trim().toLowerCase()
-  const isGoCardlessLinked = Boolean(
-    customer?.GoCardlessMandateId && ['submitted', 'active'].includes(normalizedMandateStatus)
-  )
 
   const invoiceDetailsTotal = invoiceDetailsModal.items.reduce((sum, item) => sum + (parseFloat(item.Price) || 0), 0)
   const hasCustomerGoCardlessConnection = Boolean(user?.GoCardlessConnected && customer?.GoCardlessMandateId)
@@ -191,8 +187,7 @@ function CustomerDetailsModal({
 
   const formatGoCardlessStatusLabel = (status, hasMandate, hasBillingRequest = false) => {
     const normalized = String(status || '').trim().toLowerCase()
-    if (hasMandate && ['submitted', 'active'].includes(normalized)) return 'Linked'
-    if (hasMandate && (!normalized || normalized === 'pending_submission' || normalized === 'created')) return 'Pending setup'
+    if (hasMandate && (!normalized || normalized === 'pending_submission')) return 'Set Up'
     if (!hasMandate && normalized === 'pending_submission') return 'Pending setup'
     if (!hasMandate && hasBillingRequest && !normalized) return 'Pending setup'
     if (!normalized) return 'Not set up'
@@ -575,7 +570,6 @@ function CustomerDetailsModal({
       const data = await createGoCardlessFlow({
         userId: user.id,
         customerId: customer.id,
-        amount: null,
       })
       window.location.assign(data.url)
     } catch (error) {
@@ -1072,7 +1066,7 @@ function CustomerDetailsModal({
                   disabled={goCardlessLoading}
                   style={{ marginTop: '0.85rem', minWidth: '180px' }}
                 >
-                  {goCardlessLoading ? 'Opening GoCardless...' : isGoCardlessLinked ? 'Refresh Direct Debit Setup' : 'Link to GoCardless'}
+                  {goCardlessLoading ? 'Opening GoCardless...' : customer.GoCardlessMandateId ? 'Refresh Direct Debit Setup' : 'Set Up Direct Debit'}
                 </button>
 
                 {customer.GoCardlessBillingRequestId && !customer.GoCardlessMandateId && (
@@ -1143,7 +1137,7 @@ function CustomerDetailsModal({
                         title="Create a recurring GoCardless subscription"
                         style={{ marginTop: 0, flex: 1 }}
                       >
-                        {goCardlessLoading ? 'Please wait...' : 'Set up Direct Debit'}
+                        {goCardlessLoading ? 'Please wait...' : 'Create Subscription'}
                       </button>
                     )}
                   </div>
@@ -1365,7 +1359,7 @@ function CustomerDetailsModal({
         <div className="modal-overlay" onClick={() => setSubscriptionModal((prev) => ({ ...prev, show: false }))}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={() => setSubscriptionModal((prev) => ({ ...prev, show: false }))}>×</button>
-            <h3>{subscriptionModal.mode === 'edit' ? 'Edit GoCardless Subscription' : 'Set up Direct Debit via GoCardless'}</h3>
+            <h3>{subscriptionModal.mode === 'edit' ? 'Edit GoCardless Subscription' : 'Create GoCardless Subscription'}</h3>
             <p style={{ marginBottom: '0.75rem' }}>
               {subscriptionModal.mode === 'edit'
                 ? 'Update the monthly recurring payment details for this mandate.'

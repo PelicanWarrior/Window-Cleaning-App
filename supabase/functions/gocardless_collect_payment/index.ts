@@ -9,6 +9,86 @@ import {
   toMinorUnitAmount,
 } from "../_shared/gocardless.ts";
 
+function buildCustomerAddress(customer: Record<string, any>) {
+  const parts = [
+    customer?.Address,
+    customer?.Address2,
+    customer?.Address3,
+    customer?.Town,
+    customer?.Postcode,
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+
+  return parts.join(", ");
+}
+
+function buildPaymentDescription(customer: Record<string, any>, invoice: Record<string, any>) {
+  const address = buildCustomerAddress(customer);
+  const invoiceLabel = `Invoice ${invoice?.InvoiceID || invoice?.id}`;
+  const description = address ? `${invoiceLabel} - ${address}` : invoiceLabel;
+
+  // Keep descriptions concise for downstream display and provider limits.
+  return description.slice(0, 140);
+}
+
+async function tryRecoverMandateFromDuplicateCustomer(
+  supabase: ReturnType<typeof getSupabaseAdminClient>["supabase"],
+  customer: Record<string, any>,
+) {
+  if (!customer?.id || !customer?.UserId) return null;
+
+  const email = String(customer?.EmailAddress || "").trim();
+  const name = String(customer?.CustomerName || "").trim();
+  if (!email && !name) return null;
+
+  let query = supabase
+    .from("Customers")
+    .select("id, GoCardlessCustomerId, GoCardlessCustomerBillingDetailId, GoCardlessMandateId, GoCardlessMandateStatus")
+    .eq("UserId", customer.UserId)
+    .neq("id", customer.id)
+    .not("GoCardlessMandateId", "is", null)
+    .limit(1);
+
+  if (email) {
+    query = query.eq("EmailAddress", email);
+  } else {
+    query = query.eq("CustomerName", name);
+  }
+
+  const { data: candidates, error } = await query;
+  if (error || !Array.isArray(candidates) || candidates.length === 0) return null;
+
+  const candidate = candidates[0];
+  const mandateId = candidate?.GoCardlessMandateId;
+  if (!mandateId) return null;
+
+  const updates: Record<string, unknown> = {
+    GoCardlessMandateId: mandateId,
+    GoCardlessMandateStatus: candidate?.GoCardlessMandateStatus || "pending_submission",
+  };
+
+  if (candidate?.GoCardlessCustomerId) {
+    updates.GoCardlessCustomerId = candidate.GoCardlessCustomerId;
+  }
+
+  if (candidate?.GoCardlessCustomerBillingDetailId) {
+    updates.GoCardlessCustomerBillingDetailId = candidate.GoCardlessCustomerBillingDetailId;
+  }
+
+  const { error: updateError } = await supabase
+    .from("Customers")
+    .update(updates)
+    .eq("id", customer.id);
+
+  if (updateError) return null;
+
+  return {
+    ...customer,
+    ...updates,
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -37,7 +117,11 @@ serve(async (req) => {
     const { supabase } = getSupabaseAdminClient();
     const [{ data: user }, { data: customer }, { data: invoice, error: invoiceError }, { data: invoiceItems, error: itemsError }] = await Promise.all([
       supabase.from("Users").select("id, SettingsCountry").eq("id", userId).single(),
-      supabase.from("Customers").select("id, GoCardlessMandateId, GoCardlessMandateStatus").eq("id", customerId).single(),
+      supabase
+        .from("Customers")
+        .select("id, UserId, CustomerName, EmailAddress, GoCardlessCustomerId, GoCardlessCustomerBillingDetailId, GoCardlessMandateId, GoCardlessMandateStatus, Address, Address2, Address3, Town, Postcode")
+        .eq("id", customerId)
+        .single(),
       supabase.from("CustomerInvoices").select("id, InvoiceID, CustomerID").eq("id", invoiceId).single(),
       supabase.from("CustomerInvoiceJobs").select("Price").eq("InvoiceID", invoiceId),
     ]);
@@ -50,13 +134,21 @@ serve(async (req) => {
       return jsonResponse(500, { error: itemsError.message || "Unable to load invoice items" });
     }
 
-    if (!customer?.GoCardlessMandateId) {
+    let effectiveCustomer = customer;
+    if (!effectiveCustomer?.GoCardlessMandateId) {
+      const recovered = await tryRecoverMandateFromDuplicateCustomer(supabase, effectiveCustomer || {});
+      if (recovered?.GoCardlessMandateId) {
+        effectiveCustomer = recovered;
+      }
+    }
+
+    if (!effectiveCustomer?.GoCardlessMandateId) {
       return jsonResponse(400, { error: "Customer does not have an active GoCardless mandate yet" });
     }
 
     const blockedMandateStatuses = new Set(["cancelled", "failed", "expired"]);
-    if (blockedMandateStatuses.has(String(customer.GoCardlessMandateStatus || "").toLowerCase())) {
-      return jsonResponse(400, { error: `Customer mandate is ${customer.GoCardlessMandateStatus}` });
+    if (blockedMandateStatuses.has(String(effectiveCustomer.GoCardlessMandateStatus || "").toLowerCase())) {
+      return jsonResponse(400, { error: `Customer mandate is ${effectiveCustomer.GoCardlessMandateStatus}` });
     }
 
     const total = (invoiceItems || []).reduce((sum, item) => sum + (Number(item.Price) || 0), 0);
@@ -64,9 +156,10 @@ serve(async (req) => {
       payments: {
         amount: toMinorUnitAmount(total),
         currency: mapCountryToCurrency(user?.SettingsCountry),
+        description: buildPaymentDescription(effectiveCustomer || {}, invoice),
         retry_if_possible: successPlus,
         links: {
-          mandate: customer.GoCardlessMandateId,
+          mandate: effectiveCustomer.GoCardlessMandateId,
         },
         metadata: {
           invoice_id: String(invoice.id),

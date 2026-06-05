@@ -345,12 +345,22 @@ export function toMinorUnitAmount(value: number) {
 
 export async function getConnectionByUserId(userId: number | string) {
   const { supabase } = getSupabaseAdminClient();
-  const { data, error } = await supabase
+  const environment = getGoCardlessEnvironment();
+
+  let query = supabase
     .from("GoCardlessConnections")
     .select("UserId, OrganisationId, AccessToken, Environment, DisconnectedAt")
     .eq("UserId", userId)
-    .is("DisconnectedAt", null)
-    .maybeSingle();
+    .is("DisconnectedAt", null);
+
+  if (environment.mode === "live") {
+    query = query.eq("Environment", "live");
+  } else {
+    // Keep backward compatibility for older sandbox rows that may not have Environment set.
+    query = query.or("Environment.eq.sandbox,Environment.is.null");
+  }
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) throw error;
   return data;

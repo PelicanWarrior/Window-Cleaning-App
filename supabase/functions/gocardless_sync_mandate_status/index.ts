@@ -1,140 +1,78 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { corsHeaders } from "../_shared/gocardless.ts"
-
-const gocardlessBaseUrl = Deno.env.get("GOCARDLESS_ENV") === "live"
-  ? "https://api.gocardless.com"
-  : "https://api-sandbox.gocardless.com"
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import {
+  corsHeaders,
+  getConnectionByUserId,
+  getSupabaseAdminClient,
+  gocardlessRequest,
+  jsonResponse,
+} from "../_shared/gocardless.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders })
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
+
+  if (req.method !== "POST") {
+    return jsonResponse(405, { error: "Method not allowed" });
   }
 
   try {
-    if (req.method !== "POST") {
-      return new Response(JSON.stringify({ error: "Method not allowed" }), {
-        status: 405,
-        headers: corsHeaders,
-      })
-    }
-
-    const { userId, customerId } = await req.json()
+    const { userId, customerId } = await req.json();
 
     if (!userId || !customerId) {
-      return new Response(
-        JSON.stringify({ error: "userId and customerId required" }),
-        { status: 400, headers: corsHeaders }
-      )
+      return jsonResponse(400, { error: "userId and customerId required" });
     }
 
-    // Import admin client
-    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.38.4")
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") || "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
-    )
+    const connection = await getConnectionByUserId(userId);
+    if (!connection?.AccessToken) {
+      return jsonResponse(404, { error: "GoCardless connection not found for current environment" });
+    }
 
-    // Get customer record
-    const { data: customer, error: custErr } = await supabase
+    const { supabase } = getSupabaseAdminClient();
+
+    const { data: customer, error: customerError } = await supabase
       .from("Customers")
-      .select("GoCardlessMandateId, GoCardlessCustomerId")
+      .select("id, UserId, GoCardlessMandateId")
       .eq("id", customerId)
       .eq("UserId", userId)
-      .single()
+      .maybeSingle();
 
-    if (custErr || !customer) {
-      return new Response(
-        JSON.stringify({ error: "Customer not found" }),
-        { status: 404, headers: corsHeaders }
-      )
+    if (customerError || !customer) {
+      return jsonResponse(404, { error: "Customer not found" });
     }
 
-    const mandateId = customer.GoCardlessMandateId
+    const mandateId = customer.GoCardlessMandateId;
     if (!mandateId) {
-      return new Response(
-        JSON.stringify({ error: "Customer has no mandate ID" }),
-        { status: 400, headers: corsHeaders }
-      )
+      return jsonResponse(400, { error: "Customer has no mandate ID" });
     }
 
-    // Get connection for this user
-    const { data: connection, error: connErr } = await supabase
-      .from("GoCardlessConnections")
-      .select("AccessToken")
-      .eq("UserId", userId)
-      .single()
-
-    if (connErr || !connection) {
-      return new Response(
-        JSON.stringify({ error: "GoCardless connection not found" }),
-        { status: 404, headers: corsHeaders }
-      )
-    }
-
-    // Fetch mandate details from GoCardless
-    const mandateRes = await fetch(
-      `${gocardlessBaseUrl}/mandates/${mandateId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${connection.AccessToken}`,
-          Accept: "application/json",
-          "GoCardless-Version": "2015-07-06",
-          "Content-Type": "application/json",
-        },
-      }
-    )
-
-    if (!mandateRes.ok) {
-      const errorBody = await mandateRes.text()
-      return new Response(
-        JSON.stringify({ 
-          error: "Failed to fetch mandate from GoCardless",
-          details: errorBody
-        }),
-        { status: mandateRes.status, headers: corsHeaders }
-      )
-    }
-
-    const mandateData = await mandateRes.json()
-    const mandate = mandateData?.mandates || mandateData?.mandate || null
+    const record = await gocardlessRequest(connection.AccessToken, `/mandates/${mandateId}`);
+    const mandate = record?.mandates || record?.mandate || null;
 
     if (!mandate) {
-      return new Response(
-        JSON.stringify({ error: "No mandate data in response" }),
-        { status: 400, headers: corsHeaders }
-      )
+      return jsonResponse(400, { error: "No mandate data in response" });
     }
 
-    // Update customer record with latest mandate status
-    const { error: updateErr } = await supabase
+    const { error: updateError } = await supabase
       .from("Customers")
       .update({
         GoCardlessMandateStatus: mandate.status,
         GoCardlessMandateLastEventAt: new Date().toISOString(),
       })
-      .eq("id", customerId)
+      .eq("id", customerId);
 
-    if (updateErr) {
-      return new Response(
-        JSON.stringify({ error: "Failed to update customer", details: updateErr.message }),
-        { status: 500, headers: corsHeaders }
-      )
-    }
+    if (updateError) throw updateError;
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        mandateStatus: mandate.status,
-        mandateId: mandate.id,
-        reference: mandate.reference,
-        nextPossibleChargeDate: mandate.next_possible_charge_date,
-      }),
-      { status: 200, headers: corsHeaders }
-    )
+    return jsonResponse(200, {
+      success: true,
+      mandateStatus: mandate.status,
+      mandateId: mandate.id,
+      reference: mandate.reference,
+      nextPossibleChargeDate: mandate.next_possible_charge_date,
+    });
   } catch (error) {
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500, headers: corsHeaders }
-    )
+    return jsonResponse(500, {
+      error: error instanceof Error ? error.message : "Unable to sync mandate status",
+    });
   }
-})
+});

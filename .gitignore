@@ -26,6 +26,7 @@ dist-ssr
 # Environment variables
 .env
 .env.local
+gocardless-live-credentials.txt
 
 # Temporary files
 *.csv

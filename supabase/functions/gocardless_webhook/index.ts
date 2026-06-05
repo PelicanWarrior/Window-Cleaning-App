@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import {
   corsHeaders,
+  getGoCardlessEnvironment,
   getGoCardlessWebhookSecret,
   getSupabaseAdminClient,
   gocardlessRequest,
@@ -96,6 +97,7 @@ serve(async (req) => {
 
     const payload = JSON.parse(body);
     const events = Array.isArray(payload?.events) ? payload.events : [];
+    const environment = getGoCardlessEnvironment();
     const { supabase } = getSupabaseAdminClient();
 
     for (const event of events) {
@@ -106,8 +108,10 @@ serve(async (req) => {
       const organisationId = event?.links?.organisation || null;
       const { data: connection } = await supabase
         .from("GoCardlessConnections")
-        .select("UserId, OrganisationId, AccessToken")
+        .select("UserId, OrganisationId, AccessToken, Environment, DisconnectedAt")
         .eq("OrganisationId", organisationId)
+        .eq("Environment", environment.mode)
+        .is("DisconnectedAt", null)
         .maybeSingle();
 
       if (!connection?.UserId) {

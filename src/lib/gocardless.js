@@ -40,12 +40,11 @@ export async function startGoCardlessConnect(userId) {
   return data
 }
 
-export async function createGoCardlessFlow({ userId, customerId, invoiceId = null, amount = null, openBankingOnly = false, prefillBankDetails = null }) {
+export async function createGoCardlessFlow({ userId, customerId, invoiceId = null, openBankingOnly = false, prefillBankDetails = null }) {
   const { data, error } = await supabase.functions.invoke('gocardless_create_flow', getInvokeOptions({
     userId,
     customerId,
     invoiceId,
-    amount,
     openBankingOnly,
     prefillBankDetails,
   }))

@@ -1,0 +1,1 @@
+select id, "CustomerName", "EmailAddress", "GoCardlessCustomerId", "GoCardlessMandateId", "GoCardlessMandateStatus", "GoCardlessBillingRequestId" from "Customers" where "CustomerName" ilike '%Isla Patel%';

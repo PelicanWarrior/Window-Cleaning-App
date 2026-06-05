@@ -1,0 +1,1 @@
+select column_name from information_schema.columns where table_schema='public' and table_name='Customers' and (column_name ilike '%address%' or column_name ilike '%phone%' or column_name ilike '%route%' or column_name ilike '%outstanding%') order by column_name;

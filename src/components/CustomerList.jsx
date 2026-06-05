@@ -2991,7 +2991,6 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
                                             const data = await createGoCardlessFlow({
                                               userId: user.id,
                                               customerId: customer.id,
-                                              amount: null,
                                             })
                                             setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
                                             window.location.assign(data.url)

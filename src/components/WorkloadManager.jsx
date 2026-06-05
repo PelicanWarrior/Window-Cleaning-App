@@ -1601,7 +1601,7 @@ function WorkloadManager({ user }) {
   }
 
   // Handle Done and Not Paid
-  const handleDoneAndNotPaid = async (customer, options = {}) => {
+  const handleDoneAndNotPaid = async (customer) => {
     let nextDateValue = ''
     let newOutstanding = parseFloat(customer.Outstanding) || 0
 
@@ -1616,19 +1616,10 @@ function WorkloadManager({ user }) {
       const employeeHistorySuffix = messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName
         ? ` from ${user.UserName}`
         : ''
-      const historyLabel = typeof options.historyLabel === 'string' && options.historyLabel.trim()
-        ? options.historyLabel.trim()
-        : 'Not Paid'
-      const historyAmount = options.historyAmount !== undefined && options.historyAmount !== null && Number.isFinite(Number(options.historyAmount))
-        ? Number(options.historyAmount)
-        : (parseFloat(customer.Price) || 0)
-      const historyMessage = `${customer.NextServices} done, ${historyLabel} ${symbol}${historyAmount.toFixed(2)}${employeeHistorySuffix}`
+      const historyMessage = `${customer.NextServices} done, Not Paid ${symbol}${customer.Price}${employeeHistorySuffix}`
       await createCustomerHistory(customer.id, historyMessage)
       
-      const outstandingIncrement = options.outstandingIncrementAmount !== undefined && options.outstandingIncrementAmount !== null && Number.isFinite(Number(options.outstandingIncrementAmount))
-        ? Number(options.outstandingIncrementAmount)
-        : (parseFloat(customer.Price) || 0)
-      newOutstanding = (parseFloat(customer.Outstanding) || 0) + outstandingIncrement
+      newOutstanding = (parseFloat(customer.Outstanding) || 0) + (parseFloat(customer.Price) || 0)
       
       nextDateValue = toLocalDateKey(nextCleanDate)
 
@@ -1645,7 +1636,7 @@ function WorkloadManager({ user }) {
       fetchCustomers()
 
       // Check if CustomerPayLetter is set and ask to send message
-      if (customerPayLetter && !options.suppressCustomerPayLetter) {
+      if (customerPayLetter) {
         const paymentMessage = messages.find((m) => String(m.id) === String(customerPayLetter))
         if (paymentMessage) {
           // Update customer object with new outstanding amount for message
@@ -1697,7 +1688,6 @@ function WorkloadManager({ user }) {
       const data = await createGoCardlessFlow({
         userId: user.id,
         customerId: customer.id,
-        amount: null,
       })
       window.location.assign(data.url)
     } catch (error) {
@@ -1803,13 +1793,8 @@ function WorkloadManager({ user }) {
         invoiceId: invData.id,
       })
 
-      // Mark as done but keep outstanding until GoCardless reports paid_out.
-      await handleDoneAndNotPaid(customer, {
-        historyLabel: 'GoCardless payment pending',
-        historyAmount: price,
-        outstandingIncrementAmount: parseFloat(customer.Price) || 0,
-        suppressCustomerPayLetter: true,
-      })
+      // Mark as done and annotate history entry source
+      await handleDoneAndPaid(customer, { historySuffix: 'via GoCardless', paidAmount: price })
 
       const goCardlessMessage = messages.find((m) => String(m.id) === String(goCardlessMessageLetterId))
       if (goCardlessMessage) {
