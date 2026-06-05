@@ -9,6 +9,7 @@ import LeadsManager from './components/LeadsManager'
 import Settings from './components/Settings'
 import AdminPanel from './components/AdminPanel'
 import logo1 from '../public/Logo1.png'
+import { APP_VERSION } from './config/appVersion'
 import { supabase } from './lib/supabase'
 import { normalizeUserCountryFields } from './lib/format'
 import { syncGoCardlessBillingRequest, syncGoCardlessPayments } from './lib/gocardless'
@@ -52,6 +53,32 @@ function App() {
     }
     window.addEventListener('beforeinstallprompt', handler)
     return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const checkAppVersion = async () => {
+      try {
+        const response = await fetch(`/version.txt?t=${Date.now()}`, { cache: 'no-store' })
+        if (!response.ok) return
+
+        const latestVersion = (await response.text()).trim()
+        if (!cancelled && latestVersion && latestVersion !== APP_VERSION) {
+          window.location.reload()
+        }
+      } catch {
+        // Ignore version check failures; the app can continue offline.
+      }
+    }
+
+    checkAppVersion()
+    const refreshTimer = window.setInterval(checkAppVersion, 60000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(refreshTimer)
+    }
   }, [])
 
   useEffect(() => {
