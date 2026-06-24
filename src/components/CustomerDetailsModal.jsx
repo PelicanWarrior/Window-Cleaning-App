@@ -420,6 +420,13 @@ function CustomerDetailsModal({
   }
 
   async function handleModalSave() {
+    const nextCleanValue = modalEditData.NextClean || null
+    const toNullableNumber = (value) => {
+      if (value === '' || value === null || value === undefined) return null
+      const parsedValue = Number(value)
+      return Number.isFinite(parsedValue) ? parsedValue : null
+    }
+
     const updatePayload = {
       CustomerName: modalEditData.CustomerName,
       Address: modalEditData.Address,
@@ -429,12 +436,12 @@ function CustomerDetailsModal({
       PhoneNumber: modalEditData.PhoneNumber,
       EmailAddress: modalEditData.EmailAddress,
       PrefferedContact: modalEditData.PrefferedContact || null,
-      Price: modalEditData.Price,
-      Weeks: modalEditData.Weeks,
-      NextClean: modalEditData.NextClean,
-      Outstanding: modalEditData.Outstanding,
+      Price: toNullableNumber(modalEditData.Price),
+      Weeks: toNullableNumber(modalEditData.Weeks),
+      NextClean: nextCleanValue,
+      Outstanding: toNullableNumber(modalEditData.Outstanding),
       Route: modalEditData.Route,
-      VAT: modalEditData.VAT,
+      VAT: toNullableNumber(modalEditData.VAT),
       PrefferedDays: formatPreferredDays(preferredDaysSelected),
       Notes: modalEditData.Notes,
     }
@@ -1004,7 +1011,15 @@ function CustomerDetailsModal({
                   <div><strong>Preferred Contact:</strong> {customer.PrefferedContact || '—'}</div>
                   <div><strong>Price:</strong> {formatCurrency(customer.Price, user.SettingsCountry || 'United Kingdom')}</div>
                   <div><strong>Weeks:</strong> {customer.Weeks}</div>
-                  <div><strong>{isQuote ? 'Quotation Booked:' : 'Next Clean:'}</strong> {formatDateByCountry(customer.NextClean, user.SettingsCountry || 'United Kingdom')}</div>
+                    <div><strong>{isQuote ? 'Quotation Booked:' : 'Next Clean:'}</strong> {(() => {
+                      const nextCleanDate = customer.NextClean ? new Date(customer.NextClean) : null
+
+                      if (!nextCleanDate || Number.isNaN(nextCleanDate.getTime()) || nextCleanDate.getTime() === 0) {
+                        return '—'
+                      }
+
+                      return formatDateByCountry(customer.NextClean, user.SettingsCountry || 'United Kingdom') || '—'
+                    })()}</div>
                   <div><strong>Outstanding:</strong> {formatCurrency(customer.Outstanding, user.SettingsCountry || 'United Kingdom')}
                     {outstandingGoCardlessPayments.length > 0 && (
                       <>

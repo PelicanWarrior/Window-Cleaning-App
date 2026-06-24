@@ -37,7 +37,9 @@
   border-bottom: 3px solid transparent;
   margin-bottom: -2px;
   transition: all 0.2s;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.2;
+  min-height: 44px;
   text-align: center;
   min-width: 0;
 }

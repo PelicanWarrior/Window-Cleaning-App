@@ -364,7 +364,8 @@ function Quotes({ user }) {
       customer: sendMessageModal.customer,
       subject: sendMessageModal.subject,
       body: sendMessageModal.body,
-      attachment
+      attachment,
+      user,
     })
 
     if (!result.ok) {
@@ -476,7 +477,7 @@ function Quotes({ user }) {
           PrefferedContact: modalEditData.PrefferedContact,
           Price: modalEditData.Price,
           Weeks: modalEditData.Weeks,
-          NextClean: modalEditData.NextClean,
+          NextClean: modalEditData.NextClean || null,
           Outstanding: modalEditData.Outstanding,
           Route: modalEditData.Route,
           Notes: modalEditData.Notes

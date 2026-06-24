@@ -61,15 +61,6 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   const [cancelServiceModal, setCancelServiceModal] = useState({ show: false, reason: '' })
   const [teamMembers, setTeamMembers] = useState([])
   const [teamLoading, setTeamLoading] = useState(false)
-  const [showTeamPanel, setShowTeamPanel] = useState(false)
-  const [creatingTeamMember, setCreatingTeamMember] = useState(false)
-  const [teamMemberForm, setTeamMemberForm] = useState({
-    username: '',
-    email: '',
-    password: ''
-  })
-  const [teamError, setTeamError] = useState('')
-  const [teamMessage, setTeamMessage] = useState('')
 
   useEffect(() => {
     if (!serviceDropdownOpen) return
@@ -295,8 +286,10 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   }, [ownerUserId])
 
   useEffect(() => {
-    fetchTeamMembers()
-  }, [ownerUserId])
+    if (isOwner) {
+      fetchTeamMembers()
+    }
+  }, [ownerUserId, isOwner])
 
   useEffect(() => {
     // Fetch GoCardless payment status for each customer in the list
@@ -577,94 +570,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
     }
   }
 
-  async function handleCreateTeamMember(e) {
-    e.preventDefault()
-    if (!isOwner || !ownerUserId) return
 
-    const username = String(teamMemberForm.username || '').trim()
-    const email = String(teamMemberForm.email || '').trim().toLowerCase()
-    const password = String(teamMemberForm.password || '').trim()
-
-    if (!username || !email || !password) {
-      setTeamError('Please provide username, email, and password.')
-      return
-    }
-
-    if (password.length < 8) {
-      setTeamError('Password must be at least 8 characters.')
-      return
-    }
-
-    try {
-      setCreatingTeamMember(true)
-      setTeamError('')
-      setTeamMessage('')
-
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-      if (sessionError) throw new Error(sessionError.message || 'Unable to validate your session')
-
-      const accessToken = sessionData?.session?.access_token
-      if (!accessToken) {
-        throw new Error('Your login session is missing or expired. Please log out and log in again, then retry.')
-      }
-
-      const { data, error } = await supabase.functions.invoke('create_team_member', {
-        body: {
-          ownerUserId,
-          username,
-          email,
-          password
-        },
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          ...(SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY } : {})
-        }
-      })
-
-      if (error) {
-        let functionMessage = error.message || 'Unable to create team member'
-        const responseStatus = error.context?.status
-
-        if (error.context?.json) {
-          try {
-            const contextPayload = await error.context.json()
-            if (contextPayload?.error) {
-              functionMessage = contextPayload.error
-            }
-          } catch {
-            if (error.context?.text) {
-              try {
-                const contextText = await error.context.text()
-                if (contextText) {
-                  functionMessage = contextText
-                }
-              } catch {
-                // Keep fallback error message.
-              }
-            }
-          }
-        }
-
-        if (responseStatus === 401 && functionMessage.toLowerCase().includes('non-2xx')) {
-          functionMessage = 'Unauthorized request (401). Please log out, log back in, then try adding the team member again.'
-        }
-
-        throw new Error(functionMessage)
-      }
-
-      if (!data?.ok) {
-        throw new Error(data?.error || 'Unable to create team member')
-      }
-
-      setTeamMessage(`Team member ${username} created.`)
-      setTeamMemberForm({ username: '', email: '', password: '' })
-      await fetchTeamMembers()
-    } catch (error) {
-      setTeamError(error.message || 'Unable to create team member')
-    } finally {
-      setCreatingTeamMember(false)
-    }
-  }
 
   // Column order: Actions first, then selected sort column (if any), then Name + Address only
   const getColumnOrder = () => {
@@ -884,7 +790,8 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       customer: sendMessageModal.customer,
       subject: sendMessageModal.subject,
       body: sendMessageModal.body,
-      attachment
+      attachment,
+      user,
     })
 
     if (!result.ok) {
@@ -893,7 +800,8 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
     }
 
     if (sendMessageModal.customer?.id) {
-      await addCustomerHistoryEntry(sendMessageModal.customer.id, `${sendMessageModal.historyMessage} via ${method}`)
+      const transportLabel = result.channel || (user?.TwilioConnected ? 'Twilio' : method)
+      await addCustomerHistoryEntry(sendMessageModal.customer.id, `${sendMessageModal.historyMessage} via ${transportLabel}`)
     }
 
     closeSendMessageModal()
@@ -2028,7 +1936,8 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
         method: 'Text',
         customer: sendGoCardlessMessageConfirm.customer,
         subject: sendGoCardlessMessageConfirm.messageTitle,
-        body: sendGoCardlessMessageConfirm.messageBody
+        body: sendGoCardlessMessageConfirm.messageBody,
+        user,
       })
 
       if (!result.ok) {
@@ -2039,12 +1948,12 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       if (sendGoCardlessMessageConfirm.customer?.id) {
         await addCustomerHistoryEntry(
           sendGoCardlessMessageConfirm.customer.id,
-          `${sendGoCardlessMessageConfirm.messageTitle} sent via WhatsApp`
+          `${sendGoCardlessMessageConfirm.messageTitle} sent via ${result.channel || (user?.TwilioConnected ? 'Twilio' : 'WhatsApp')}`
         )
       }
 
       const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
-      alert(`Payment of ${symbol}${sendGoCardlessMessageConfirm.amount.toFixed(2)} submitted via Direct Debit. Message sent via WhatsApp.`)
+      alert(`Payment of ${symbol}${sendGoCardlessMessageConfirm.amount.toFixed(2)} submitted via Direct Debit. Message sent via ${result.channel || (user?.TwilioConnected ? 'Twilio' : 'WhatsApp')}.`)
       setSendGoCardlessMessageConfirm({ show: false, customer: null, amount: 0, messageBody: '', messageTitle: '' })
     } catch (error) {
       alert(error.message || 'Unable to send message.')
@@ -2481,93 +2390,24 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
       )}
       
       <div className="action-buttons">
-        {!showAddForm && (
-          <button className="add-customer-btn" onClick={handleOpenAddForm}>
-            Add
-          </button>
-        )}
-        {!showFindForm && (
-          <button className="find-customer-btn" onClick={() => setShowFindForm(true)}>
-            Find
-          </button>
-        )}
+        <button className="add-customer-btn" onClick={() => setShowAddForm((prev) => !prev)}>
+          {showAddForm ? 'Cancel' : 'Add'}
+        </button>
+        <button className="find-customer-btn" onClick={() => {
+          if (showFindForm) {
+            clearFilters()
+          } else {
+            setShowFindForm(true)
+          }
+        }}>
+          {showFindForm ? 'Cancel' : 'Find'}
+        </button>
         {isOwner && (
           <button className="export-customers-btn" onClick={openExportModal}>
             Export
           </button>
         )}
       </div>
-
-      {isOwner && (
-        <div style={{ marginBottom: '1rem', border: '1px solid #d6e4ff', borderRadius: '10px', padding: '0.75rem', background: '#f8fbff' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-            <strong>Team Members ({teamMembers.length})</strong>
-            <button type="button" className="find-customer-btn" onClick={() => setShowTeamPanel((prev) => !prev)}>
-              {showTeamPanel ? 'Hide Team' : 'Manage Team'}
-            </button>
-          </div>
-
-          {showTeamPanel && (
-            <div style={{ marginTop: '0.75rem' }}>
-              {teamError && <div style={{ color: '#b42318', marginBottom: '0.5rem' }}>{teamError}</div>}
-              {teamMessage && <div style={{ color: '#027a48', marginBottom: '0.5rem' }}>{teamMessage}</div>}
-
-              <form onSubmit={handleCreateTeamMember} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                <input
-                  type="text"
-                  placeholder="Username"
-                  value={teamMemberForm.username}
-                  onChange={(e) => setTeamMemberForm((prev) => ({ ...prev, username: e.target.value }))}
-                  required
-                />
-                <input
-                  type="email"
-                  placeholder="Email"
-                  value={teamMemberForm.email}
-                  onChange={(e) => setTeamMemberForm((prev) => ({ ...prev, email: e.target.value }))}
-                  required
-                />
-                <input
-                  type="password"
-                  placeholder="Temporary password"
-                  value={teamMemberForm.password}
-                  onChange={(e) => setTeamMemberForm((prev) => ({ ...prev, password: e.target.value }))}
-                  minLength={8}
-                  required
-                />
-                <button type="submit" className="add-customer-btn" disabled={creatingTeamMember}>
-                  {creatingTeamMember ? 'Creating...' : 'Add Team Member'}
-                </button>
-              </form>
-
-              {teamLoading ? (
-                <div>Loading team...</div>
-              ) : teamMembers.length === 0 ? (
-                <div style={{ color: '#475467' }}>No team members yet.</div>
-              ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ textAlign: 'left', padding: '0.35rem 0.5rem' }}>Username</th>
-                      <th style={{ textAlign: 'left', padding: '0.35rem 0.5rem' }}>Email</th>
-                      <th style={{ textAlign: 'left', padding: '0.35rem 0.5rem' }}>Role</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {teamMembers.map((member) => (
-                      <tr key={member.id}>
-                        <td style={{ padding: '0.35rem 0.5rem' }}>{member.UserName || '—'}</td>
-                        <td style={{ padding: '0.35rem 0.5rem' }}>{member.email_address || '—'}</td>
-                        <td style={{ padding: '0.35rem 0.5rem' }}>{member.TeamRole || 'cleaner'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {showAddForm && (
         <form onSubmit={addCustomer} className="customer-form">

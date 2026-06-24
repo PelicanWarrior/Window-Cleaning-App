@@ -1,3 +1,5 @@
+import { sendTwilioMessage } from './twilio'
+
 export const CONTACT_METHODS = ['Text', 'E-Mail', 'Phone']
 
 export const normalizePreferredContact = (value) => {
@@ -26,6 +28,17 @@ export const formatPhoneForTel = (raw) => {
   return digits || value
 }
 
+export const formatPhoneForTwilio = (raw) => {
+  const value = String(raw || '').trim()
+  if (!value) return ''
+  if (value.startsWith('+')) return value.replace(/\s+/g, '')
+  const digits = value.replace(/\D/g, '')
+  if (!digits) return ''
+  if (digits.length === 11 && digits.startsWith('0')) return `+44${digits.slice(1)}`
+  if (digits.startsWith('44')) return `+${digits}`
+  return `+${digits}`
+}
+
 const downloadAttachment = (attachment) => {
   if (!attachment?.blob || !attachment?.filename) return false
   const url = URL.createObjectURL(attachment.blob)
@@ -39,7 +52,7 @@ const downloadAttachment = (attachment) => {
   return true
 }
 
-export const openMessageViaMethod = async ({ method, customer, subject, body, attachment }) => {
+export const openMessageViaMethod = async ({ method, customer, subject, body, attachment, user }) => {
   if (method === 'E-Mail') {
     const email = String(customer?.EmailAddress || '').trim()
     if (!email) {
@@ -57,19 +70,34 @@ export const openMessageViaMethod = async ({ method, customer, subject, body, at
   }
 
   if (method === 'Text') {
-    const phone = formatPhoneForWhatsApp(customer?.PhoneNumber)
-    if (!phone) {
-      return { ok: false, error: 'This customer does not have a valid phone number.' }
-    }
-
     const downloaded = downloadAttachment(attachment)
     const textBody = downloaded
       ? `${body || ''}\n\nInvoice downloaded: attach the PDF in WhatsApp before sending.`
       : (body || '')
 
+    if (user?.TwilioConnected) {
+      if (!user?.id || !customer?.id) {
+        return { ok: false, error: 'Missing user or customer details for Twilio messaging.' }
+      }
+
+      const result = await sendTwilioMessage({
+        userId: user.id,
+        customerId: customer.id,
+        subject,
+        body: textBody,
+      })
+
+      return { ok: true, channel: result?.channel || 'Twilio', result }
+    }
+
+    const phone = formatPhoneForWhatsApp(customer?.PhoneNumber)
+    if (!phone) {
+      return { ok: false, error: 'This customer does not have a valid phone number.' }
+    }
+
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(textBody)}`
     window.open(url, '_blank')
-    return { ok: true }
+    return { ok: true, channel: 'WhatsApp' }
   }
 
   if (method === 'Phone') {

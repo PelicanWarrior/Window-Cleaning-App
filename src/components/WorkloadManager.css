@@ -909,8 +909,27 @@
   display: none;
 }
 
+.credit-mobile {
+  color: #27ae60;
+}
+
 .outstanding-amount {
   color: #e74c3c;
+  font-weight: 700;
+}
+
+.outstanding {
+  color: #e74c3c;
+  font-weight: 700;
+}
+
+.credit {
+  color: #27ae60;
+  font-weight: 700;
+}
+
+.credit-amount {
+  color: #27ae60;
   font-weight: 700;
 }
 

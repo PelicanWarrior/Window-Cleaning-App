@@ -6,6 +6,7 @@ import WorkloadManager from './components/WorkloadManager'
 import Quotes from './components/Quotes'
 import Letters from './components/Letters'
 import LeadsManager from './components/LeadsManager'
+import Team from './components/Team'
 import Settings from './components/Settings'
 import AdminPanel from './components/AdminPanel'
 import logo1 from '../public/Logo1.png'
@@ -528,6 +529,14 @@ function App() {
             Messages
           </button>
           )}
+          {!activeUser.ParentUserId && (
+          <button
+            className={activeTab === 'team' ? 'active' : ''}
+            onClick={() => setActiveTab('team')}
+          >
+            Team
+          </button>
+          )}
           {activeUser.admin && (
             <button
               className={activeTab === 'leads' ? 'active' : ''}
@@ -549,6 +558,7 @@ function App() {
         )}
         {activeTab === 'quotes' && <Quotes user={activeUser} />}
         {activeTab === 'letters' && <Letters user={activeUser} />}
+        {activeTab === 'team' && <Team user={activeUser} />}
         {activeTab === 'leads' && activeUser.admin && <LeadsManager user={activeUser} />}
       </main>
       {showSettings && (

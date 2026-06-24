@@ -189,6 +189,30 @@ This app already supports both GoCardless sandbox and live modes via Supabase Ed
    - Confirm webhook events are recorded in `GoCardlessWebhookEvents`.
    - Confirm customer/invoice fields are updated (`GoCardlessMandateStatus`, `GoCardlessPaymentStatus`, etc.).
 
+### 7. Twilio Provisioning Setup (Supabase)
+
+This app provisions a Twilio subaccount and purchases a number automatically when the user clicks Connect Twilio in Settings.
+
+1. **Deploy the Twilio edge functions**:
+   - `twilio_connect`
+   - `send_sms_twilio`
+
+2. **Set Supabase Edge Function secrets**:
+   ```bash
+   supabase secrets set TWILIO_MASTER_ACCOUNT_SID=<your_live_twilio_account_sid>
+   supabase secrets set TWILIO_MASTER_AUTH_TOKEN=<your_live_twilio_auth_token>
+   ```
+
+3. **Optional recommended secrets for local environment docs**:
+   - Add the same values to your secure deployment environment, not the browser app.
+
+4. **Test the provisioning flow**:
+   - Open Settings > Linked Accounts.
+   - Click Connect Twilio.
+   - Confirm the app shows a provisioned number.
+   - Send a test message from Workload or Customer reminders.
+   - Confirm the new Twilio subaccount and number appear in the Twilio Console.
+
 ### 7. Run the Development Server
 
 ```bash

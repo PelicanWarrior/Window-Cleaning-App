@@ -81,12 +81,14 @@ function WorkloadManager({ user }) {
   const [bookJobSavingService, setBookJobSavingService] = useState(false)
   const [invoiceModal, setInvoiceModal] = useState({ show: false, customer: null })
   const [goCardlessLoadingCustomerId, setGoCardlessLoadingCustomerId] = useState(null)
+  const [donePaidModal, setDonePaidModal] = useState({ open: false, customer: null, amount: '', currentOutstanding: 0, jobPrice: 0 })
   const [gcConfirmModal, setGcConfirmModal] = useState({ open: false, customer: null, amount: '' })
   const [sendGoCardlessMessageConfirm, setSendGoCardlessMessageConfirm] = useState({ show: false, customer: null, amount: 0, messageBody: '', messageTitle: '' })
   const [selectedRoutes, setSelectedRoutes] = useState([])
   const [calendarView, setCalendarView] = useState('Monthly')
   const [weeklyWeather, setWeeklyWeather] = useState({})
   const [teamMembers, setTeamMembers] = useState([])
+  const [sendingMessageAll, setSendingMessageAll] = useState(false)
   const isAdmin = Boolean(user?.admin)
   const ownerUserId = getOwnerUserId(user)
   const isOwner = isOwnerUser(user)
@@ -1526,9 +1528,43 @@ function WorkloadManager({ user }) {
 
   // Handle Done and Paid
   const handleDoneAndPaid = async (customer, options = {}) => {
-    let nextDateValue = ''
+    let nextDateValue = null
+    let newOutstanding = parseFloat(customer.Outstanding) || 0
+
+    const shouldOpenConfirm = !options.skipConfirm
+    if (shouldOpenConfirm) {
+      const currentOutstanding = parseFloat(customer.Outstanding) || 0
+      const jobPrice = parseFloat(customer.Price) || 0
+      const balanceBeforePayment = currentOutstanding + jobPrice
+      setDonePaidModal({
+        open: true,
+        customer,
+        amount: balanceBeforePayment.toFixed(2),
+        currentOutstanding,
+        jobPrice,
+      })
+      return
+    }
+
+    const paidAmount = Number(options.paidAmount)
+    if (!Number.isFinite(paidAmount)) {
+      alert('Enter a valid amount.')
+      return
+    }
 
     try {
+      let baseOutstanding = parseFloat(customer.Outstanding) || 0
+      let jobPrice = parseFloat(customer.Price) || 0
+      const { data: latestCustomer } = await supabase
+        .from('Customers')
+        .select('Outstanding, Price')
+        .eq('id', customer.id)
+        .single()
+      if (latestCustomer) {
+        baseOutstanding = parseFloat(latestCustomer.Outstanding) || 0
+        jobPrice = parseFloat(latestCustomer.Price) || 0
+      }
+
       const currentWorkDate = parseDateKeyToLocalDate(selectedDate) || new Date(currentDate)
       const weeksToAdd = parseInt(customer.Weeks) || 0
       const nextCleanDate = weeksToAdd > 0 ? new Date(currentWorkDate) : null
@@ -1544,19 +1580,18 @@ function WorkloadManager({ user }) {
       const historySuffix = typeof options.historySuffix === 'string' && options.historySuffix.trim()
         ? ` ${options.historySuffix.trim()}`
         : ''
-      const hasPaidAmountOverride = options.paidAmount !== undefined && options.paidAmount !== null && Number.isFinite(Number(options.paidAmount))
-      const paidAmountText = hasPaidAmountOverride
-        ? Number(options.paidAmount).toFixed(2)
-        : customer.Price
+      const paidAmountText = paidAmount.toFixed(2)
       const historyMessage = `${customer.NextServices} done, Paid ${symbol}${paidAmountText}${employeeHistorySuffix}${historySuffix}`
       await createCustomerHistory(customer.id, historyMessage)
       
-      nextDateValue = nextCleanDate ? toLocalDateKey(nextCleanDate) : ''
+      nextDateValue = nextCleanDate ? toLocalDateKey(nextCleanDate) : null
+      newOutstanding = baseOutstanding + jobPrice - paidAmount
 
       const { error } = await supabase
         .from('Customers')
         .update({ 
-          NextClean: nextDateValue
+          NextClean: nextDateValue,
+          Outstanding: newOutstanding
         })
         .eq('id', customer.id)
       
@@ -1568,14 +1603,17 @@ function WorkloadManager({ user }) {
       if (customerPayLetter) {
         const paymentMessage = messages.find((m) => String(m.id) === String(customerPayLetter))
         if (paymentMessage) {
+          const updatedCustomer = { ...customer, Outstanding: newOutstanding }
           openSendMethodModal({
-            customer,
+            customer: updatedCustomer,
             subject: paymentMessage.MessageTitle,
-            body: buildPaymentMessageBody(customer, paymentMessage),
+            body: buildPaymentMessageBody(updatedCustomer, paymentMessage),
             historyMessage: `Message ${paymentMessage.MessageTitle} sent`
           })
         }
       }
+
+      setDonePaidModal({ open: false, customer: null, amount: '', currentOutstanding: 0, jobPrice: 0 })
       
       // Always sync price and services after marking as done
       await syncCustomerPriceAndServices(customer.id)
@@ -1585,15 +1623,16 @@ function WorkloadManager({ user }) {
           {
             type: 'update',
             customerId: customer.id,
-            changes: { NextClean: nextDateValue }
+            changes: { NextClean: nextDateValue, Outstanding: newOutstanding }
           },
           'Done & paid saved offline.'
         )
 
         if (queued) {
+          setDonePaidModal({ open: false, customer: null, amount: '', currentOutstanding: 0, jobPrice: 0 })
           setCustomers((prev) => prev.map((row) => (
             Number(row.id) === Number(customer.id)
-              ? { ...row, NextClean: nextDateValue }
+              ? { ...row, NextClean: nextDateValue, Outstanding: newOutstanding }
               : row
           )))
           return
@@ -1604,9 +1643,17 @@ function WorkloadManager({ user }) {
     }
   }
 
+  const handleConfirmDoneAndPaid = async () => {
+    if (!donePaidModal.customer) return
+    await handleDoneAndPaid(donePaidModal.customer, {
+      skipConfirm: true,
+      paidAmount: donePaidModal.amount,
+    })
+  }
+
   // Handle Done and Not Paid
   const handleDoneAndNotPaid = async (customer) => {
-    let nextDateValue = ''
+    let nextDateValue = null
     let newOutstanding = parseFloat(customer.Outstanding) || 0
 
     try {
@@ -1627,7 +1674,7 @@ function WorkloadManager({ user }) {
       
       newOutstanding = (parseFloat(customer.Outstanding) || 0) + (parseFloat(customer.Price) || 0)
       
-      nextDateValue = nextCleanDate ? toLocalDateKey(nextCleanDate) : ''
+      nextDateValue = nextCleanDate ? toLocalDateKey(nextCleanDate) : null
 
       const { error } = await supabase
         .from('Customers')
@@ -1800,7 +1847,7 @@ function WorkloadManager({ user }) {
       })
 
       // Mark as done and annotate history entry source
-      await handleDoneAndPaid(customer, { historySuffix: 'via GoCardless', paidAmount: price })
+      await handleDoneAndPaid(customer, { skipConfirm: true, historySuffix: 'via GoCardless', paidAmount: price })
 
       const goCardlessMessage = messages.find((m) => String(m.id) === String(goCardlessMessageLetterId))
       if (goCardlessMessage) {
@@ -1852,7 +1899,8 @@ function WorkloadManager({ user }) {
         method: 'Text',
         customer: sendGoCardlessMessageConfirm.customer,
         subject: sendGoCardlessMessageConfirm.messageTitle,
-        body: sendGoCardlessMessageConfirm.messageBody
+        body: sendGoCardlessMessageConfirm.messageBody,
+        user,
       })
 
       if (!result.ok) {
@@ -1863,14 +1911,14 @@ function WorkloadManager({ user }) {
       try {
         await supabase.from('CustomerHistory').insert({
           CustomerID: sendGoCardlessMessageConfirm.customer.id,
-          Message: `${sendGoCardlessMessageConfirm.messageTitle} sent via WhatsApp`
+          Message: `${sendGoCardlessMessageConfirm.messageTitle} sent via ${result.channel || (user?.TwilioConnected ? 'Twilio' : 'WhatsApp')}`
         })
       } catch (error) {
         console.error('Error adding customer history entry:', error.message)
       }
 
       const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
-      alert(`Payment of ${symbol}${sendGoCardlessMessageConfirm.amount.toFixed(2)} submitted via Direct Debit. Message sent via WhatsApp.`)
+      alert(`Payment of ${symbol}${sendGoCardlessMessageConfirm.amount.toFixed(2)} submitted via Direct Debit. Message sent via ${result.channel || (user?.TwilioConnected ? 'Twilio' : 'WhatsApp')}.`)
       setSendGoCardlessMessageConfirm({ show: false, customer: null, amount: 0, messageBody: '', messageTitle: '' })
     } catch (error) {
       alert(error.message || 'Unable to send message.')
@@ -2022,7 +2070,8 @@ function WorkloadManager({ user }) {
       customer: sendMessageModal.customer,
       subject: sendMessageModal.subject,
       body: sendMessageModal.body,
-      attachment
+      attachment,
+      user,
     })
 
     if (!result.ok) {
@@ -2031,7 +2080,8 @@ function WorkloadManager({ user }) {
     }
 
     if (sendMessageModal.customer?.id) {
-      await createCustomerHistory(sendMessageModal.customer.id, `${sendMessageModal.historyMessage} via ${method}`)
+      const transportLabel = result.channel || (user?.TwilioConnected ? 'Twilio' : method)
+      await createCustomerHistory(sendMessageModal.customer.id, `${sendMessageModal.historyMessage} via ${transportLabel}`)
     }
 
     closeSendMessageModal()
@@ -2039,11 +2089,13 @@ function WorkloadManager({ user }) {
 
   // Handle Move Date to specific date
   const handleMoveToDate = async (customer, newDate) => {
+    const nextCleanValue = newDate || null
+
     try {
       const { error } = await supabase
         .from('Customers')
         .update({ 
-          NextClean: newDate
+          NextClean: nextCleanValue
         })
         .eq('id', customer.id)
       
@@ -2057,7 +2109,7 @@ function WorkloadManager({ user }) {
           {
             type: 'update',
             customerId: customer.id,
-            changes: { NextClean: newDate }
+            changes: { NextClean: nextCleanValue }
           },
           'Move date saved offline.'
         )
@@ -2066,7 +2118,7 @@ function WorkloadManager({ user }) {
           setExpandedDatePickers(prev => ({...prev, [customer.id]: false}))
           setCustomers((prev) => prev.map((row) => (
             Number(row.id) === Number(customer.id)
-              ? { ...row, NextClean: newDate }
+              ? { ...row, NextClean: nextCleanValue }
               : row
           )))
           return
@@ -2229,6 +2281,63 @@ function WorkloadManager({ user }) {
       })
       return updated
     })
+  }
+
+  const handleMessageAll = async () => {
+    if (!selectedLetterAll) {
+      alert('Please select a message first.')
+      return
+    }
+
+    const messageTemplate = messages.find((msg) => String(msg.id) === String(selectedLetterAll))
+    if (!messageTemplate) {
+      alert('Please select a message first.')
+      return
+    }
+
+    const targetCustomers = selectedCustomerIds.length
+      ? selectedDayJobs.filter((customer) => selectedCustomerIds.includes(customer.id))
+      : selectedDayJobs
+
+    if (!targetCustomers.length) {
+      alert('No customers available for this message.')
+      return
+    }
+
+    setSendingMessageAll(true)
+    let sentCount = 0
+    let failedCount = 0
+
+    try {
+      for (const customer of targetCustomers) {
+        const result = await openMessageViaMethod({
+          method: 'Text',
+          customer,
+          subject: messageTemplate.MessageTitle || 'Message',
+          body: buildPaymentMessageBody(customer, messageTemplate),
+          user,
+        })
+
+        if (!result.ok) {
+          failedCount += 1
+          continue
+        }
+
+        sentCount += 1
+        const transportLabel = result.channel || (user?.TwilioConnected ? 'Twilio' : 'WhatsApp')
+        try {
+          await createCustomerHistory(customer.id, `${messageTemplate.MessageTitle || 'Message'} sent via ${transportLabel}`)
+        } catch (error) {
+          console.error('Error writing bulk message history:', error.message)
+        }
+      }
+
+      alert(`Message All complete. Sent ${sentCount}${failedCount ? `, failed ${failedCount}` : ''}.`)
+    } catch (error) {
+      alert(error.message || 'Unable to send messages.')
+    } finally {
+      setSendingMessageAll(false)
+    }
   }
   const toggleCustomerSelection = (customerId) => {
     setSelectedCustomerIds((prev) =>
@@ -2686,6 +2795,8 @@ function WorkloadManager({ user }) {
   }
 
   async function handleModalSave() {
+    const nextCleanValue = modalEditData.NextClean || null
+
     const updatePayload = {
       CustomerName: modalEditData.CustomerName,
       Address: modalEditData.Address,
@@ -2697,7 +2808,7 @@ function WorkloadManager({ user }) {
       PrefferedContact: modalEditData.PrefferedContact || null,
       Price: modalEditData.Price,
       Weeks: modalEditData.Weeks,
-      NextClean: modalEditData.NextClean,
+      NextClean: nextCleanValue,
       Outstanding: modalEditData.Outstanding,
       Route: modalEditData.Route,
       VAT: modalEditData.VAT,
@@ -3005,7 +3116,8 @@ function WorkloadManager({ user }) {
       if (error) throw error
       
       // Show date and service picker modal
-      const customerWeeks = Number.isFinite(parseInt(customer.Weeks, 10)) ? parseInt(customer.Weeks, 10) : 4
+      const parsedCustomerWeeks = parseInt(customer.Weeks, 10)
+      const customerWeeks = Number.isFinite(parsedCustomerWeeks) ? parsedCustomerWeeks : 4
       setBookJobModal({
         show: true,
         customer,
@@ -3013,7 +3125,7 @@ function WorkloadManager({ user }) {
         services: services || [],
         selectedServices: [],
         oneOff: customerWeeks === 0,
-        weeks: customerWeeks === 0 ? 4 : customerWeeks
+        weeks: customerWeeks
       })
       setBookJobServiceData({ Service: '', Price: '', Description: '' })
       setBookJobSavingService(false)
@@ -3085,10 +3197,11 @@ function WorkloadManager({ user }) {
       const selectedServiceObjects = bookJobModal.services.filter(s => bookJobModal.selectedServices.includes(s.id))
       const totalPrice = selectedServiceObjects.reduce((sum, s) => sum + (parseFloat(s.Price) || 0), 0)
       const serviceNames = selectedServiceObjects.map(s => s.Service).join(', ')
-      const resolvedWeeks = bookJobModal.oneOff ? 0 : (parseInt(bookJobModal.weeks, 10) || 4)
+      const parsedWeeks = parseInt(bookJobModal.weeks, 10)
+      const resolvedWeeks = bookJobModal.oneOff ? 0 : parsedWeeks
 
-      if (!bookJobModal.oneOff && resolvedWeeks <= 0) {
-        alert('Weeks must be greater than 0 unless One Off is selected')
+      if (!Number.isFinite(resolvedWeeks) || resolvedWeeks < 0) {
+        alert('Weeks must be 0 or greater')
         return
       }
       
@@ -3140,7 +3253,8 @@ function WorkloadManager({ user }) {
         const selectedServiceObjects = bookJobModal.services.filter((s) => bookJobModal.selectedServices.includes(s.id))
         const totalPrice = selectedServiceObjects.reduce((sum, s) => sum + (parseFloat(s.Price) || 0), 0)
         const serviceNames = selectedServiceObjects.map((s) => s.Service).join(', ')
-        const resolvedWeeks = bookJobModal.oneOff ? 0 : (parseInt(bookJobModal.weeks, 10) || 4)
+        const parsedWeeks = parseInt(bookJobModal.weeks, 10)
+        const resolvedWeeks = bookJobModal.oneOff ? 0 : parsedWeeks
 
         const queued = queueWorkloadCustomerMutation(
           {
@@ -3689,6 +3803,24 @@ function WorkloadManager({ user }) {
                             <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
                           ))}
                         </select>
+                        <button
+                          type="button"
+                          className="bulk-move-btn"
+                          onClick={handleMessageAll}
+                          disabled={!selectedLetterAll || !messages.length || sendingMessageAll}
+                          style={{ marginLeft: '0.75rem' }}
+                        >
+                          {sendingMessageAll ? 'Sending...' : 'Message All'}
+                        </button>
+                        <button
+                          type="button"
+                          className="bulk-move-btn"
+                          onClick={handleMessageAll}
+                          disabled={!selectedLetterAll || !messages.length || sendingMessageAll}
+                          style={{ marginLeft: '0.75rem' }}
+                        >
+                          {sendingMessageAll ? 'Sending...' : 'Message All'}
+                        </button>
                       </div>
                       
                       <div className="bulk-move-container">
@@ -3829,9 +3961,16 @@ function WorkloadManager({ user }) {
                     )}
 
                     <div className="customer-grid-col outstanding-col">
-                      {customer.Outstanding > 0 && (
-                        <span className="outstanding">{formatCurrency(customer.Outstanding, user.SettingsCountry || 'United Kingdom')}</span>
-                      )}
+                      {(() => {
+                        const outstandingValue = parseFloat(customer.Outstanding) || 0
+                        if (outstandingValue === 0) return null
+                        const isCredit = outstandingValue < 0
+                        return (
+                          <span className={isCredit ? 'credit' : 'outstanding'}>
+                            {isCredit ? 'Credit:' : 'Outstanding:'} <span className={isCredit ? 'credit-amount' : 'outstanding-amount'}>{formatCurrency(Math.abs(outstandingValue), user.SettingsCountry || 'United Kingdom')}</span>
+                          </span>
+                        )
+                      })()}
                     </div>
 
                     <div className="customer-grid-col info-col" onClick={() => {
@@ -3844,11 +3983,16 @@ function WorkloadManager({ user }) {
                       <div className="customer-address-main">{getFullAddress(customer)}</div>
                       <div className="customer-name-sub">{customer.CustomerName}</div>
                       <span className="route-pill" style={getRouteStyle(customer.Route)}>{customer.Route || 'N/A'}</span>
-                      {customer.Outstanding > 0 && (
-                        <div className="outstanding-mobile" style={{ marginTop: '0.25rem' }}>
-                          Outstanding: <span className="outstanding-amount">{formatCurrency(customer.Outstanding, user.SettingsCountry || 'United Kingdom')}</span>
-                        </div>
-                      )}
+                      {(() => {
+                        const outstandingValue = parseFloat(customer.Outstanding) || 0
+                        if (outstandingValue === 0) return null
+                        const isCredit = outstandingValue < 0
+                        return (
+                          <div className={`outstanding-mobile${isCredit ? ' credit-mobile' : ''}`} style={{ marginTop: '0.25rem' }}>
+                            {isCredit ? 'Credit:' : 'Outstanding:'} <span className={isCredit ? 'credit-amount' : 'outstanding-amount'}>{formatCurrency(Math.abs(outstandingValue), user.SettingsCountry || 'United Kingdom')}</span>
+                          </div>
+                        )
+                      })()}
                     </div>
 
                     <div className="customer-grid-col price-col">
@@ -4149,6 +4293,54 @@ function WorkloadManager({ user }) {
         />
       )}
 
+      {donePaidModal.open && donePaidModal.customer && (() => {
+        const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+        const outstanding = Number(donePaidModal.currentOutstanding) || 0
+        const jobPrice = Number(donePaidModal.jobPrice) || 0
+        const balanceBeforePayment = outstanding + jobPrice
+        return (
+          <div className="modal-overlay" onClick={() => setDonePaidModal({ open: false, customer: null, amount: '', currentOutstanding: 0, jobPrice: 0 })}>
+            <div className="modal-content" style={{ maxWidth: 380 }} onClick={e => e.stopPropagation()}>
+              <button className="modal-close" onClick={() => setDonePaidModal({ open: false, customer: null, amount: '', currentOutstanding: 0, jobPrice: 0 })}>×</button>
+              <h3>Done and Paid</h3>
+              <p style={{ marginBottom: 4 }}><strong>{donePaidModal.customer.CustomerName || donePaidModal.customer.Name}</strong></p>
+              <p style={{ fontSize: '0.85rem', color: '#555', marginBottom: 16 }}>
+                Current balance: {formatCurrency(outstanding, user.SettingsCountry || 'United Kingdom')}<br />
+                + Job price: {formatCurrency(jobPrice, user.SettingsCountry || 'United Kingdom')}<br />
+                Balance before payment: {formatCurrency(balanceBeforePayment, user.SettingsCountry || 'United Kingdom')}
+              </p>
+              <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>
+                Amount paid ({symbol})
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                value={donePaidModal.amount}
+                onChange={(e) => setDonePaidModal((prev) => ({ ...prev, amount: e.target.value }))}
+                style={{ width: '100%', padding: '8px 10px', fontSize: '1.1rem', border: '1px solid #ccc', borderRadius: 6, marginBottom: 20, boxSizing: 'border-box' }}
+                autoFocus
+              />
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  className="done-paid-btn"
+                  style={{ flex: 1 }}
+                  onClick={handleConfirmDoneAndPaid}
+                >
+                  Confirm
+                </button>
+                <button
+                  className="skip-clean-btn"
+                  style={{ flex: 1 }}
+                  onClick={() => setDonePaidModal({ open: false, customer: null, amount: '', currentOutstanding: 0, jobPrice: 0 })}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       {gcConfirmModal.open && gcConfirmModal.customer && (() => {
         const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
         const price = parseFloat(gcConfirmModal.customer.Price) || 0
@@ -4442,7 +4634,7 @@ function WorkloadManager({ user }) {
                   <input
                     id="jobWeeks"
                     type="number"
-                    min="1"
+                    min="0"
                     value={bookJobModal.weeks}
                     onChange={(e) => setBookJobModal(prev => ({ ...prev, weeks: e.target.value }))}
                     className="modal-input"

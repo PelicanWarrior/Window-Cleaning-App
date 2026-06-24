@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { formatCurrency, getCountryUpdateFields, getUserCountry } from '../lib/format'
 import { APP_VERSION } from '../config/appVersion'
 import { getFunctionErrorMessage, startGoCardlessConnect } from '../lib/gocardless'
+import { connectTwilioAccount } from '../lib/twilio'
 import './Settings.css'
 
 const COUNTRY_OPTIONS = [
@@ -52,6 +53,9 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
   const [connectionStatus, setConnectionStatus] = useState('')
   const [goCardlessLoading, setGoCardlessLoading] = useState(false)
   const [goCardlessError, setGoCardlessError] = useState('')
+  const [twilioBillingRate, setTwilioBillingRate] = useState('5')
+  const [twilioLoading, setTwilioLoading] = useState(false)
+  const [twilioError, setTwilioError] = useState('')
   const [currentAccountLevelId, setCurrentAccountLevelId] = useState(user.AccountLevel || null)
   const [systemSubject, setSystemSubject] = useState('')
   const [systemMessage, setSystemMessage] = useState('')
@@ -72,6 +76,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
     setRouteWeeks(user.RouteWeeks || '')
     setVatRegistered(user.VAT || false)
     setCurrentAccountLevelId(user.AccountLevel || null)
+    setTwilioBillingRate(String(user.TwilioBillingRatePencePerSegment || 5))
     
     // Re-fetch account level when user changes (e.g., after payment)
     if (activeTab === 'accountLevel') {
@@ -405,6 +410,36 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
     }
   }
 
+  const handleConnectTwilio = async () => {
+    if (isGuest) {
+      onRequireAuth?.()
+      return
+    }
+
+    setTwilioError('')
+    try {
+      setTwilioLoading(true)
+
+      const data = await connectTwilioAccount({
+        userId: user.id,
+        country,
+        billingRatePencePerSegment: Number(twilioBillingRate) || 5,
+      })
+
+      onSaved?.({
+        TwilioConnected: true,
+        TwilioConnectionStatus: 'connected',
+        TwilioPhoneNumber: data?.fromNumber || null,
+        TwilioBillingRatePencePerSegment: Number(twilioBillingRate) || 5,
+      })
+      setTwilioError(`Twilio connected successfully. Number provisioned: ${data?.fromNumber || 'unknown'}.`)
+    } catch (err) {
+      setTwilioError(err.message || 'Unable to connect Twilio')
+    } finally {
+      setTwilioLoading(false)
+    }
+  }
+
   const handleSave = async () => {
     if (isGuest) {
       onRequireAuth?.()
@@ -415,10 +450,10 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
     setSaving(true)
     try {
       const updateFields = {
-        CompanyName: companyName, 
+        CompanyName: companyName,
         ...getCountryUpdateFields(user, country),
-        RouteWeeks: routeWeeks || null, 
-        VAT: vatRegistered 
+        RouteWeeks: routeWeeks || null,
+        VAT: vatRegistered,
       }
       
       // Add address fields if they have values
@@ -533,7 +568,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
             onClick={() => setActiveTab('payments')}
             style={{ display: isTeamMember ? 'none' : 'button' }}
           >
-            Payments
+            Linked Accounts
           </button>
           <button
             className={activeTab === 'system' ? 'active' : ''}
@@ -821,6 +856,51 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
                 </button>
                 <p className="payments-help">
                   After connecting, use the customer details view to request a Direct Debit mandate, then use invoice creation to collect via GoCardless.
+                </p>
+              </div>
+
+              <div className="payments-card">
+                <h4 className="payments-title">Twilio</h4>
+                <p className="payments-note">
+                  Connect Twilio so SMS messages are sent from this app and replies stay attached to this user only. The app will create a Twilio subaccount and provision a number for this user behind the scenes.
+                </p>
+                <div className="payments-status-row">
+                  <span className={`payments-badge ${user?.TwilioConnected ? 'connected' : 'disconnected'}`}>
+                    {user?.TwilioConnected ? 'Connected' : 'Not connected'}
+                  </span>
+                  {user?.TwilioPhoneNumber && (
+                    <span className="payments-meta">Number: {user.TwilioPhoneNumber}</span>
+                  )}
+                </div>
+                {twilioError && <p className={twilioError.includes('success') ? 'payments-meta' : 'account-level-error'}>{twilioError}</p>}
+                {user?.TwilioConnectionStatus && (
+                  <p className="payments-meta">Status: {user.TwilioConnectionStatus}</p>
+                )}
+                <div className="settings-grid" style={{ marginTop: '1rem' }}>
+                  <div className="settings-field">
+                    <label>Charge per segment (pence)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={twilioBillingRate}
+                      onChange={(e) => setTwilioBillingRate(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <button
+                  className="payments-connect-btn"
+                  onClick={handleConnectTwilio}
+                  disabled={twilioLoading}
+                >
+                  {twilioLoading
+                    ? 'Provisioning Twilio...'
+                    : user?.TwilioConnected
+                      ? 'Reconnect Twilio'
+                      : 'Provision Twilio number'}
+                </button>
+                <p className="payments-help">
+                  This uses the Twilio master credentials stored on the server. You do not enter Twilio secrets here.
                 </p>
               </div>
             </div>
