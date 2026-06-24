@@ -34,6 +34,8 @@ const defaultLeadEmailTemplates = {
     body: `Hi [Owner Name],
 I run a simple app built for window cleaning companies to manage rounds, customer details, quotes, reminders and invoicing in one place.
 
+I have also recently integrated GoCardless, so you can collect payments automatically by Direct Debit and reduce chasing unpaid jobs.
+
 I'm offering you and your company 3 months free (plus help with setup/import) in exchange for honest feedback.
 
 You can view the app here: [App URL]
@@ -55,6 +57,7 @@ The app helps with:
 - recurring round scheduling
 - customer/job history
 - quotes + invoicing in one place
+- automatic Direct Debit collections with GoCardless
 
 Still happy to offer 3 months free and help get you set up.
 You can view the app here: [App URL]
