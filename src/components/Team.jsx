@@ -143,8 +143,8 @@ function Team({ user }) {
   }
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '1rem', border: '1px solid #d6e4ff', borderRadius: '10px', padding: '1rem', background: '#f8fbff' }}>
+    <div style={{ width: '100%', maxWidth: '100%', margin: '0 auto' }}>
+      <div style={{ marginBottom: '1rem', border: '1px solid #d6e4ff', borderRadius: '10px', padding: '1rem', background: '#f8fbff', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '1rem' }}>
           <strong style={{ fontSize: '1.1rem' }}>Team Members ({teamMembers.length})</strong>
         </div>
@@ -153,7 +153,7 @@ function Team({ user }) {
           {teamError && <div style={{ color: '#b42318', marginBottom: '0.5rem', padding: '0.5rem', backgroundColor: '#fef2f2', borderRadius: '4px' }}>{teamError}</div>}
           {teamMessage && <div style={{ color: '#027a48', marginBottom: '0.5rem', padding: '0.5rem', backgroundColor: '#f0fdf4', borderRadius: '4px' }}>{teamMessage}</div>}
 
-          <form onSubmit={handleCreateTeamMember} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', marginBottom: '1rem' }}>
+          <form onSubmit={handleCreateTeamMember} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem', width: '100%' }}>
             <input
               type="text"
               placeholder="Username"
@@ -161,6 +161,9 @@ function Team({ user }) {
               onChange={(e) => setTeamMemberForm((prev) => ({ ...prev, username: e.target.value }))}
               required
               style={{
+                width: '100%',
+                minWidth: 0,
+                boxSizing: 'border-box',
                 padding: '0.5rem',
                 border: '1px solid #ccc',
                 borderRadius: '4px',
@@ -174,6 +177,9 @@ function Team({ user }) {
               onChange={(e) => setTeamMemberForm((prev) => ({ ...prev, email: e.target.value }))}
               required
               style={{
+                width: '100%',
+                minWidth: 0,
+                boxSizing: 'border-box',
                 padding: '0.5rem',
                 border: '1px solid #ccc',
                 borderRadius: '4px',
@@ -188,6 +194,9 @@ function Team({ user }) {
               minLength={8}
               required
               style={{
+                width: '100%',
+                minWidth: 0,
+                boxSizing: 'border-box',
                 padding: '0.5rem',
                 border: '1px solid #ccc',
                 borderRadius: '4px',
@@ -198,14 +207,16 @@ function Team({ user }) {
               type="submit"
               disabled={creatingTeamMember}
               style={{
+                width: '100%',
+                minWidth: 0,
+                boxSizing: 'border-box',
                 padding: '0.5rem 1rem',
                 backgroundColor: '#3498db',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
                 cursor: creatingTeamMember ? 'not-allowed' : 'pointer',
-                opacity: creatingTeamMember ? 0.6 : 1,
-                whiteSpace: 'nowrap'
+                opacity: creatingTeamMember ? 0.6 : 1
               }}
             >
               {creatingTeamMember ? 'Creating...' : 'Add Team Member'}
@@ -217,24 +228,26 @@ function Team({ user }) {
           ) : teamMembers.length === 0 ? (
             <div style={{ padding: '1rem', textAlign: 'center', color: '#666' }}>No team members yet.</div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #d6e4ff' }}>
-                  <th style={{ textAlign: 'left', padding: '0.75rem 0.5rem', fontWeight: 'bold' }}>Username</th>
-                  <th style={{ textAlign: 'left', padding: '0.75rem 0.5rem', fontWeight: 'bold' }}>Email</th>
-                  <th style={{ textAlign: 'left', padding: '0.75rem 0.5rem', fontWeight: 'bold' }}>Role</th>
-                </tr>
-              </thead>
-              <tbody>
-                {teamMembers.map((member) => (
-                  <tr key={member.id} style={{ borderBottom: '1px solid #e0e0e0' }}>
-                    <td style={{ padding: '0.75rem 0.5rem' }}>{member.UserName || '—'}</td>
-                    <td style={{ padding: '0.75rem 0.5rem' }}>{member.email_address || '—'}</td>
-                    <td style={{ padding: '0.75rem 0.5rem' }}>{member.TeamRole || 'cleaner'}</td>
+            <div style={{ width: '100%', overflowX: 'auto' }}>
+              <table style={{ width: '100%', minWidth: '320px', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #d6e4ff' }}>
+                    <th style={{ textAlign: 'left', padding: '0.75rem 0.5rem', fontWeight: 'bold' }}>Username</th>
+                    <th style={{ textAlign: 'left', padding: '0.75rem 0.5rem', fontWeight: 'bold' }}>Email</th>
+                    <th style={{ textAlign: 'left', padding: '0.75rem 0.5rem', fontWeight: 'bold' }}>Role</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {teamMembers.map((member) => (
+                    <tr key={member.id} style={{ borderBottom: '1px solid #e0e0e0' }}>
+                      <td style={{ padding: '0.75rem 0.5rem', wordBreak: 'break-word' }}>{member.UserName || '—'}</td>
+                      <td style={{ padding: '0.75rem 0.5rem', wordBreak: 'break-word' }}>{member.email_address || '—'}</td>
+                      <td style={{ padding: '0.75rem 0.5rem', wordBreak: 'break-word' }}>{member.TeamRole || 'cleaner'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
