@@ -2534,32 +2534,36 @@ function WorkloadManager({ user }) {
 
   const saveUserRouteOrder = async (customerList) => {
     try {
+      if (!ownerUserId) return
+
       // Get current full route order
       const currentRouteIds = userRouteOrder.split(',')
         .map(id => parseInt(id.trim()))
         .filter(id => !isNaN(id))
 
       // Get IDs from the reordered list (customers on this day)
-      const reorderedIds = customerList.map(c => c.id)
-      
-      // Remove the reordered customer IDs from the current route
-      const otherCustomerIds = currentRouteIds.filter(id => !reorderedIds.includes(id))
-      
-      // Insert the reordered customers at the position of the first one in the original order
-      const firstReorderedId = reorderedIds[0]
-      const insertIndex = currentRouteIds.indexOf(firstReorderedId)
-      
-      let newRouteIds
-      if (insertIndex === -1) {
-        // If not found, append at the end
-        newRouteIds = [...otherCustomerIds, ...reorderedIds]
-      } else {
-        // Insert at the original position
-        newRouteIds = [
-          ...otherCustomerIds.slice(0, insertIndex),
-          ...reorderedIds,
-          ...otherCustomerIds.slice(insertIndex)
-        ]
+      const reorderedIds = [...new Set(customerList.map((customer) => Number(customer.id)).filter((id) => !Number.isNaN(id)))]
+      if (reorderedIds.length === 0) return
+
+      const reorderedIdSet = new Set(reorderedIds)
+      let reorderedIndex = 0
+
+      // Replace the existing positions of the affected customers with their new order.
+      // This preserves every unrelated customer around them while teaching the app the
+      // new relative order for these specific IDs.
+      const newRouteIds = currentRouteIds.map((id) => {
+        if (!reorderedIdSet.has(id)) {
+          return id
+        }
+
+        const nextId = reorderedIds[reorderedIndex]
+        reorderedIndex += 1
+        return nextId
+      })
+
+      // If any selected customers were missing from RouteOrder, append them once.
+      if (reorderedIndex < reorderedIds.length) {
+        newRouteIds.push(...reorderedIds.slice(reorderedIndex))
       }
 
       const newRouteOrderStr = newRouteIds.join(',')
@@ -2568,7 +2572,7 @@ function WorkloadManager({ user }) {
       const { error } = await supabase
         .from('Users')
         .update({ RouteOrder: newRouteOrderStr })
-        .eq('id', user.id)
+        .eq('id', ownerUserId)
       
       if (error) throw error
       
