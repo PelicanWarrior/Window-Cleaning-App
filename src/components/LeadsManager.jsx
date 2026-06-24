@@ -18,6 +18,167 @@ const statusOptions = [
 
 const APP_URL = 'https://www.pelicanwindowcleaning.co.uk/'
 
+const leadTemplateOrder = ['new', 'sent_e1', 'sent_e2', 'registered', 'registered_with_customers']
+
+const leadTemplateLabels = {
+  new: 'Email 1 (new lead)',
+  sent_e1: 'Email 2 (follow-up)',
+  sent_e2: 'Email 3 (close-out)',
+  registered: 'Registered nudge',
+  registered_with_customers: 'Registered with customers nudge'
+}
+
+const defaultLeadEmailTemplates = {
+  new: {
+    subject: '3 months free for [Business Name]',
+    body: `Hi [Owner Name],
+I run a simple app built for window cleaning companies to manage rounds, customer details, quotes, reminders and invoicing in one place.
+
+I'm offering you and your company 3 months free (plus help with setup/import) in exchange for honest feedback.
+
+You can view the app here: [App URL]
+
+Would you be open to trying it?
+
+Thanks,
+Gavin Grainger
+Business Owner
+[App URL]`
+  },
+  sent_e1: {
+    subject: 'Re: 3 months free for [Business Name]',
+    body: `Hi [Owner Name],
+Just following up in case this got buried.
+
+Most cleaners I speak to want to reduce admin and stop juggling notes/spreadsheets.
+The app helps with:
+- recurring round scheduling
+- customer/job history
+- quotes + invoicing in one place
+
+Still happy to offer 3 months free and help get you set up.
+You can view the app here: [App URL]
+Open to giving it a try?
+
+Best,
+Gavin Grainger
+Business Owner
+[App URL]`
+  },
+  sent_e2: {
+    subject: 'Close this out?',
+    body: `Hi [Owner Name],
+I don't want to keep bothering you, so I'll close this out after this email.
+
+If useful, I can still offer [Business Name] 3 months free + setup help.
+If timing isn't right, just reply "later" and I'll check back in a few months.
+
+You can view the app here: [App URL]
+
+Worth trying it, yes/no?
+
+Thanks,
+Gavin Grainger
+Business Owner
+[App URL]`
+  },
+  registered: {
+    subject: "You're all set - just one more step",
+    body: `Hi [Owner Name],
+Great news - you've already signed up to Pelican, which is the hard part done.
+
+I noticed you haven't added any customers yet. It only takes a couple of minutes to get your first round set up, and I'm happy to help you do it.
+
+Here's what you can do right now:
+- Add your first customer manually (takes 30 seconds)
+- Or send me your list and I'll import it for you
+
+Once your customers are in, you'll be able to manage your rounds, send quotes and invoices, and track everything in one place.
+
+Just reply to this email if you'd like a hand - I'm here.
+
+You can log back in here: [App URL]
+
+Thanks,
+Gavin Grainger
+Business Owner
+[App URL]`
+  },
+  registered_with_customers: {
+    subject: 'Great progress so far',
+    body: `Hi [Owner Name],
+Great progress so far - I can see you've registered and already added a few customers, which is exactly the right start.
+
+Once you keep building from here, Pelican becomes much more useful day-to-day for:
+- planning recurring work
+- tracking completed jobs and payments
+- keeping all customer details in one place
+
+If you'd like, I can help you with the next step and get the rest of your round set up faster.
+
+Just reply and let me know if you want a hand.
+
+You can log back in here: [App URL]
+
+Thanks,
+Gavin Grainger
+Business Owner
+[App URL]`
+  }
+}
+
+function mergeLeadTemplates(overrides = {}) {
+  const merged = {}
+  for (const status of leadTemplateOrder) {
+    merged[status] = {
+      subject: overrides?.[status]?.subject ?? defaultLeadEmailTemplates[status].subject,
+      body: overrides?.[status]?.body ?? defaultLeadEmailTemplates[status].body
+    }
+  }
+  return merged
+}
+
+function getLeadTemplateStorageKey(ownerUserId) {
+  return `lead_email_templates_v1_${ownerUserId}`
+}
+
+function readLocalLeadTemplates(ownerUserId) {
+  if (!ownerUserId || typeof window === 'undefined' || !window.localStorage) return null
+  try {
+    const raw = window.localStorage.getItem(getLeadTemplateStorageKey(ownerUserId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return mergeLeadTemplates(parsed)
+  } catch (error) {
+    console.error('Error reading local lead templates:', error)
+    return null
+  }
+}
+
+function writeLocalLeadTemplates(ownerUserId, templates) {
+  if (!ownerUserId || typeof window === 'undefined' || !window.localStorage) return
+  try {
+    window.localStorage.setItem(
+      getLeadTemplateStorageKey(ownerUserId),
+      JSON.stringify(mergeLeadTemplates(templates))
+    )
+  } catch (error) {
+    console.error('Error writing local lead templates:', error)
+  }
+}
+
+function renderLeadTemplateText(templateText, lead) {
+  const ownerName = (lead?.owner_name || '').trim()
+  const businessName = (lead?.business_name || '').trim() || 'your business'
+
+  const withReplacements = String(templateText || '')
+    .replaceAll('[Owner Name]', ownerName || 'there')
+    .replaceAll('[Business Name]', businessName)
+    .replaceAll('[App URL]', APP_URL)
+
+  return withReplacements
+}
+
 const emailStepByStatus = {
   new: {
     nextStatus: 'sent_e1',
@@ -202,6 +363,7 @@ function getNextCustomLeadId(leads) {
 }
 
 function LeadsManager({ user }) {
+  const ownerUserId = user?.ParentUserId || user?.id
   const [leads, setLeads] = useState([])
   const [loading, setLoading] = useState(true)
   const [savingLeadId, setSavingLeadId] = useState(null)
@@ -209,6 +371,11 @@ function LeadsManager({ user }) {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [activeListTab, setActiveListTab] = useState('leads')
+  const [leadEmailTemplates, setLeadEmailTemplates] = useState(() => mergeLeadTemplates())
+  const [templateLoading, setTemplateLoading] = useState(false)
+  const [templateSavingStatus, setTemplateSavingStatus] = useState('')
+  const [templateStorageMode, setTemplateStorageMode] = useState('supabase')
+  const [templateStatusMessage, setTemplateStatusMessage] = useState('')
   const [isAddingLead, setIsAddingLead] = useState(false)
   const [newLead, setNewLead] = useState({
     lead_id: '',
@@ -228,7 +395,113 @@ function LeadsManager({ user }) {
   useEffect(() => {
     if (!user?.admin) return
     fetchLeads()
-  }, [user?.admin])
+    fetchLeadEmailTemplates()
+  }, [user?.admin, ownerUserId])
+
+  async function fetchLeadEmailTemplates() {
+    if (!ownerUserId) return
+
+    setTemplateLoading(true)
+    setTemplateStatusMessage('')
+
+    try {
+      const { data, error } = await supabase
+        .from('LeadEmailTemplates')
+        .select('status, subject, body')
+        .eq('owner_user_id', ownerUserId)
+
+      if (error) throw error
+
+      const fromSupabase = {}
+      for (const row of data || []) {
+        const status = String(row.status || '').trim()
+        if (!leadTemplateOrder.includes(status)) continue
+        fromSupabase[status] = {
+          subject: String(row.subject || ''),
+          body: String(row.body || '')
+        }
+      }
+
+      const merged = mergeLeadTemplates(fromSupabase)
+      setLeadEmailTemplates(merged)
+      writeLocalLeadTemplates(ownerUserId, merged)
+      setTemplateStorageMode('supabase')
+    } catch (error) {
+      const localTemplates = readLocalLeadTemplates(ownerUserId)
+      setLeadEmailTemplates(localTemplates || mergeLeadTemplates())
+      setTemplateStorageMode('local')
+      setTemplateStatusMessage('Using local template storage until LeadEmailTemplates is available in Supabase.')
+      console.warn('LeadEmailTemplates fetch failed, using local storage:', error.message)
+    } finally {
+      setTemplateLoading(false)
+    }
+  }
+
+  function handleTemplateFieldChange(status, field, value) {
+    setLeadEmailTemplates((prev) => ({
+      ...prev,
+      [status]: {
+        ...(prev[status] || defaultLeadEmailTemplates[status]),
+        [field]: value
+      }
+    }))
+  }
+
+  async function saveTemplate(status) {
+    if (!ownerUserId || !leadTemplateOrder.includes(status)) return
+
+    const template = leadEmailTemplates[status] || defaultLeadEmailTemplates[status]
+    const payload = {
+      status,
+      subject: String(template.subject || '').trim(),
+      body: String(template.body || '').trim()
+    }
+
+    if (!payload.subject || !payload.body) {
+      setTemplateStatusMessage('Subject and body are required before saving.')
+      return
+    }
+
+    setTemplateSavingStatus(status)
+    setTemplateStatusMessage('')
+
+    try {
+      const { error } = await supabase
+        .from('LeadEmailTemplates')
+        .upsert(
+          {
+            owner_user_id: ownerUserId,
+            status: payload.status,
+            subject: payload.subject,
+            body: payload.body
+          },
+          { onConflict: 'owner_user_id,status' }
+        )
+
+      if (error) throw error
+
+      writeLocalLeadTemplates(ownerUserId, leadEmailTemplates)
+      setTemplateStorageMode('supabase')
+      setTemplateStatusMessage(`Saved ${leadTemplateLabels[status]}.`)
+    } catch (error) {
+      writeLocalLeadTemplates(ownerUserId, leadEmailTemplates)
+      setTemplateStorageMode('local')
+      setTemplateStatusMessage(`Saved ${leadTemplateLabels[status]} locally.`)
+      console.warn('Lead template saved locally:', error.message)
+    } finally {
+      setTemplateSavingStatus('')
+    }
+  }
+
+  function resetTemplateToDefault(status) {
+    if (!leadTemplateOrder.includes(status)) return
+    setLeadEmailTemplates((prev) => ({
+      ...prev,
+      [status]: {
+        ...defaultLeadEmailTemplates[status]
+      }
+    }))
+  }
 
   async function fetchLeads() {
     setLoading(true)
@@ -409,8 +682,13 @@ function LeadsManager({ user }) {
       return
     }
 
-    const subject = step.subject(lead)
-    const body = step.body(lead)
+    const configuredTemplate = leadEmailTemplates[currentStatus]
+    const subject = configuredTemplate?.subject
+      ? renderLeadTemplateText(configuredTemplate.subject, lead)
+      : step.subject(lead)
+    const body = configuredTemplate?.body
+      ? renderLeadTemplateText(configuredTemplate.body, lead)
+      : step.body(lead)
     const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipient)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
 
     window.open(gmailUrl, '_blank', 'noopener,noreferrer')
@@ -565,9 +843,78 @@ function LeadsManager({ user }) {
         >
           All Leads
         </button>
+        <button
+          type="button"
+          className={`leads-inner-tab ${activeListTab === 'letters' ? 'active' : ''}`}
+          onClick={() => setActiveListTab('letters')}
+        >
+          Letters
+        </button>
       </div>
 
-      <div className="leads-toolbar">
+      {activeListTab === 'letters' ? (
+        <div className="lead-letters-card">
+          <h3>Lead Email Templates</h3>
+          <p className="lead-letters-help">
+            These templates are used first when sending lead emails. Supported placeholders: [Owner Name], [Business Name], [App URL].
+          </p>
+          <p className="lead-letters-help">
+            Storage: {templateStorageMode === 'supabase' ? 'Supabase' : 'Local Browser Storage'}
+          </p>
+          {templateStatusMessage && <p className="leads-status-message">{templateStatusMessage}</p>}
+          {templateLoading ? (
+            <p>Loading templates...</p>
+          ) : (
+            <div className="lead-letters-grid">
+              {leadTemplateOrder.map((status) => {
+                const template = leadEmailTemplates[status] || defaultLeadEmailTemplates[status]
+                return (
+                  <div className="lead-letter-template" key={status}>
+                    <h4>{leadTemplateLabels[status]}</h4>
+                    <p className="lead-letter-status">Status: {status}</p>
+                    <label>
+                      Subject
+                      <input
+                        type="text"
+                        value={template.subject || ''}
+                        onChange={(e) => handleTemplateFieldChange(status, 'subject', e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Body
+                      <textarea
+                        rows={10}
+                        value={template.body || ''}
+                        onChange={(e) => handleTemplateFieldChange(status, 'body', e.target.value)}
+                      />
+                    </label>
+                    <div className="lead-letter-actions">
+                      <button
+                        type="button"
+                        className="save-btn"
+                        onClick={() => saveTemplate(status)}
+                        disabled={templateSavingStatus === status}
+                      >
+                        {templateSavingStatus === status ? 'Saving...' : 'Save'}
+                      </button>
+                      <button
+                        type="button"
+                        className="refresh-btn"
+                        onClick={() => resetTemplateToDefault(status)}
+                        disabled={templateSavingStatus === status}
+                      >
+                        Reset to Default
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="leads-toolbar">
         <input
           type="text"
           placeholder="Search business, email, phone, notes..."
@@ -585,9 +932,9 @@ function LeadsManager({ user }) {
             <option key={option} value={option}>{option}</option>
           ))}
         </select>
-      </div>
+          </div>
 
-      <div className="add-lead-card">
+          <div className="add-lead-card">
         <h3>Add New Lead</h3>
         <div className="add-lead-grid">
           <input
@@ -672,32 +1019,32 @@ function LeadsManager({ user }) {
             Clear
           </button>
         </div>
-      </div>
+          </div>
 
-      {statusMessage && <p className="leads-status-message">{statusMessage}</p>}
+          {statusMessage && <p className="leads-status-message">{statusMessage}</p>}
 
-      {loading ? (
-        <p>Loading leads...</p>
-      ) : (
-        <div className="leads-table-wrap">
-          <table className="leads-table">
-            <thead>
-              <tr>
-                <th>Lead ID</th>
-                <th>Business</th>
-                <th>Owner</th>
-                <th>Email</th>
-                <th>Phone</th>
-                <th>Status</th>
-                <th>Step</th>
-                <th>Next Follow-up</th>
-                <th>Response</th>
-                <th>Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredLeads.map((lead) => (
-                <tr key={lead.id}>
+          {loading ? (
+            <p>Loading leads...</p>
+          ) : (
+            <div className="leads-table-wrap">
+              <table className="leads-table">
+                <thead>
+                  <tr>
+                    <th>Lead ID</th>
+                    <th>Business</th>
+                    <th>Owner</th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th>Status</th>
+                    <th>Step</th>
+                    <th>Next Follow-up</th>
+                    <th>Response</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredLeads.map((lead) => (
+                    <tr key={lead.id}>
                   <td>{lead.lead_id}</td>
                   <td>
                     <div className="business-cell">
@@ -793,11 +1140,13 @@ function LeadsManager({ user }) {
                       onChange={(e) => handleFieldChange(lead.id, 'notes', e.target.value)}
                     />
                   </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

@@ -120,6 +120,76 @@
   font-size: 0.9rem;
 }
 
+.lead-letters-card {
+  border: 1px solid #e5e9ee;
+  border-radius: 6px;
+  background: #fbfcfe;
+  padding: 0.85rem;
+}
+
+.lead-letters-card h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: #223042;
+}
+
+.lead-letters-help {
+  margin: 0 0 0.6rem;
+  color: #4b5563;
+  font-size: 0.85rem;
+}
+
+.lead-letters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 0.75rem;
+}
+
+.lead-letter-template {
+  border: 1px solid #dbe2ea;
+  border-radius: 6px;
+  background: white;
+  padding: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.lead-letter-template h4 {
+  margin: 0;
+  font-size: 0.92rem;
+  color: #1f2937;
+}
+
+.lead-letter-status {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.lead-letter-template label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.82rem;
+  color: #334155;
+}
+
+.lead-letter-template input,
+.lead-letter-template textarea {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #d6dce2;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  box-sizing: border-box;
+}
+
+.lead-letter-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .leads-table-wrap {
   overflow: auto;
   max-height: calc(100vh - 290px);
@@ -236,5 +306,9 @@
 
   .add-lead-grid {
     grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+
+  .lead-letters-grid {
+    grid-template-columns: 1fr;
   }
 }
