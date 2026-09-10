@@ -334,6 +334,44 @@
   background-color: #ecf0f1;
 }
 
+.message-select-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid #eee;
+}
+
+.message-select-section select {
+  width: 100%;
+  padding: 0.3rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.actions-dropdown-menu-inline .send-text-btn {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  background-color: #25d366;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+}
+
+.actions-dropdown-menu-inline .send-text-btn:hover {
+  background-color: #1ebc59;
+}
+
+.actions-dropdown-menu-inline .send-text-btn:disabled {
+  background-color: #a5d6b7;
+  cursor: not-allowed;
+}
+
 .clear-btn {
   width: 100%;
   background-color: #95a5a6;

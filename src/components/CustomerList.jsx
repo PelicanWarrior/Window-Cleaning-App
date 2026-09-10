@@ -43,6 +43,7 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
   const [messageFooter, setMessageFooter] = useState('')
   const [messageFooterIncludeEmployee, setMessageFooterIncludeEmployee] = useState(false)
   const [goCardlessMessageLetterId, setGoCardlessMessageLetterId] = useState('')
+  const [selectedMessageForCustomer, setSelectedMessageForCustomer] = useState({})
   const [showSortDropdown, setShowSortDropdown] = useState(false)
   const [showCustomerModal, setShowCustomerModal] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState(null)
@@ -1015,6 +1016,51 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
     })
 
     // Close the dropdown after opening send options
+    setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
+  }
+
+  const handleSelectMessageForCustomer = (customerId, messageId) => {
+    setSelectedMessageForCustomer((prev) => ({ ...prev, [customerId]: messageId }))
+  }
+
+  const buildSelectedMessageBody = (customer, message) => {
+    const formalName = getFormalCustomerName(customer.CustomerName)
+    const bodyParts = [`Dear ${formalName}`]
+
+    if (message?.Message) {
+      let messageContent = message.Message
+      if (message.IncludePrice) {
+        const { symbol } = getCurrencyConfig(user.SettingsCountry || 'United Kingdom')
+        if (messageContent.includes(symbol)) {
+          messageContent = messageContent.replaceAll(symbol, `${symbol}${customer.Outstanding}`)
+        }
+      }
+      bodyParts.push(messageContent)
+    }
+
+    if (messageFooterIncludeEmployee && user?.ParentUserId && user?.UserName) bodyParts.push(user.UserName)
+    if (messageFooter) bodyParts.push(messageFooter)
+
+    return bodyParts.join('\n')
+  }
+
+  const handleSendTextMessage = (customer) => {
+    if (!messages.length) {
+      alert('No letters available. Please create a letter first.')
+      return
+    }
+
+    const selectedId = selectedMessageForCustomer[customer.id] ?? messages[0]?.id
+    let letter = messages.find((m) => String(m.id) === String(selectedId))
+    if (!letter && messages.length) letter = messages[0]
+
+    openSendMethodModal({
+      customer,
+      subject: letter?.MessageTitle || 'Message',
+      body: buildSelectedMessageBody(customer, letter),
+      historyMessage: `Message ${letter?.MessageTitle || 'template'} sent`
+    })
+
     setExpandedActionRows(prev => ({...prev, [customer.id]: false}))
   }
 
@@ -2778,6 +2824,28 @@ function CustomerList({ user, isGuest = false, onRequireAuth }) {
                                   </>
                                 ) : (
                                   <>
+                                    <div className="message-select-section" onClick={(ev) => ev.stopPropagation()}>
+                                      <select
+                                        value={selectedMessageForCustomer[customer.id] || messages[0]?.id || ''}
+                                        onChange={(e) => handleSelectMessageForCustomer(customer.id, e.target.value)}
+                                        disabled={!messages.length}
+                                      >
+                                        {!messages.length && <option value="">No letters available</option>}
+                                        {messages.length > 0 && !selectedMessageForCustomer[customer.id] && (
+                                          <option value="">Select letter</option>
+                                        )}
+                                        {messages.map((msg) => (
+                                          <option key={msg.id} value={msg.id}>{msg.MessageTitle}</option>
+                                        ))}
+                                      </select>
+                                      <button
+                                        className="send-text-btn"
+                                        onClick={() => handleSendTextMessage(customer)}
+                                        disabled={!customer.PhoneNumber || !messages.length}
+                                      >
+                                        Send Text
+                                      </button>
+                                    </div>
                                     {!isTeamMember && (
                                       <button
                                         className="reminder-btn"

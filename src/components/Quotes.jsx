@@ -22,6 +22,8 @@ function Quotes({ user }) {
   const [showAddForm, setShowAddForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [pendingQuoteServices, setPendingQuoteServices] = useState([])
+  const [newQuoteServiceData, setNewQuoteServiceData] = useState({ Service: '', Price: '', Description: '' })
   const [quotes, setQuotes] = useState([])
   const [loading, setLoading] = useState(true)
   const [showQuoteModal, setShowQuoteModal] = useState(false)
@@ -562,6 +564,24 @@ function Quotes({ user }) {
     setQuoteData((prev) => ({ ...prev, [field]: value }))
   }
 
+  const handleAddPendingQuoteService = () => {
+    if (!newQuoteServiceData.Service.trim()) return
+    setPendingQuoteServices((prev) => [
+      ...prev,
+      {
+        tempId: Date.now(),
+        Service: newQuoteServiceData.Service,
+        Price: parseFloat(newQuoteServiceData.Price) || 0,
+        Description: newQuoteServiceData.Description
+      }
+    ])
+    setNewQuoteServiceData({ Service: '', Price: '', Description: '' })
+  }
+
+  const handleRemovePendingQuoteService = (tempId) => {
+    setPendingQuoteServices((prev) => prev.filter((service) => service.tempId !== tempId))
+  }
+
   const handleSave = async (e) => {
     e.preventDefault()
     setError('')
@@ -593,6 +613,19 @@ function Quotes({ user }) {
         .single()
 
       if (insertError) throw insertError
+
+      if (insertData?.id && pendingQuoteServices.length > 0) {
+        const { error: servicesError } = await supabase
+          .from('CustomerPrices')
+          .insert(pendingQuoteServices.map((service) => ({
+            CustomerID: insertData.id,
+            Service: service.Service,
+            Price: service.Price,
+            Description: service.Description
+          })))
+
+        if (servicesError) throw servicesError
+      }
 
       // Add history entry for the quote booking
       if (payload.NextClean && insertData?.id) {
@@ -636,6 +669,8 @@ function Quotes({ user }) {
         Notes: '',
         QuoteDate: ''
       })
+      setPendingQuoteServices([])
+      setNewQuoteServiceData({ Service: '', Price: '', Description: '' })
       setShowAddForm(false)
     } catch (err) {
       setError(err.message || 'Error saving quote')
@@ -870,8 +905,74 @@ function Quotes({ user }) {
             />
           </div>
 
+          <div className="form-row">
+            <label>Services</label>
+            <div className="new-service-form">
+              <div className="service-form-row">
+                <div>
+                  <label><strong>Service:</strong></label>
+                  <input
+                    type="text"
+                    value={newQuoteServiceData.Service}
+                    onChange={(e) => setNewQuoteServiceData({ ...newQuoteServiceData, Service: e.target.value })}
+                    className="modal-input"
+                    placeholder="e.g., Windows, Gutters"
+                  />
+                </div>
+                <div>
+                  <label><strong>Price:</strong></label>
+                  <input
+                    type="number"
+                    value={newQuoteServiceData.Price}
+                    onChange={(e) => setNewQuoteServiceData({ ...newQuoteServiceData, Price: e.target.value })}
+                    className="modal-input"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label><strong>Description:</strong></label>
+                  <input
+                    type="text"
+                    value={newQuoteServiceData.Description}
+                    onChange={(e) => setNewQuoteServiceData({ ...newQuoteServiceData, Description: e.target.value })}
+                    className="modal-input"
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+              <div className="service-form-actions">
+                <button type="button" className="modal-save-btn" onClick={handleAddPendingQuoteService}>+ Add Service</button>
+              </div>
+            </div>
+
+            {pendingQuoteServices.length > 0 && (
+              <table className="services-table">
+                <thead>
+                  <tr>
+                    <th>Service</th>
+                    <th>Price</th>
+                    <th>Description</th>
+                    <th className="actions-col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingQuoteServices.map((service) => (
+                    <tr key={service.tempId}>
+                      <td>{service.Service}</td>
+                      <td>{formatCurrency(service.Price, user.SettingsCountry || 'United Kingdom')}</td>
+                      <td>{service.Description || '—'}</td>
+                      <td className="actions-col">
+                        <button type="button" className="service-cancel-btn" onClick={() => handleRemovePendingQuoteService(service.tempId)}>Remove</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
           <div className="form-actions">
-            <button type="button" className="cancel-btn" onClick={() => { setShowAddForm(false); setError('') }}>Cancel</button>
+            <button type="button" className="cancel-btn" onClick={() => { setShowAddForm(false); setError(''); setPendingQuoteServices([]); setNewQuoteServiceData({ Service: '', Price: '', Description: '' }) }}>Cancel</button>
             <button type="submit" className="save-btn" disabled={saving}>
               {saving ? 'Saving...' : 'Save'}
             </button>

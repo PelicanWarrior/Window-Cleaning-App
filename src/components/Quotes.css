@@ -80,6 +80,38 @@
   gap: 10px;
 }
 
+.quote-form .new-service-form {
+  padding: 1rem;
+  background-color: #f0f7f0;
+  border: 2px solid #2e7d32;
+  border-radius: 6px;
+}
+
+.quote-form .service-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr;
+  gap: 10px;
+  margin-bottom: 0;
+}
+
+.quote-form .service-form-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quote-form .service-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+@media (max-width: 640px) {
+  .quote-form .service-form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .form-actions {
   display: flex;
   justify-content: flex-end;
