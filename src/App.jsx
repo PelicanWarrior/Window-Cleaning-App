@@ -65,9 +65,26 @@ function App() {
         if (!response.ok) return
 
         const latestVersion = (await response.text()).trim()
-        if (!cancelled && latestVersion && latestVersion !== APP_VERSION) {
-          window.location.reload()
+        if (cancelled || !latestVersion || latestVersion === APP_VERSION) return
+
+        // In the installed PWA, an old service worker can keep serving a stale bundle
+        // whose APP_VERSION never matches version.txt, causing a reload loop. Only
+        // attempt one reload per detected version, and nudge the service worker to
+        // update first so the reload actually picks up the newer build.
+        const reloadKey = `appVersionReloadFor:${latestVersion}`
+        if (sessionStorage.getItem(reloadKey)) return
+        sessionStorage.setItem(reloadKey, '1')
+
+        if ('serviceWorker' in navigator) {
+          try {
+            const registrations = await navigator.serviceWorker.getRegistrations()
+            await Promise.all(registrations.map((registration) => registration.update()))
+          } catch {
+            // Ignore service worker update failures; still attempt the reload.
+          }
         }
+
+        window.location.reload()
       } catch {
         // Ignore version check failures; the app can continue offline.
       }
