@@ -5,6 +5,7 @@ import CustomerList from './components/CustomerList'
 import WorkloadManager from './components/WorkloadManager'
 import Quotes from './components/Quotes'
 import Letters from './components/Letters'
+import Invoices from './components/Invoices'
 import LeadsManager from './components/LeadsManager'
 import Team from './components/Team'
 import Settings from './components/Settings'
@@ -548,6 +549,14 @@ function App() {
           )}
           {!activeUser.ParentUserId && (
           <button
+            className={activeTab === 'invoices' ? 'active' : ''}
+            onClick={() => setActiveTab('invoices')}
+          >
+            Invoices
+          </button>
+          )}
+          {!activeUser.ParentUserId && (
+          <button
             className={activeTab === 'team' ? 'active' : ''}
             onClick={() => setActiveTab('team')}
           >
@@ -575,6 +584,7 @@ function App() {
         )}
         {activeTab === 'quotes' && <Quotes user={activeUser} />}
         {activeTab === 'letters' && <Letters user={activeUser} />}
+        {activeTab === 'invoices' && <Invoices user={activeUser} />}
         {activeTab === 'team' && <Team user={activeUser} />}
         {activeTab === 'leads' && activeUser.admin && <LeadsManager user={activeUser} />}
       </main>

@@ -27,6 +27,10 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
   const [activeTab, setActiveTab] = useState(initialTab)
   const [password, setPassword] = useState('')
   const [companyName, setCompanyName] = useState(user.CompanyName || '')
+  const [logoUrl, setLogoUrl] = useState(user.LogoUrl || '')
+  const [logoUploading, setLogoUploading] = useState(false)
+  const [logoError, setLogoError] = useState('')
+  const [includeCompanyNameUnderLogo, setIncludeCompanyNameUnderLogo] = useState(user.IncludeCompanyNameUnderLogo || false)
   const [address1, setAddress1] = useState(user['Address 1'] || '')
   const [address2, setAddress2] = useState(user['Address 2'] || '')
   const [town, setTown] = useState(user.Town || '')
@@ -68,6 +72,8 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
 
   useEffect(() => {
     setCompanyName(user.CompanyName || '')
+    setLogoUrl(user.LogoUrl || '')
+    setIncludeCompanyNameUnderLogo(user.IncludeCompanyNameUnderLogo || false)
     setAddress1(user['Address 1'] || '')
     setAddress2(user['Address 2'] || '')
     setTown(user.Town || '')
@@ -440,6 +446,74 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
     }
   }
 
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    if (isGuest) {
+      onRequireAuth?.()
+      return
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setLogoError('Please choose an image file.')
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoError('Logo image must be smaller than 2MB.')
+      return
+    }
+
+    setLogoError('')
+    setLogoUploading(true)
+    try {
+      const ext = file.name.split('.').pop() || 'png'
+      const filePath = `${user.id}/logo-${Date.now()}.${ext}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('logos')
+        .upload(filePath, file, { cacheControl: '3600', upsert: true })
+      if (uploadError) throw uploadError
+
+      const { data: publicUrlData } = supabase.storage.from('logos').getPublicUrl(filePath)
+      const newLogoUrl = publicUrlData?.publicUrl
+      if (!newLogoUrl) throw new Error('Failed to get logo URL')
+
+      const { error: updateError } = await supabase
+        .from('Users')
+        .update({ LogoUrl: newLogoUrl })
+        .eq('id', user.id)
+      if (updateError) throw updateError
+
+      setLogoUrl(newLogoUrl)
+      onSaved?.({ LogoUrl: newLogoUrl })
+    } catch (err) {
+      setLogoError(err.message || 'Unable to upload logo')
+    } finally {
+      setLogoUploading(false)
+    }
+  }
+
+  const handleRemoveLogo = async () => {
+    setLogoError('')
+    setLogoUploading(true)
+    try {
+      const { error: updateError } = await supabase
+        .from('Users')
+        .update({ LogoUrl: null })
+        .eq('id', user.id)
+      if (updateError) throw updateError
+
+      setLogoUrl('')
+      onSaved?.({ LogoUrl: null })
+    } catch (err) {
+      setLogoError(err.message || 'Unable to remove logo')
+    } finally {
+      setLogoUploading(false)
+    }
+  }
+
   const handleSave = async () => {
     if (isGuest) {
       onRequireAuth?.()
@@ -451,6 +525,7 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
     try {
       const updateFields = {
         CompanyName: companyName,
+        IncludeCompanyNameUnderLogo: includeCompanyNameUnderLogo,
         ...getCountryUpdateFields(user, country),
         RouteWeeks: routeWeeks || null,
         VAT: vatRegistered,
@@ -495,7 +570,9 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
         const updatedFields = {
           ...getCountryUpdateFields(user, country),
           RouteWeeks: routeWeeks,
-          VAT: vatRegistered
+          VAT: vatRegistered,
+          CompanyName: companyName,
+          IncludeCompanyNameUnderLogo: includeCompanyNameUnderLogo
         }
         
         // Add address fields to the callback
@@ -605,6 +682,32 @@ function Settings({ user, onClose, onSaved, initialTab = 'userSettings', isGuest
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
             />
+          </div>
+          <div className="settings-field">
+            <label>Invoice Logo</label>
+            {logoUrl && (
+              <div style={{ marginBottom: '8px' }}>
+                <img src={logoUrl} alt="Company logo" style={{ maxHeight: '80px', maxWidth: '200px', display: 'block', marginBottom: '8px' }} />
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input type="file" accept="image/*" onChange={handleLogoUpload} disabled={logoUploading} />
+              {logoUrl && (
+                <button className="cancel-btn" onClick={handleRemoveLogo} disabled={logoUploading} type="button">
+                  Remove
+                </button>
+              )}
+            </div>
+            {logoUploading && <div style={{ color: '#666', fontSize: '0.85rem', marginTop: '4px' }}>Uploading...</div>}
+            {logoError && <div style={{ color: '#b42318', fontSize: '0.85rem', marginTop: '4px' }}>{logoError}</div>}
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', fontWeight: 'normal' }}>
+              <input
+                type="checkbox"
+                checked={includeCompanyNameUnderLogo}
+                onChange={(e) => setIncludeCompanyNameUnderLogo(e.target.checked)}
+              />
+              Include company name under logo
+            </label>
           </div>
           <div className="address-section">
             <h4>Address</h4>

@@ -1,4 +1,4 @@
-﻿-- Seed Birmingham leads from local CSV export
+-- Seed Birmingham leads from local CSV export
 insert into public."Leads" (
   lead_id, area, business_name, owner_name, email, phone, website, source_url, status, last_contacted, sequence_step, next_follow_up, response_status, notes
 ) values  ('BRM-001', 'birmingham-west-midlands', 'Birmingham Cleanall Windows Ltd', NULL, NULL, '01217722104', NULL, 'https://www.thomsonlocal.com/search/window-cleaners/birmingham-west-midlands/birmingham-cleanall-windows-ltd/770302/01217722104', 'new', NULL, NULL, NULL, NULL, 'Email to research from website/contact page'),
